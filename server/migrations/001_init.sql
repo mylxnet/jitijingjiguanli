@@ -1,0 +1,2 @@
+-- 初始迁移（v0.1.0 仅建首批表：user / session / category / transaction）
+-- 后续表（change_log / transfer / transfer_leg / app_setting）在 v0.2.0 迁移中加入

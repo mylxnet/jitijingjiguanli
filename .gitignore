@@ -1,0 +1,21 @@
+# 环境与密钥
+.env
+*.env
+
+# 数据与备份
+*.db
+*.db-wal
+*.db-shm
+backups/
+data/
+
+# 前端
+web/node_modules/
+web/dist/
+
+# Go
+server/bin/
+
+# 系统
+.DS_Store
+Thumbs.db
