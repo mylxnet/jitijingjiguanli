@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>集体台账 · 页面原型</title>
+<style>
+:root{
+  --bg:#f7f7f5; --surface:#ffffff; --line:#e3e2dd; --line-strong:#c9c7c0;
+  --text:#2c2c2a; --text-2:#5f5e5a; --text-3:#8f8e88;
+  --accent:#185fa5; --accent-soft:#e6f1fb;
+  --danger:#a32d2d; --danger-soft:#fcebeb;
+  --ok:#0f6e56; --ok-soft:#e1f5ee;
+  --ph:#eceae4; --ph-line:#d8d6cf;
+  --radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--text); font-size:14px; line-height:1.6;
+  padding:24px;
+}
+.shell{max-width:1080px;margin:0 auto}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 16px;margin-bottom:16px;
+}
+.proj{font-size:15px;font-weight:500}
+.proj span{display:block;font-size:12px;color:var(--text-3);font-weight:400}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{
+  border:1px solid var(--line);background:var(--surface);color:var(--text-2);
+  border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit;
+}
+.tab:hover{border-color:var(--line-strong)}
+.tab.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.hint{font-size:12px;color:var(--text-3);margin-bottom:16px}
+.page{display:none}
+.page.on{display:block}
+.frame{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;
+}
+.bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--line);background:#fbfbf9;
+}
+.bar .title{font-size:14px;font-weight:500}
+.bar .actions{display:flex;gap:8px}
+.body{padding:16px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.split{display:grid;grid-template-columns:200px 1fr;gap:0}
+.side{border-right:1px solid var(--line);padding:16px;background:#fbfbf9}
+.ph{
+  background:var(--ph);border:1px dashed var(--ph-line);border-radius:8px;
+  color:var(--text-3);font-size:12px;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:8px;min-height:36px;
+}
+.ph.tall{min-height:160px}
+.ph.wide{min-height:72px}
+.btn{
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--text);
+  border-radius:8px;padding:6px 14px;font-size:13px;font-family:inherit;cursor:default;
+}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.field{margin-bottom:12px}
+.label{display:block;font-size:12px;color:var(--text-2);margin-bottom:4px}
+.input{
+  width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+  font-size:13px;color:var(--text-3);background:#fbfbf9;font-family:inherit;
+}
+.input.big{font-size:24px;padding:14px 10px;text-align:right;color:var(--text)}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--surface)}
+.row{display:flex;align-items:center;gap:8px}
+.between{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.note{
+  font-size:12px;color:var(--text-2);background:#fbfbf9;border-left:2px solid var(--accent);
+  padding:6px 10px;margin-top:12px;border-radius:0 6px 6px 0;
+}
+.note b{font-weight:500;color:var(--accent)}
+.note.warn{border-left-color:var(--danger)}
+.note.warn b{color:var(--danger)}
+.kcol{background:#fbfbf9;border:1px solid var(--line);border-radius:8px;padding:10px}
+.kcol h4{font-size:13px;font-weight:500;margin-bottom:8px;color:var(--text-2)}
+.state{margin-top:16px}
+.state h4{font-size:12px;font-weight:500;color:var(--text-3);margin-bottom:8px}
+.states{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:fit-content}
+.seg div{padding:8px 20px;font-size:13px;color:var(--text-3);background:#fbfbf9}
+.seg div+div{border-left:1px solid var(--line)}
+.seg div.on{background:var(--accent);color:#fff}
+.chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--text-3)}
+.chip.off{background:var(--ph);}
+.chip.void{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.nav{display:flex;border-top:1px solid var(--line);background:#fbfbf9}
+.nav div{flex:1;text-align:center;padding:10px 0;font-size:12px;color:var(--text-3)}
+.nav div.on{color:var(--accent);background:var(--accent-soft)}
+.line-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.line-item:last-child{border-bottom:none}
+.num{font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--text-2);font-weight:500}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.total td{font-weight:500;background:#fbfbf9}
+tr.voided td{color:var(--text-3);text-decoration:line-through}
+footer{margin-top:20px;font-size:12px;color:var(--text-3);text-align:center}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <div class="proj">集体台账<span>页面原型 · v0.1 · 2026-09-02　移动优先，共 6 页</span></div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <p class="hint">点击顶部标签切换页面（也可用键盘 ← → 键）。灰色虚线区块为占位，用于确认布局与信息层级，不代表最终视觉。</p>
+
+  <!-- ========== P1 登录 ========== -->
+  <section class="page" data-title="登录">
+    <div class="frame">
+      <div class="bar"><div class="title">登录</div><div class="actions"></div></div>
+      <div class="body" style="max-width:320px;margin:0 auto;padding:32px 16px">
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:18px;font-weight:500">集体台账</div>
+          <div style="font-size:12px;color:var(--text-3)">内部收支管理</div>
+        </div>
+        <div class="field"><label class="label">账号</label><div class="input">请输入账号</div></div>
+        <div class="field"><label class="label">密码</label><div class="input">请输入密码</div></div>
+        <button class="btn primary" style="width:100%;margin-top:8px">登 录</button>
+        <div class="note"><b>接口</b>　POST /api/auth/login　·　<b>会话</b>　HttpOnly Cookie，服务端存 session 表<br>
+        <b>异常</b>　密码错误 → 顶部红条提示，保留账号、清空密码　·　已登录访问 → 直接重定向到记账页</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== P2 记账（首页） ========== -->
+  <section class="page" data-title="记账">
+    <div class="frame">
+      <div class="bar">
+        <div class="title">记账</div>
+        <div class="actions"><button class="btn">今日 3 笔 · 支出 ¥1,240.00</button></div>
+      </div>
+      <div class="body" style="max-width:420px;margin:0 auto">
+        <div class="seg" style="margin-bottom:14px">
+          <div>收入</div><div class="on">支出</div>
+        </div>
+        <div class="field">
+          <label class="label">日期</label>
+          <div class="input">2026-09-02</div>
+        </div>
+        <div class="field">
+          <label class="label">摘要（可选）</label>
+          <div class="input">买了什么、给了谁</div>
+        </div>
+        <div class="field">
+          <label class="label">科目（二级）</label>
+          <div class="input">管理费用 / 办公费　▾</div>
+        </div>
+        <div class="field">
+          <label class="label">金额</label>
+          <div class="input big">0.00</div>
+        </div>
+        <button class="btn primary" style="width:100%">保 存</button>
+
+        <div class="note"><b>表单顺序（用户定）</b>　日期 → 摘要 → 科目 → 金额。金额是最后一步，输完拇指自然落在保存键<br>
+        <b>接口</b>　POST /api/transactions　·　GET /api/categories（科目下拉仅列启用中的）<br>
+        <b>移动优先</b>　金额框数字键盘（inputmode=decimal）；日期默认今天；保存后重置表单并聚焦「日期」（默认值免输，可快速连续录入）<br>
+        <b>校验</b>　金额 ≤ 0 → 拒绝并红字提示；未选科目 → 拒绝；未来日期 → 允许但黄字提示<br>
+        <b>科目间转账</b>　不在本页录入 —— 位于「科目管理」页（转账是科目间操作，与收支分开）</div>
+
+        <div class="state">
+          <h4>状态覆盖</h4>
+          <div class="states">
+            <div><div class="ph">空数据：尚无科目<br>→ 引导去创建</div></div>
+            <div><div class="ph">加载中：科目选择<br>器骨架屏</div></div>
+            <div><div class="ph">保存失败：字段下<br>红字，内容全保留</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        <div class="on">记账</div><div>流水</div><div>汇总</div><div>设置</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== P3 流水列表 ========== -->
+  <section class="page" data-title="流水列表">
+    <div class="frame">
+      <div class="bar">
+        <div class="title">流水</div>
+        <div class="actions"><button class="btn">筛选</button><button class="btn">显示已作废</button><button class="btn primary">导出</button></div>
+      </div>
+      <div class="body">
+        <div class="card" style="margin-bottom:12px">
+          <div class="row" style="flex-wrap:wrap;gap:10px">
+            <div class="input" style="width:auto;flex:1;min-width:100px">2026-09-01</div>
+            <span style="color:var(--text-3)">至</span>
+            <div class="input" style="width:auto;flex:1;min-width:100px">2026-09-30</div>
+            <div class="input" style="width:auto;flex:1;min-width:100px">全部类型 ▾</div>
+            <div class="input" style="width:auto;flex:1;min-width:110px">全部科目 ▾</div>
+            <div class="input" style="width:auto;flex:1;min-width:110px">搜索摘要</div>
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:var(--text-3);padding:6px 0">09-02　今日支出 ¥1,240.00　·　转账 ¥50,000.00（不计收支）</div>
+        <table>
+          <thead><tr><th>科目 / 转出→转入</th><th>摘要</th><th class="num">金额</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>管理费用 / 办公费</td><td>打印纸</td><td class="num">¥240.00</td><td>⋯</td></tr>
+            <tr><td>经营支出 / 水电费</td><td>9 月电费</td><td class="num">¥1,000.00</td><td>⋯</td></tr>
+            <tr><td>修路款 → 集体积累、水利款</td><td><span class="chip">转账</span> 专款调剂</td><td class="num">¥50,000.00</td><td>⋯</td></tr>
+            <tr><td>经营支出 → 本年收益</td><td><span class="chip">转账</span> 年末结转</td><td class="num">¥40,000.00</td><td>⋯</td></tr>
+            <tr class="voided"><td>管理费用 / 差旅费</td><td>误记</td><td class="num">¥88.00</td><td>⋯</td></tr>
+          </tbody>
+        </table>
+
+        <div class="between" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+          <span style="font-size:12px;color:var(--text-2)">当前筛选 · 收支（转账不计入）</span>
+          <span class="num">收 ¥0.00　支 ¥1,240.00　结余 -¥1,240.00</span>
+        </div>
+
+        <div class="note"><b>接口</b>　收支：GET /api/transactions　·　转账：GET /api/transfers（「全部」时按日期归并）　·　GET /api/categories<br>
+        <b>交互</b>　上滑加载更多；点击某行展开操作（收支：编辑 / 作废 / 变更历史；转账：作废 / 变更历史）；类型筛选＝全部 / 收支 / 转账<br>
+        <b>作废</b>　不是删除 —— 收支不计入汇总、转账整体冲回，记录保留且可撤销</div>
+
+        <div class="state">
+          <h4>状态覆盖</h4>
+          <div class="states">
+            <div><div class="ph">空数据：去记一笔<br>（筛选为空则给<br>「清除筛选」）</div></div>
+            <div><div class="ph">加载中：<br>骨架屏 5 行</div></div>
+            <div><div class="ph">加载失败：错误条<br>+ 重试，保留<br>当前筛选条件</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        <div>记账</div><div class="on">流水</div><div>汇总</div><div>设置</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== P4 汇总 ========== -->
+  <section class="page" data-title="汇总">
+    <div class="frame">
+      <div class="bar">
+        <div class="title">汇总</div>
+        <div class="actions"><button class="btn">2026-09 ▾</button><button class="btn primary">导出</button></div>
+      </div>
+      <div class="body">
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">资金构成（截至今日，见 D6）</div>
+        <div class="grid g3" style="margin-bottom:16px">
+          <div class="card"><div style="font-size:12px;color:var(--text-2)">银行存款余额</div><div class="num" style="font-size:20px">¥129,500.00</div></div>
+          <div class="card"><div style="font-size:12px;color:var(--text-2)">专项资金合计</div><div class="num" style="font-size:20px">¥60,000.00</div></div>
+          <div class="card" style="border-color:var(--accent)"><div style="font-size:12px;color:var(--accent)">未分配（自有）</div><div class="num" style="font-size:20px">¥69,500.00</div></div>
+        </div>
+
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">本月收支（转账不计入）</div>
+        <div class="grid g3" style="margin-bottom:16px">
+          <div class="card"><div style="font-size:12px;color:var(--text-2)">收入合计</div><div class="num" style="font-size:20px">¥28,000.00</div></div>
+          <div class="card"><div style="font-size:12px;color:var(--text-2)">支出合计</div><div class="num" style="font-size:20px">¥16,240.00</div></div>
+          <div class="card"><div style="font-size:12px;color:var(--text-2)">结余</div><div class="num" style="font-size:20px">¥11,760.00</div></div>
+        </div>
+
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">科目余额（点一级行展开二级明细）</div>
+        <table>
+          <thead><tr><th>科目</th><th class="num">本期发生</th><th class="num">当前余额</th></tr></thead>
+          <tbody>
+            <tr><td>▸ 经营支出 <span class="chip">花费型</span></td><td class="num">¥12,000.00</td><td class="num">¥12,000.00</td></tr>
+            <tr><td style="padding-left:28px">水电费</td><td class="num">¥8,000.00</td><td class="num">¥8,000.00</td></tr>
+            <tr><td style="padding-left:28px">维修费</td><td class="num">¥4,000.00</td><td class="num">¥4,000.00</td></tr>
+            <tr><td>▸ 专项应付款 <span class="chip">余粮·勾稽</span></td><td class="num">-</td><td class="num">¥60,000.00</td></tr>
+            <tr><td style="padding-left:28px">修路款</td><td class="num">-</td><td class="num">¥60,000.00</td></tr>
+          </tbody>
+        </table>
+
+        <div class="note"><b>接口</b>　GET /api/summary?from=&to=　·　<b>交互</b>　点击一级科目行展开/收起其下二级明细<br>
+        <b>未分配</b>　＝ 银行存款余额 − Σ(参与勾稽科目余额)。回答「银行的钱里多少是专款、多少自有」（D6）<br>
+        <b>导出</b>　内容可选：流水 / 收支汇总 / <b>科目余额表</b>（按一级分组列二级余额，D8）；格式 CSV / xlsx<br>
+        <b>口径</b>　已作废流水与转账不计入收支　·　金额以「分」整数存储，展示时才除以 100，全程无浮点误差</div>
+
+        <div class="state">
+          <h4>状态覆盖</h4>
+          <div class="states">
+            <div><div class="ph">空数据：本月还<br>没有流水<br>→ 去记账</div></div>
+            <div><div class="ph">加载中：<br>骨架屏</div></div>
+            <div><div class="ph">加载失败：<br>错误条 + 重试</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        <div>记账</div><div>流水</div><div class="on">汇总</div><div>设置</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== P5 科目管理 ========== -->
+  <section class="page" data-title="科目管理">
+    <div class="frame">
+      <div class="bar">
+        <div class="title">科目管理</div>
+        <div class="actions"><button class="btn">返回</button><button class="btn">科目间转账</button><button class="btn primary">+ 新增一级科目</button></div>
+      </div>
+      <div class="body">
+        <div class="card" style="border-color:var(--accent);margin-bottom:10px">
+          <div class="between" style="margin-bottom:8px"><b>科目间转账</b><span class="chip" style="border-color:var(--accent);color:var(--accent)">专款调剂 · 期末结转</span></div>
+          <div class="field">
+            <label class="label">转出科目（当前余额 ¥30,000）</label>
+            <div class="input">专项应付款 / 修路款　▾</div>
+          </div>
+          <div class="field">
+            <label class="label">转入明细（可加行，花费型科目不出现）</label>
+            <div class="line-item"><span>公积公益金 / 集体积累</span><span class="input" style="width:96px">30000</span></div>
+            <div class="line-item"><span>专项应付款 / 水利款</span><span class="input" style="width:96px">20000</span></div>
+            <button class="btn" style="margin-top:6px">+ 增加转入科目</button>
+          </div>
+          <div class="between" style="margin-top:8px">
+            <span style="font-size:12px;color:var(--ok)">已分配 ¥50,000 ＝ 转出 ¥50,000 ✓</span>
+            <button class="btn primary">保存转账</button>
+          </div>
+          <div class="note" style="margin-top:8px"><b>规则（D7）</b>　1 转出 → N 转入，总额相等；转出 ≤ 科目余额；不碰银行存款、不算收支。转账记录在「流水」列表可查（带「转账」标记），可作废。<br>
+          <b>接口</b>　POST /api/transfers　·　GET /api/transfers</div>
+        </div>
+
+        <div class="card" style="margin-bottom:10px">
+          <div class="between">
+            <div><b>经营支出</b> <span class="chip">一级</span></div>
+            <div class="row"><span style="font-size:12px;color:var(--text-3)">16 笔</span><button class="btn">+ 二级</button><button class="btn">重命名</button></div>
+          </div>
+          <div style="margin-top:10px;padding-left:16px;border-left:2px solid var(--line)">
+            <div class="line-item"><span>水电费 <span class="chip">花费型</span> <span style="font-size:11px;color:var(--text-3)">12 笔 · 余额 ¥8,000</span></span><span class="row"><button class="btn">重命名</button><button class="btn">停用</button><button class="btn danger">删除</button></span></div>
+            <div class="line-item"><span>维修费 <span class="chip">花费型</span> <span style="font-size:11px;color:var(--text-3)">4 笔 · 余额 ¥4,000</span></span><span class="row"><button class="btn">重命名</button><button class="btn">停用</button><button class="btn danger">删除</button></span></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:10px">
+          <div class="between">
+            <div><b>专项应付款</b> <span class="chip">一级</span></div>
+            <div class="row"><span style="font-size:12px;color:var(--text-3)">2 科目</span><button class="btn">+ 二级</button><button class="btn">重命名</button></div>
+          </div>
+          <div style="margin-top:10px;padding-left:16px;border-left:2px solid var(--line)">
+            <div class="line-item"><span>修路款 <span class="chip" style="border-color:#0f6e56;color:#0f6e56">余粮·勾稽</span> <span style="font-size:11px;color:var(--text-3)">期初 ¥30,000 → 余额 ¥60,000</span></span><span class="row"><button class="btn">改期初</button><button class="btn">停用</button></span></div>
+            <div class="line-item"><span>水利款 <span class="chip" style="border-color:#0f6e56;color:#0f6e56">余粮·勾稽</span> <span style="font-size:11px;color:var(--text-3)">期初 ¥0 → 余额 ¥20,000</span></span><span class="row"><button class="btn">改期初</button><button class="btn">停用</button></span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="between">
+            <div><b>管理费用</b> <span class="chip">一级</span></div>
+            <div class="row"><span style="font-size:12px;color:var(--text-3)">2 笔</span><button class="btn">+ 二级</button><button class="btn">重命名</button></div>
+          </div>
+          <div style="margin-top:10px;padding-left:16px;border-left:2px solid var(--line)">
+            <div class="line-item"><span>办公费 <span class="chip">花费型</span> <span style="font-size:11px;color:var(--text-3)">2 笔 · 余额 ¥500</span></span><span class="row"><button class="btn">重命名</button><button class="btn">停用</button><button class="btn danger">删除</button></span></div>
+            <div class="line-item"><span>差旅费 <span class="chip off">已停用</span> <span class="chip">花费型</span> <span style="font-size:11px;color:var(--text-3)">3 笔</span></span><span class="row"><button class="btn">重命名</button><button class="btn">启用</button><button class="btn danger">删除</button></span></div>
+          </div>
+        </div>
+
+        <div class="note warn"><b>删除规则</b>　未被任何流水引用的科目才能删除；已被引用的只能<b>停用</b>。<br>
+        <b>不支持改挂</b>　二级科目不能改挂到另一个一级科目下 —— 如需调整归属，请在目标科目下新建，再把原科目停用。</div>
+        <div class="note"><b>新建/编辑科目字段</b>　名称 · <b>余额类型</b>（余粮型＝收增支减看还剩多少／花费型＝支增收减看累计花了多少，已有流水后不可改）· <b>期初余额</b>（自定义，之后仅由流水改变）· <b>参与资金勾稽</b>（仅余粮型可开）· 所属一级科目（不可改挂）<br>
+        <b>接口</b>　GET/POST /api/categories　·　PUT /api/categories/:id（重命名 / 停用 / 启用 / 改期初余额）　·　DELETE /api/categories/:id<br>
+        <b>删除被拒时</b>　弹窗：「该科目下仍有 12 笔流水，无法删除」+ 直接「改为停用」按钮<br>
+        <b>改期初余额</b>　弹窗警告「该科目已有 N 笔流水，修改期初余额会改变其余额」+ 记入变更历史</div>
+
+        <div class="state">
+          <h4>状态覆盖</h4>
+          <div class="states">
+            <div><div class="ph">空数据：还没有<br>科目 → 新增一级</div></div>
+            <div><div class="ph">加载中：<br>骨架屏</div></div>
+            <div><div class="ph">删除被拒绝：<br>弹窗提示 +<br>改为停用</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== P6 设置 ========== -->
+  <section class="page" data-title="设置">
+    <div class="frame">
+      <div class="bar"><div class="title">设置</div><div class="actions"></div></div>
+      <div class="body" style="max-width:520px">
+        <div class="card" style="margin-bottom:12px">
+          <div class="between" style="margin-bottom:8px"><b>资金账户</b><span style="font-size:12px;color:var(--text-3)">当前银行存款余额 ¥129,500.00</span></div>
+          <div class="row">
+            <label class="label" style="margin:0;white-space:nowrap">期初余额</label>
+            <div class="input" style="width:160px">100000.00</div>
+            <button class="btn primary">保存</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:6px">银行存款是唯一真实资金账户（不是科目）。期初余额只在启用系统时设置一次，之后由收支流水自动增减。</div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="between" style="margin-bottom:8px"><b>备份与恢复</b><span style="font-size:12px;color:var(--text-3)">上次备份：今天 03:00</span></div>
+          <div class="row" style="margin-bottom:8px"><button class="btn primary">立即备份</button><button class="btn">恢复…</button></div>
+          <div class="line-item"><span>backup-2026-09-02.db <span style="font-size:11px;color:var(--text-3)">2.4 MB</span></span><button class="btn">恢复</button></div>
+          <div class="line-item"><span>backup-2026-09-01.db <span style="font-size:11px;color:var(--text-3)">2.4 MB</span></span><button class="btn">恢复</button></div>
+          <div class="note warn" style="margin-top:8px"><b>备份目录必须与数据目录不同盘</b>　同盘备份防不住 NAS 盘故障。<br>
+          使用 SQLite <code>VACUUM INTO</code> 生成一致性快照，避免复制到写入中的半状态文件。</div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="between" style="margin-bottom:8px"><b>科目管理</b><button class="btn">进入 →</button></div>
+          <div style="font-size:12px;color:var(--text-3)">新增、重命名、停用一/二级科目</div>
+        </div>
+
+        <div class="card">
+          <div class="between" style="margin-bottom:8px"><b>账号</b><button class="btn">修改密码</button></div>
+          <button class="btn danger" style="width:100%">登 出</button>
+        </div>
+
+        <div class="note"><b>接口</b>　GET /api/backups　·　POST /api/backups　·　POST /api/backups/:id/restore（v0.3.0）<br>
+        <b>恢复中</b>　全屏遮罩「正在恢复，请勿关闭页面」，完成后强制重新登录</div>
+
+        <div class="state">
+          <h4>状态覆盖</h4>
+          <div class="states">
+            <div><div class="ph">空数据：尚无<br>备份记录</div></div>
+            <div><div class="ph">恢复中：<br>全屏遮罩</div></div>
+            <div><div class="ph">加载失败：<br>错误条 + 重试</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        <div>记账</div><div>流水</div><div>汇总</div><div class="on">设置</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>本原型仅用于验证页面结构与流程，不代表最终视觉设计</footer>
+</div>
+
+<script>
+(function(){
+  var pages = [].slice.call(document.querySelectorAll('.page'));
+  var tabsEl = document.getElementById('tabs');
+  var idx = 0;
+
+  function show(i){
+    idx = (i + pages.length) % pages.length;
+    pages.forEach(function(p, n){ p.classList.toggle('on', n === idx); });
+    [].slice.call(tabsEl.children).forEach(function(b, n){
+      b.classList.toggle('on', n === idx);
+    });
+    if (history.replaceState) {
+      history.replaceState(null, '', '#' + encodeURIComponent(pages[idx].dataset.title));
+    }
+  }
+
+  pages.forEach(function(p, n){
+    var b = document.createElement('button');
+    b.className = 'tab';
+    b.textContent = p.dataset.title;
+    b.onclick = function(){ show(n); };
+    tabsEl.appendChild(b);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight') show(idx + 1);
+    if (e.key === 'ArrowLeft') show(idx - 1);
+  });
+
+  var hash = decodeURIComponent(location.hash.slice(1));
+  var start = pages.findIndex(function(p){ return p.dataset.title === hash; });
+  show(start > -1 ? start : 0);
+})();
+</script>
+</body>
+</html>
