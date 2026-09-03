@@ -30,9 +30,9 @@ func (r *Repo) Create(t *Transfer) (*Transfer, error) {
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO transfer(txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
-		 VALUES(?, ?, ?, ?, 'normal', ?, ?)`,
-		t.TxnDate, t.SourceCategoryID, t.SourceAmountCents, t.Note, now, now,
+		`INSERT INTO transfer(org_id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, 'normal', ?, ?)`,
+		t.OrgID, t.TxnDate, t.SourceCategoryID, t.SourceAmountCents, t.Note, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建转账失败: %w", err)
@@ -48,8 +48,8 @@ func (r *Repo) Create(t *Transfer) (*Transfer, error) {
 	for i := range t.Legs {
 		leg := &t.Legs[i]
 		res, err := tx.Exec(
-			`INSERT INTO transfer_leg(transfer_id, category_id, amount_cents) VALUES(?, ?, ?)`,
-			id, leg.CategoryID, leg.AmountCents,
+			`INSERT INTO transfer_leg(org_id, transfer_id, category_id, amount_cents) VALUES(?, ?, ?, ?)`,
+			t.OrgID, id, leg.CategoryID, leg.AmountCents,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("创建转入明细失败: %w", err)
@@ -65,13 +65,13 @@ func (r *Repo) Create(t *Transfer) (*Transfer, error) {
 	return t, nil
 }
 
-// FindByID 查询转账（含 legs）。
+// FindByID 查询转账（含 legs）。调用方需校验 OrgID。
 func (r *Repo) FindByID(id int64) (*Transfer, error) {
 	t := &Transfer{}
 	err := r.db.QueryRow(
-		`SELECT id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at
+		`SELECT id, org_id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at
 		 FROM transfer WHERE id = ?`, id,
-	).Scan(&t.ID, &t.TxnDate, &t.SourceCategoryID, &t.SourceAmountCents, &t.Note, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.OrgID, &t.TxnDate, &t.SourceCategoryID, &t.SourceAmountCents, &t.Note, &t.Status, &t.CreatedAt, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -109,10 +109,11 @@ func (r *Repo) FindLegsByTransferID(transferID int64) ([]Leg, error) {
 	return legs, rows.Err()
 }
 
-// List 查询转账记录列表。
-func (r *Repo) List(from, to string, categoryID *int64, page, pageSize int) ([]*Transfer, int, error) {
-	where := "WHERE 1=1"
+// List 查询某组织转账记录列表。
+func (r *Repo) List(orgID int64, from, to string, categoryID *int64, page, pageSize int) ([]*Transfer, int, error) {
+	where := "WHERE t.org_id = ?"
 	var args []any
+	args = append(args, orgID)
 
 	if from != "" {
 		where += " AND t.txn_date >= ?"
@@ -136,7 +137,7 @@ func (r *Repo) List(from, to string, categoryID *int64, page, pageSize int) ([]*
 
 	// 列表
 	offset := (page - 1) * pageSize
-	listQuery := "SELECT t.id, t.txn_date, t.source_category_id, t.source_amount_cents, t.note, t.status, t.created_at, t.updated_at FROM transfer t " +
+	listQuery := "SELECT t.id, t.org_id, t.txn_date, t.source_category_id, t.source_amount_cents, t.note, t.status, t.created_at, t.updated_at FROM transfer t " +
 		where + " ORDER BY t.txn_date DESC, t.id DESC LIMIT ? OFFSET ?"
 	listArgs := append(args, pageSize, offset)
 
@@ -150,7 +151,7 @@ func (r *Repo) List(from, to string, categoryID *int64, page, pageSize int) ([]*
 	var ids []int64
 	for rows.Next() {
 		t := &Transfer{}
-		if err := rows.Scan(&t.ID, &t.TxnDate, &t.SourceCategoryID, &t.SourceAmountCents, &t.Note, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.TxnDate, &t.SourceCategoryID, &t.SourceAmountCents, &t.Note, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, 0, fmt.Errorf("扫描转账行失败: %w", err)
 		}
 		items = append(items, t)
@@ -171,9 +172,9 @@ func (r *Repo) List(from, to string, categoryID *int64, page, pageSize int) ([]*
 	return items, total, nil
 }
 
-// UpdateStatus 更新转账状态（作废/撤销）。
-func (r *Repo) UpdateStatus(id int64, status string, updatedAt time.Time) error {
-	_, err := r.db.Exec(`UPDATE transfer SET status = ?, updated_at = ? WHERE id = ?`, status, updatedAt, id)
+// UpdateStatus 更新转账状态（作废/撤销，限定本组织）。
+func (r *Repo) UpdateStatus(id, orgID int64, status string, updatedAt time.Time) error {
+	_, err := r.db.Exec(`UPDATE transfer SET status = ?, updated_at = ? WHERE id = ? AND org_id = ?`, status, updatedAt, id, orgID)
 	return err
 }
 

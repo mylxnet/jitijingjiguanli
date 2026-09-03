@@ -40,6 +40,22 @@
 - 导出单元测试（6 组：流水 CSV/含作废/汇总 CSV/科目余额表 CSV（D8）/xlsx 重开+格式与右对齐/参数校验）
 - summary 修复：一级科目行补汇总子项期初余额（此前恒 0，致 D8 余额表一级合计错）
 
+### v0.3 多组织改造（迁移 003 + 全业务 org 隔离）
+- **迁移 003**：全业务表重建带 org_id（user/category/txn/transfer/leg/change_log/app_setting），
+  category 新增 kind(normal/asset) 与 preset，新建 org/fund_move/party/receivable/receipt；
+  app_setting 主键改 (org_id,key)；旧单组织数据作废（破坏性升级，需求决策）
+- **注册制**（F8）：POST /api/auth/register（组织名+账号+密码）单事务建组织+账号+**预置科目**
+  （本金/对外投资/经营收入[土地流转费收入·投资分红收益·其他收入]/收益分配[收益分红发放·流转费分发·
+  福利发放]/公益支出，共 11 项）；废除环境变量初始账号引导
+- **org 会话与隔离**（F9）：登录会话 Resolve 返回 user+org，RequireAuth 注入 orgID；category/txn/
+  transfer/settings/changelog/summary/export 全部按会话组织过滤；Update/Delete 带 org 防御；
+  git 中新增跨组织隔离测试（不可见/不可改/不可删 404）
+- **资产科目打底**（D10 前置）：category.kind 校验（资产仅二级/余粮/禁勾稽/无期初）、txn/transfer
+  拒绝资产科目；repo 增 AssetBalance/BankDelta；summary 资金构成口径升级为
+  (银行存款+资产合计)−专项资金，Capital 增 assetTotalCents
+- 测试：注册（预置 11 项/重名/短密码/双组织独立）、隔离、全量 seed 适配 org；
+  全库 9 包 vet+test 绿；冒烟：甲乙两村注册各自得到预置科目树
+
 ### 前端（web，Vue 3 + TS + Vite）
 - 页面 6 个（设计 P1-P6 对齐）：Login / Home 记账 / List 流水 / Summary 汇总 /
   Category 科目管理（含 D7 转账表单）/ Settings 设置；底部导航 4 tab + /categories 高亮归属设置

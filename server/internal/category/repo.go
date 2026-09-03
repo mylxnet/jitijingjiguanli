@@ -17,13 +17,30 @@ func NewRepo(db *sql.DB) *Repo {
 	return &Repo{db: db}
 }
 
-// FindAll 查询所有科目，按 sort_order 排序。
-func (r *Repo) FindAll() ([]*Category, error) {
+const catCols = `id, org_id, name, level, parent_id, status, balance_type, kind,
+	opening_balance_cents, include_in_reconciliation, preset,
+	sort_order, created_at, updated_at`
+
+func scanCat(row interface{ Scan(...any) error }) (*Category, error) {
+	c := &Category{}
+	var inc, preset int
+	err := row.Scan(
+		&c.ID, &c.OrgID, &c.Name, &c.Level, &c.ParentID, &c.Status,
+		&c.BalanceType, &c.Kind, &c.OpeningBalanceCents, &inc, &preset,
+		&c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.IncludeInReconciliation = inc == 1
+	c.Preset = preset == 1
+	return c, nil
+}
+
+// FindAll 查询某组织的全部科目（含资产型），按 sort_order 排序。
+func (r *Repo) FindAll(orgID int64) ([]*Category, error) {
 	rows, err := r.db.Query(
-		`SELECT id, name, level, parent_id, status, balance_type,
-		        opening_balance_cents, include_in_reconciliation,
-		        sort_order, created_at, updated_at
-		 FROM category ORDER BY sort_order, id`)
+		`SELECT `+catCols+` FROM category WHERE org_id = ? ORDER BY sort_order, id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("查询科目列表失败: %w", err)
 	}
@@ -31,50 +48,34 @@ func (r *Repo) FindAll() ([]*Category, error) {
 
 	var cats []*Category
 	for rows.Next() {
-		c := &Category{}
-		var inc int
-		if err := rows.Scan(
-			&c.ID, &c.Name, &c.Level, &c.ParentID, &c.Status,
-			&c.BalanceType, &c.OpeningBalanceCents, &inc,
-			&c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanCat(rows)
+		if err != nil {
 			return nil, fmt.Errorf("扫描科目行失败: %w", err)
 		}
-		c.IncludeInReconciliation = inc == 1
 		cats = append(cats, c)
 	}
 	return cats, rows.Err()
 }
 
-// FindByID 按 ID 查询科目。
+// FindByID 按 ID 查询科目（调用方需校验 OrgID 归属）。
 func (r *Repo) FindByID(id int64) (*Category, error) {
-	c := &Category{}
-	var inc int
-	err := r.db.QueryRow(
-		`SELECT id, name, level, parent_id, status, balance_type,
-		        opening_balance_cents, include_in_reconciliation,
-		        sort_order, created_at, updated_at
-		 FROM category WHERE id = ?`, id,
-	).Scan(&c.ID, &c.Name, &c.Level, &c.ParentID, &c.Status,
-		&c.BalanceType, &c.OpeningBalanceCents, &inc,
-		&c.SortOrder, &c.CreatedAt, &c.UpdatedAt)
+	row := r.db.QueryRow(`SELECT `+catCols+` FROM category WHERE id = ?`, id)
+	c, err := scanCat(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询科目失败: %w", err)
 	}
-	c.IncludeInReconciliation = inc == 1
 	return c, nil
 }
 
-// FindActiveLevel2 查询所有启用中的二级科目。
-func (r *Repo) FindActiveLevel2() ([]*Category, error) {
+// FindActiveLevel2 查询某组织启用中的普通二级科目（收支/转账可挂）。
+func (r *Repo) FindActiveLevel2(orgID int64) ([]*Category, error) {
 	rows, err := r.db.Query(
-		`SELECT id, name, level, parent_id, status, balance_type,
-		        opening_balance_cents, include_in_reconciliation,
-		        sort_order, created_at, updated_at
-		 FROM category WHERE level = 2 AND status = 'active' ORDER BY sort_order, id`)
+		`SELECT `+catCols+` FROM category
+		 WHERE org_id = ? AND level = 2 AND status = 'active' AND kind = 'normal'
+		 ORDER BY sort_order, id`, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("查询启用中二级科目失败: %w", err)
 	}
@@ -82,16 +83,32 @@ func (r *Repo) FindActiveLevel2() ([]*Category, error) {
 
 	var cats []*Category
 	for rows.Next() {
-		c := &Category{}
-		var inc int
-		if err := rows.Scan(
-			&c.ID, &c.Name, &c.Level, &c.ParentID, &c.Status,
-			&c.BalanceType, &c.OpeningBalanceCents, &inc,
-			&c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanCat(rows)
+		if err != nil {
 			return nil, fmt.Errorf("扫描科目行失败: %w", err)
 		}
-		c.IncludeInReconciliation = inc == 1
+		cats = append(cats, c)
+	}
+	return cats, rows.Err()
+}
+
+// FindAssetLevel2 查询某组织启用中的资产型二级科目（资金划转可挂，见 D10）。
+func (r *Repo) FindAssetLevel2(orgID int64) ([]*Category, error) {
+	rows, err := r.db.Query(
+		`SELECT `+catCols+` FROM category
+		 WHERE org_id = ? AND level = 2 AND status = 'active' AND kind = 'asset'
+		 ORDER BY sort_order, id`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("查询资产科目失败: %w", err)
+	}
+	defer rows.Close()
+
+	var cats []*Category
+	for rows.Next() {
+		c, err := scanCat(rows)
+		if err != nil {
+			return nil, fmt.Errorf("扫描资产科目失败: %w", err)
+		}
 		cats = append(cats, c)
 	}
 	return cats, rows.Err()
@@ -104,13 +121,17 @@ func (r *Repo) Create(c *Category) (*Category, error) {
 	if c.IncludeInReconciliation {
 		inc = 1
 	}
+	preset := 0
+	if c.Preset {
+		preset = 1
+	}
 	res, err := r.db.Exec(
-		`INSERT INTO category(name, level, parent_id, status, balance_type,
-		                      opening_balance_cents, include_in_reconciliation,
-		                      sort_order, created_at, updated_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.Name, c.Level, c.ParentID, c.Status, c.BalanceType,
-		c.OpeningBalanceCents, inc, c.SortOrder, now, now,
+		`INSERT INTO category(org_id, name, level, parent_id, status, balance_type, kind,
+			opening_balance_cents, include_in_reconciliation, preset,
+			sort_order, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.OrgID, c.Name, c.Level, c.ParentID, c.Status, c.BalanceType, c.Kind,
+		c.OpeningBalanceCents, inc, preset, c.SortOrder, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("新建科目失败: %w", err)
@@ -122,8 +143,8 @@ func (r *Repo) Create(c *Category) (*Category, error) {
 	return c, nil
 }
 
-// Update 更新科目字段。
-func (r *Repo) Update(id int64, updates map[string]any) error {
+// Update 更新科目字段（限定本组织，防跨组织改写）。
+func (r *Repo) Update(id, orgID int64, updates map[string]any) error {
 	if len(updates) == 0 {
 		return nil
 	}
@@ -135,9 +156,9 @@ func (r *Repo) Update(id int64, updates map[string]any) error {
 		setClauses = append(setClauses, k+" = ?")
 		args = append(args, v)
 	}
-	args = append(args, id)
+	args = append(args, id, orgID)
 
-	query := fmt.Sprintf("UPDATE category SET %s WHERE id = ?", joinClauses(setClauses))
+	query := fmt.Sprintf("UPDATE category SET %s WHERE id = ? AND org_id = ?", joinClauses(setClauses))
 	_, err := r.db.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("更新科目失败: %w", err)
@@ -145,9 +166,9 @@ func (r *Repo) Update(id int64, updates map[string]any) error {
 	return nil
 }
 
-// Delete 物理删除科目。
-func (r *Repo) Delete(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM category WHERE id = ?`, id)
+// Delete 物理删除科目（限定本组织）。
+func (r *Repo) Delete(id, orgID int64) error {
+	_, err := r.db.Exec(`DELETE FROM category WHERE id = ? AND org_id = ?`, id, orgID)
 	return err
 }
 
@@ -165,20 +186,19 @@ func (r *Repo) CountTransactions(categoryID int64) (int, error) {
 	return n, err
 }
 
-// IsNameDup 检查同级是否重名。
-func (r *Repo) IsNameDup(name string, parentID *int64, excludeID int64) (bool, error) {
+// IsNameDup 检查同组织同级是否重名。
+func (r *Repo) IsNameDup(orgID int64, name string, parentID *int64, excludeID int64) (bool, error) {
 	var n int
 	var err error
 	if parentID == nil {
-		// 一级科目：parent_id IS NULL
 		err = r.db.QueryRow(
-			`SELECT COUNT(*) FROM category WHERE name = ? AND parent_id IS NULL AND id != ?`,
-			name, excludeID,
+			`SELECT COUNT(*) FROM category WHERE org_id = ? AND name = ? AND parent_id IS NULL AND id != ?`,
+			orgID, name, excludeID,
 		).Scan(&n)
 	} else {
 		err = r.db.QueryRow(
-			`SELECT COUNT(*) FROM category WHERE name = ? AND parent_id = ? AND id != ?`,
-			name, *parentID, excludeID,
+			`SELECT COUNT(*) FROM category WHERE org_id = ? AND name = ? AND parent_id = ? AND id != ?`,
+			orgID, name, *parentID, excludeID,
 		).Scan(&n)
 	}
 	if err != nil {
@@ -188,6 +208,7 @@ func (r *Repo) IsNameDup(name string, parentID *int64, excludeID int64) (bool, e
 }
 
 // CalcBalance 计算科目当前余额（实时聚合，不落库）。
+// 普通科目：期初 + 收支（方向按类型）+ 转入 − 转出；资产科目不走此函数（余额见 fund_move 聚合）。
 func (r *Repo) CalcBalance(catID int64) (int64, error) {
 	var opening int64
 	var balanceType string
@@ -229,6 +250,32 @@ func (r *Repo) CalcBalance(catID int64) (int64, error) {
 	bal += in
 
 	return bal, nil
+}
+
+// AssetBalance 计算资产科目余额 = Σ投资 − Σ收回（D10；fund_move 聚合）。
+func (r *Repo) AssetBalance(catID int64) (int64, error) {
+	var out, in int64
+	if err := r.db.QueryRow(
+		`SELECT COALESCE(SUM(CASE WHEN kind='invest' THEN amount_cents ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN kind='recover' THEN amount_cents ELSE 0 END), 0)
+		 FROM fund_move WHERE asset_category_id = ? AND status = 'normal'`, catID,
+	).Scan(&out, &in); err != nil {
+		return 0, fmt.Errorf("聚合资产余额失败: %w", err)
+	}
+	return out - in, nil
+}
+
+// BankDelta 资金划转对银行存款的净影响 = Σ收回 − Σ投资（供资金构成口径，D10）。
+func (r *Repo) BankDelta(orgID int64) (int64, error) {
+	var delta int64
+	if err := r.db.QueryRow(
+		`SELECT COALESCE(SUM(CASE WHEN kind='recover' THEN amount_cents
+		                          WHEN kind='invest' THEN -amount_cents ELSE 0 END), 0)
+		 FROM fund_move WHERE org_id = ? AND status = 'normal'`, orgID,
+	).Scan(&delta); err != nil {
+		return 0, fmt.Errorf("聚合资金划转影响失败: %w", err)
+	}
+	return delta, nil
 }
 
 func joinClauses(clauses []string) string {

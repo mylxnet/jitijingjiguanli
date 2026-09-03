@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/platform"
 )
 
@@ -24,10 +25,17 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/summary", h.GetSummary)
 }
 
-// GetSummary 获取汇总数据。
+// GetSummary 获取当前组织的汇总数据。
 // GET /api/summary?from=...&to=...（空=全年）
 func (h *Handler) GetSummary(c *gin.Context) {
-	resp, err := h.repo.GetSummary(c.Query("from"), c.Query("to"))
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+			Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+		})
+		return
+	}
+	resp, err := h.repo.GetSummary(orgID, c.Query("from"), c.Query("to"))
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "查询汇总失败",

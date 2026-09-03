@@ -6,6 +6,7 @@ import "time"
 // Transfer 对应 transfer 表。
 type Transfer struct {
 	ID                int64     `json:"id"`
+	OrgID             int64     `json:"orgId"`
 	TxnDate           string    `json:"txnDate"`
 	SourceCategoryID  int64     `json:"sourceCategoryId"`
 	SourceAmountCents int64     `json:"sourceAmountCents"`

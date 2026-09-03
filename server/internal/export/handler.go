@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/platform"
 	"jititaizhang/server/internal/summary"
@@ -77,25 +78,33 @@ func (h *Handler) Export(c *gin.Context) {
 		}
 	}
 
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+			Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+		})
+		return
+	}
+
 	// 渲染目标工作表
 	var sheet *xlSheet
 	switch content {
 	case ContentTransactions:
-		s, err := h.renderer.txnSheet(q)
+		s, err := h.renderer.txnSheet(orgID, q)
 		if err != nil {
 			h.fail500(c, "导出流水失败")
 			return
 		}
 		sheet = s
 	case ContentSummary:
-		s, err := h.renderer.summarySheet(q)
+		s, err := h.renderer.summarySheet(orgID, q)
 		if err != nil {
 			h.fail500(c, "导出收支汇总失败")
 			return
 		}
 		sheet = s
 	case ContentBalanceSheet:
-		s, err := h.renderer.balanceSheet(q)
+		s, err := h.renderer.balanceSheet(orgID, q)
 		if err != nil {
 			h.fail500(c, "导出科目余额表失败")
 			return

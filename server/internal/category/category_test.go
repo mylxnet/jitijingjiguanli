@@ -15,7 +15,7 @@ import (
 	"jititaizhang/server/internal/platform"
 )
 
-// newEnv 建临时库 + 迁移 + category 路由。
+// newEnv 建临时库 + 迁移 + 测试组织（org id=1）+ 注入组织的 category 路由。
 func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	t.Helper()
 	db, err := platform.Open(filepath.Join(t.TempDir(), "category.db"))
@@ -26,10 +26,30 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	if err := platform.Migrate(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	seedTestOrg(t, db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(db).Register(r)
+	authed := r.Group("", orgCtx())
+	NewHandler(db).Register(authed)
 	return db, r
+}
+
+// seedTestOrg 插入固定测试组织（id=1）。每个测试库独立，首个组织 id 恒为 1。
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
+func orgCtx() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", int64(1))
+		c.Set("userID", int64(1))
+		c.Next()
+	}
 }
 
 func doJSON(t *testing.T, r *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
@@ -210,8 +230,8 @@ func TestDeleteProtection(t *testing.T) {
 	}
 
 	// 给 l2 插入一笔流水 → 删除 409
-	_, err := db.Exec(`INSERT INTO txn(txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES('2026-09-01','expense',100,?,NULL,'normal','2026-09-01','2026-09-01')`, l2.ID)
+	_, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
+		VALUES(1,'2026-09-01','expense',100,?,NULL,'normal','2026-09-01','2026-09-01')`, l2.ID)
 	if err != nil {
 		t.Fatalf("插入流水失败: %v", err)
 	}
@@ -282,8 +302,8 @@ type leg struct {
 
 func insertTxn(t *testing.T, db *sql.DB, date, dir string, amount, catID int64) {
 	t.Helper()
-	if _, err := db.Exec(`INSERT INTO txn(txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES(?,?,?,?,NULL,'normal','2026-09-01','2026-09-01')`, date, dir, amount, catID); err != nil {
+	if _, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
+		VALUES(1,?,?,?,?,NULL,'normal','2026-09-01','2026-09-01')`, date, dir, amount, catID); err != nil {
 		t.Fatalf("插入流水失败: %v", err)
 	}
 }
@@ -294,16 +314,83 @@ func insertTransfer(t *testing.T, db *sql.DB, sourceID int64, legs []leg) {
 	for _, l := range legs {
 		total += l.amount
 	}
-	res, err := db.Exec(`INSERT INTO transfer(txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
-		VALUES('2026-09-01',?,?,NULL,'normal','2026-09-01','2026-09-01')`, sourceID, total)
+	res, err := db.Exec(`INSERT INTO transfer(org_id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
+		VALUES(1,'2026-09-01',?,?,NULL,'normal','2026-09-01','2026-09-01')`, sourceID, total)
 	if err != nil {
 		t.Fatalf("插入转账失败: %v", err)
 	}
 	tid, _ := res.LastInsertId()
 	for _, l := range legs {
-		if _, err := db.Exec(`INSERT INTO transfer_leg(transfer_id, category_id, amount_cents)
-			VALUES(?,?,?)`, tid, l.catID, l.amount); err != nil {
+		if _, err := db.Exec(`INSERT INTO transfer_leg(org_id, transfer_id, category_id, amount_cents)
+			VALUES(1,?,?,?)`, tid, l.catID, l.amount); err != nil {
 			t.Fatalf("插入转账明细失败: %v", err)
 		}
+	}
+}
+
+// TestOrgIsolation 跨组织隔离：A 组织建科目，B 组织不可见、不可改、不可删。
+func TestOrgIsolation(t *testing.T) {
+	db, err := platform.Open(filepath.Join(t.TempDir(), "iso.db"))
+	if err != nil {
+		t.Fatalf("打开临时库失败: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := platform.Migrate(db); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+	// 两个组织 id=1 / id=2
+	for _, id := range []int64{1, 2} {
+		if _, err := db.Exec(`INSERT INTO org(id, name, created_at, updated_at) VALUES(?, '组织', '2026-09-02', '2026-09-02')`, id); err != nil {
+			t.Fatalf("建组织失败: %v", err)
+		}
+	}
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(db)
+	r1 := gin.New()
+	h.Register(r1.Group("", orgCtxID(1)))
+	r2 := gin.New()
+	h.Register(r2.Group("", orgCtxID(2)))
+
+	// 组织 1 建一级+二级科目
+	w := doJSON(t, r1, http.MethodPost, "/api/categories", map[string]any{"name": "本金", "level": 1, "balanceType": "residual"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("组织1建一级失败: %d %s", w.Code, w.Body.String())
+	}
+	var l1 struct {
+		Data Category `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &l1); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+
+	// 组织 2 看不到组织 1 的科目
+	w = doJSON(t, r2, http.MethodGet, "/api/categories", nil)
+	var tree struct {
+		Data []*Category `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &tree); err != nil {
+		t.Fatalf("解析组织2列表失败: %v", err)
+	}
+	if len(tree.Data) != 0 {
+		t.Errorf("组织 2 不应看到组织 1 的科目，实际 %d 个", len(tree.Data))
+	}
+
+	// 组织 2 更新/删除组织 1 的科目 → 404
+	w = doJSON(t, r2, http.MethodPut, fmt.Sprintf("/api/categories/%d", l1.Data.ID), map[string]any{"name": "越权改名"})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("跨组织更新应 404，实际 %d", w.Code)
+	}
+	w = doJSON(t, r2, http.MethodDelete, fmt.Sprintf("/api/categories/%d", l1.Data.ID), nil)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("跨组织删除应 404，实际 %d", w.Code)
+	}
+}
+
+// orgCtxID 注入指定组织的测试中间件。
+func orgCtxID(orgID int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", orgID)
+		c.Set("userID", int64(1))
+		c.Next()
 	}
 }

@@ -23,7 +23,41 @@ func NewHandler(svc *Service) *Handler {
 // Register 挂载路由。
 func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/auth/login", h.Login)
+	r.POST("/api/auth/register", h.RegisterOrg)
 	r.POST("/api/auth/logout", h.Logout)
+}
+
+// RegisterOrg POST /api/auth/register —— 自助注册组织（v0.3 F8）：
+// 组织名 + 管理员账号 + 密码 → 建组织/账号/预置科目并自动登录。
+func (h *Handler) RegisterOrg(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.Fail(c, http.StatusBadRequest, "INVALID_REQUEST", "请填写组织名称、账号与密码")
+		return
+	}
+
+	token, expiresAt, err := h.svc.RegisterOrg(req.OrgName, req.Username, req.Password)
+	if err != nil {
+		code := "REGISTER_FAILED"
+		msg := "注册失败，请重试"
+		switch err {
+		case ErrInvalidOrgName:
+			code, msg = "INVALID_ORG_NAME", "请填写组织名称"
+		case ErrInvalidPassword:
+			code, msg = "INVALID_PASSWORD", "密码至少 6 位"
+		case ErrUsernameTaken:
+			code, msg = "USERNAME_TAKEN", "该账号已存在，请更换"
+		}
+		platform.Fail(c, http.StatusBadRequest, code, msg)
+		return
+	}
+
+	setSessionCookie(c, token, expiresAt)
+	platform.OK(c, gin.H{
+		"orgName":   req.OrgName,
+		"user":      gin.H{"username": req.Username},
+		"expiresAt": expiresAt,
+	})
 }
 
 type loginRequest struct {

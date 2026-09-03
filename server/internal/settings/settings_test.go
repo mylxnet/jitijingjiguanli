@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -23,9 +24,11 @@ func newEnv(t *testing.T) *gin.Engine {
 	if err := platform.Migrate(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	seedTestOrg(t, db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(db).Register(r)
+	authed := r.Group("", orgCtx())
+	NewHandler(db).Register(authed)
 	return r
 }
 
@@ -82,3 +85,22 @@ func TestSettingsRoundtrip(t *testing.T) {
 		t.Errorf("负数应 400，实际 %d", w.Code)
 	}
 }
+
+// seedTestOrg 插入固定测试组织（id=1，每个测试库独立，首个组织 id 恒为 1）。
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
+func orgCtx() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", int64(1))
+		c.Set("userID", int64(1))
+		c.Next()
+	}
+}
+

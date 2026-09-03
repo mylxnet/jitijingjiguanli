@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/platform"
 )
 
@@ -46,7 +47,15 @@ func (h *Handler) ListChangelog(c *gin.Context) {
 		return
 	}
 
-	items, err := h.repo.ListByEntity(entityType, entityID)
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+			Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+		})
+		return
+	}
+
+	items, err := h.repo.ListByEntity(orgID, entityType, entityID)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "查询变更日志失败",

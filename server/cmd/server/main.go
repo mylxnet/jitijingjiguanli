@@ -4,7 +4,6 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,12 +33,8 @@ func main() {
 	}
 
 	authSvc := auth.NewService(db)
-	// 首次部署引导：仅在库中无用户且环境变量齐全时创建初始账号。
-	if u, p := os.Getenv("ADMIN_USERNAME"), os.Getenv("ADMIN_PASSWORD"); u != "" && p != "" {
-		if err := authSvc.EnsureInitialUser(u, p); err != nil {
-			log.Fatalf("创建初始账号失败: %v", err)
-		}
-	}
+	// v0.3 起采用自助注册：部署后由使用者在登录页「注册组织」（组织名+账号+密码），
+	// 服务端在注册事务内创建组织并初始化预置科目。不再使用环境变量引导初始账号。
 
 	r := gin.New()
 	r.Use(gin.Recovery())

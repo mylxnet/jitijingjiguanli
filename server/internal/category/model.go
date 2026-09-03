@@ -6,13 +6,16 @@ import "time"
 // Category 对应 category 表。
 type Category struct {
 	ID                       int64     `json:"id"`
+	OrgID                    int64     `json:"orgId"`
 	Name                     string    `json:"name"`
 	Level                    int       `json:"level"`
 	ParentID                 *int64    `json:"parentId"`
 	Status                   string    `json:"status"`
-	BalanceType              string    `json:"balanceType"`
+	BalanceType              string    `json:"balanceType"` // residual 余粮 / spending 花费
+	Kind                     string    `json:"kind"`        // normal 普通 / asset 资产型（D10）
 	OpeningBalanceCents      int64     `json:"openingBalanceCents"`
 	IncludeInReconciliation  bool      `json:"includeInReconciliation"`
+	Preset                   bool      `json:"preset"`
 	SortOrder                int       `json:"sortOrder"`
 	CreatedAt                time.Time `json:"createdAt"`
 	UpdatedAt                time.Time `json:"updatedAt"`
@@ -28,12 +31,13 @@ type CreateCategoryRequest struct {
 	Level                   int    `json:"level" binding:"required,oneof=1 2"`
 	ParentID                *int64 `json:"parentId"`
 	BalanceType             string `json:"balanceType" binding:"required,oneof=residual spending"`
+	Kind                    *string `json:"kind" binding:"omitempty,oneof=normal asset"`
 	OpeningBalanceCents     int64  `json:"openingBalanceCents"`
 	IncludeInReconciliation *bool  `json:"includeInReconciliation"`
 	SortOrder               int    `json:"sortOrder"`
 }
 
-// UpdateCategoryRequest 更新科目请求。
+// UpdateCategoryRequest 更新科目请求（kind 不可变）。
 type UpdateCategoryRequest struct {
 	Name                    *string `json:"name"`
 	Status                  *string `json:"status" binding:"omitempty,oneof=active inactive"`

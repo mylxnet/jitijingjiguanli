@@ -26,18 +26,20 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	if err := platform.Migrate(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	seedTestOrg(t, db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(db).Register(r)
+	authed := r.Group("", orgCtx())
+	NewHandler(db).Register(authed)
 	return db, r
 }
 
 func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, status, bt string) int64 {
 	t.Helper()
 	now := time.Now().UTC()
-	res, err := db.Exec(`INSERT INTO category(name, level, parent_id, status, balance_type,
+	res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, balance_type,
 		opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-		VALUES(?,?,?,?,?,0,0,0,?,?)`, name, level, parent, status, bt, now, now)
+		VALUES(1,?,?,?,?,?,0,0,0,?,?)`, name, level, parent, status, bt, now, now)
 	if err != nil {
 		t.Fatalf("插入科目 %s 失败: %v", name, err)
 	}
@@ -229,3 +231,22 @@ func TestUpdateValidations(t *testing.T) {
 		}
 	}
 }
+
+// seedTestOrg 插入固定测试组织（id=1，每个测试库独立，首个组织 id 恒为 1）。
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
+func orgCtx() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", int64(1))
+		c.Set("userID", int64(1))
+		c.Next()
+	}
+}
+

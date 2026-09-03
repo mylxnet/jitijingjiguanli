@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/changelog"
 	"jititaizhang/server/internal/platform"
@@ -48,6 +49,12 @@ func (h *Handler) Register(r gin.IRouter) {
 // CreateTransfer 创建一笔转账。
 // POST /api/transfers
 func (h *Handler) CreateTransfer(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
 	var req CreateTransferRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -90,6 +97,16 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 	if src.Status != "active" {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
 			Code: "CATEGORY_INACTIVE", Message: "转出科目已停用",
+		})
+		return
+	}
+	if src.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, platform.ErrCategoryNotFound)
+		return
+	}
+	if src.Kind == "asset" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "TRANSFER_ASSET", Message: "科目间转账仅限普通科目；资产科目的进出请使用「资金划转」",
 		})
 		return
 	}
@@ -155,6 +172,16 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 			})
 			return
 		}
+		if dst.OrgID != orgID {
+			platform.ErrResponse(c, http.StatusNotFound, platform.ErrCategoryNotFound)
+			return
+		}
+		if dst.Kind == "asset" {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "TRANSFER_ASSET", Message: "科目间转账仅限普通科目；资产科目的进出请使用「资金划转」",
+			})
+			return
+		}
 		if dst.BalanceType == "spending" {
 			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
 				Code:    "TRANSFER_SPENDING_LEG",
@@ -190,6 +217,7 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 		note = &req.Note
 	}
 	t := &Transfer{
+		OrgID:             orgID,
 		TxnDate:           req.TxnDate,
 		SourceCategoryID:  req.SourceCategoryID,
 		SourceAmountCents: req.SourceAmountCents,
@@ -206,7 +234,7 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 	}
 
 	// 记录创建日志
-	h.clRepo.LogCreate("transfer", created.ID)
+	h.clRepo.LogCreate(orgID, "transfer", created.ID)
 
 	platform.SuccessResponse(c, created)
 }
@@ -214,6 +242,11 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 // ListTransfers 查询转账记录列表。
 // GET /api/transfers
 func (h *Handler) ListTransfers(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
 	from := c.Query("from")
 	to := c.Query("to")
 
@@ -233,7 +266,7 @@ func (h *Handler) ListTransfers(c *gin.Context) {
 		}
 	}
 
-	items, total, err := h.repo.List(from, to, categoryID, page, pageSize)
+	items, total, err := h.repo.List(orgID, from, to, categoryID, page, pageSize)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "查询转账记录失败",
@@ -251,6 +284,12 @@ func (h *Handler) ListTransfers(c *gin.Context) {
 // UpdateTransfer 作废/撤销转账。
 // PUT /api/transfers/:id
 func (h *Handler) UpdateTransfer(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -266,7 +305,7 @@ func (h *Handler) UpdateTransfer(c *gin.Context) {
 		})
 		return
 	}
-	if t == nil {
+	if t == nil || t.OrgID != orgID {
 		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
 			Code: "TRANSFER_NOT_FOUND", Message: "转账不存在",
 		})
@@ -290,7 +329,7 @@ func (h *Handler) UpdateTransfer(c *gin.Context) {
 		return
 	}
 
-	if err := h.repo.UpdateStatus(id, *req.Status, platform.Now()); err != nil {
+	if err := h.repo.UpdateStatus(id, orgID, *req.Status, platform.Now()); err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "更新转账状态失败",
 		})
@@ -299,7 +338,11 @@ func (h *Handler) UpdateTransfer(c *gin.Context) {
 
 	// 记录变更日志（仅状态实际变化时）
 	if *req.Status != t.Status {
-		h.clRepo.LogChangeVoid("transfer", id, t.Status, *req.Status)
+		action := "void"
+		if *req.Status == "normal" {
+			action = "unvoid"
+		}
+		h.clRepo.LogChangeVoid(orgID, "transfer", id, action, t.Status, *req.Status)
 	}
 
 	updated, err := h.repo.FindByID(id)
@@ -318,4 +361,10 @@ func toSlice(items []*Transfer) []Transfer {
 		result[i] = *item
 	}
 	return result
+}
+
+func (h *Handler) unauthorized(c *gin.Context) {
+	platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+		Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+	})
 }

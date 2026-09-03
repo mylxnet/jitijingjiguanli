@@ -25,9 +25,11 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	if err := platform.Migrate(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	seedTestOrg(t, db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(db).Register(r)
+	authed := r.Group("", orgCtx())
+	NewHandler(db).Register(authed)
 	return db, r
 }
 
@@ -38,9 +40,9 @@ func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, statu
 	if reconcile {
 		inc = 1
 	}
-	res, err := db.Exec(`INSERT INTO category(name, level, parent_id, status, balance_type,
+	res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, balance_type,
 		opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-		VALUES(?,?,?,?,?,?,?,0,?,?)`, name, level, parent, status, bt, opening, inc, now, now)
+		VALUES(1,?,?,?,?,?,?,?,0,?,?)`, name, level, parent, status, bt, opening, inc, now, now)
 	if err != nil {
 		t.Fatalf("插入科目失败: %v", err)
 	}
@@ -50,29 +52,29 @@ func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, statu
 
 func seedTxn(t *testing.T, db *sql.DB, date, dir string, amount, catID int64) {
 	t.Helper()
-	if _, err := db.Exec(`INSERT INTO txn(txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES(?,?,?,?,NULL,'normal','2026-09-01','2026-09-01')`, date, dir, amount, catID); err != nil {
+	if _, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
+		VALUES(1,?,?,?,?,NULL,'normal','2026-09-01','2026-09-01')`, date, dir, amount, catID); err != nil {
 		t.Fatalf("插入流水失败: %v", err)
 	}
 }
 
 func seedVoidTxn(t *testing.T, db *sql.DB, dir string, amount, catID int64) {
 	t.Helper()
-	if _, err := db.Exec(`INSERT INTO txn(txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES('2026-09-15',?,?,?,NULL,'voided','2026-09-01','2026-09-01')`, dir, amount, catID); err != nil {
+	if _, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
+		VALUES(1,'2026-09-15',?,?,?,NULL,'voided','2026-09-01','2026-09-01')`, dir, amount, catID); err != nil {
 		t.Fatalf("插入作废流水失败: %v", err)
 	}
 }
 
 func seedTransfer(t *testing.T, db *sql.DB, sourceID int64, targetID, amount int64) {
 	t.Helper()
-	res, err := db.Exec(`INSERT INTO transfer(txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
-		VALUES('2026-09-10',?,?,NULL,'normal','2026-09-01','2026-09-01')`, sourceID, amount)
+	res, err := db.Exec(`INSERT INTO transfer(org_id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
+		VALUES(1,'2026-09-10',?,?,NULL,'normal','2026-09-01','2026-09-01')`, sourceID, amount)
 	if err != nil {
 		t.Fatalf("插入转账失败: %v", err)
 	}
 	tid, _ := res.LastInsertId()
-	if _, err := db.Exec(`INSERT INTO transfer_leg(transfer_id, category_id, amount_cents) VALUES(?,?,?)`, tid, targetID, amount); err != nil {
+	if _, err := db.Exec(`INSERT INTO transfer_leg(org_id, transfer_id, category_id, amount_cents) VALUES(1,?,?,?)`, tid, targetID, amount); err != nil {
 		t.Fatalf("插入转账明细失败: %v", err)
 	}
 }
@@ -98,7 +100,7 @@ func getSummary(t *testing.T, r *gin.Engine, query string) SummaryResponse {
 func TestCapitalD6(t *testing.T) {
 	db, r := newEnv(t)
 	// 期初银行存款 20 万
-	if err := settings.NewRepo(db).Upsert("bank_opening_balance_cents", "200000"); err != nil {
+	if err := settings.NewRepo(db).Upsert(1, "bank_opening_balance_cents", "200000"); err != nil {
 		t.Fatalf("写入银行期初失败: %v", err)
 	}
 
@@ -163,7 +165,7 @@ func TestCapitalD6(t *testing.T) {
 // TestCapitalWarning 未分配为负时给出警告。
 func TestCapitalWarning(t *testing.T) {
 	db, r := newEnv(t)
-	_ = settings.NewRepo(db).Upsert("bank_opening_balance_cents", "100")
+	_ = settings.NewRepo(db).Upsert(1, "bank_opening_balance_cents", "100")
 	l1 := seedCat(t, db, "专项应付款", 1, nil, "active", "residual", 0, false)
 	_ = seedCat(t, db, "超支专款", 2, l1, "active", "residual", 50000, true)
 
@@ -179,7 +181,7 @@ func TestCapitalWarning(t *testing.T) {
 // TestPeriodFilter 资金构成与科目余额不受区间过滤影响；收支小计随区间。
 func TestPeriodFilter(t *testing.T) {
 	db, r := newEnv(t)
-	_ = settings.NewRepo(db).Upsert("bank_opening_balance_cents", "100000")
+	_ = settings.NewRepo(db).Upsert(1, "bank_opening_balance_cents", "100000")
 	l1 := seedCat(t, db, "经营收入", 1, nil, "active", "residual", 0, false)
 	cat := seedCat(t, db, "出租收入", 2, l1, "active", "residual", 0, false)
 	seedTxn(t, db, "2026-09-01", "income", 50000, cat)
@@ -205,3 +207,22 @@ func TestPeriodFilter(t *testing.T) {
 		t.Errorf("一级本期收入应 70000（区间），实际 %d", root.IncomeCents)
 	}
 }
+
+// seedTestOrg 插入固定测试组织（id=1，每个测试库独立，首个组织 id 恒为 1）。
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
+func orgCtx() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", int64(1))
+		c.Set("userID", int64(1))
+		c.Next()
+	}
+}
+

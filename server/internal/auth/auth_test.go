@@ -13,7 +13,7 @@ import (
 	"jititaizhang/server/internal/platform"
 )
 
-// newTestEnv 建临时库 + 迁移 + 初始账号，并搭好 gin 路由（含受保护路由）。
+// newTestEnv 建临时库 + 迁移，返回认证服务与路由（含受保护路由）。
 func newTestEnv(t *testing.T) (*Service, *gin.Engine) {
 	t.Helper()
 	db, err := platform.Open(filepath.Join(t.TempDir(), "auth.db"))
@@ -26,9 +26,6 @@ func newTestEnv(t *testing.T) (*Service, *gin.Engine) {
 	}
 
 	svc := NewService(db)
-	if err := svc.EnsureInitialUser("admin", "s3cret"); err != nil {
-		t.Fatalf("创建初始账号失败: %v", err)
-	}
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -36,33 +33,74 @@ func newTestEnv(t *testing.T) (*Service, *gin.Engine) {
 	protected := r.Group("/", RequireAuth(svc))
 	protected.GET("/api/me", func(c *gin.Context) {
 		id, _ := CurrentUserID(c)
-		platform.OK(c, gin.H{"userID": id})
+		oid, _ := CurrentOrgID(c)
+		platform.OK(c, gin.H{"userID": id, "orgID": oid})
 	})
 	return svc, r
 }
 
-func TestEnsureInitialUserIdempotent(t *testing.T) {
+// TestRegisterOrg 自助注册：建组织 + 管理员账号 + 预置科目（v0.3 F8）。
+func TestRegisterOrg(t *testing.T) {
 	svc, _ := newTestEnv(t)
-	// 再次调用不应报错、不应新增用户
-	if err := svc.EnsureInitialUser("another", "whatever"); err != nil {
-		t.Fatalf("重复初始化应无副作用: %v", err)
-	}
-	rows, err := svc.repo.db.Query(`SELECT username FROM user`)
+
+	token, expires, err := svc.RegisterOrg("甲村", "admin", "s3cret")
 	if err != nil {
-		t.Fatalf("查询用户失败: %v", err)
+		t.Fatalf("注册失败: %v", err)
 	}
-	defer rows.Close()
-	count := 0
-	for rows.Next() {
-		count++
+	if token == "" || expires.IsZero() {
+		t.Fatal("注册后应签发会话（自动登录）")
 	}
-	if count != 1 {
-		t.Errorf("用户数应为 1，实际 %d", count)
+
+	userID, orgID, err := svc.Resolve(token)
+	if err != nil {
+		t.Fatalf("会话校验失败: %v", err)
+	}
+	if userID <= 0 || orgID <= 0 {
+		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", userID, orgID)
+	}
+
+	// 预置科目（5 一级 + 6 二级，preset=1）
+	var presetCount int
+	if err := svc.repo.db.QueryRow(
+		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
+		t.Fatalf("统计预置科目失败: %v", err)
+	}
+	if presetCount != 11 {
+		t.Errorf("预置科目应为 11 个（5 一级 + 6 二级），实际 %d", presetCount)
+	}
+
+	// 重复账号名 → 友好错误
+	if _, _, err := svc.RegisterOrg("乙村", "admin", "whatever"); err != ErrUsernameTaken {
+		t.Errorf("重复用户名应报 ErrUsernameTaken，实际 %v", err)
+	}
+	// 密码过短
+	if _, _, err := svc.RegisterOrg("乙村", "village2", "123"); err != ErrInvalidPassword {
+		t.Errorf("短密码应报 ErrInvalidPassword，实际 %v", err)
+	}
+	// 缺组织名
+	if _, _, err := svc.RegisterOrg("  ", "village2", "123456"); err != ErrInvalidOrgName {
+		t.Errorf("空组织名应报 ErrInvalidOrgName，实际 %v", err)
+	}
+
+	// 两组织科目相互隔离
+	var org2ID int64
+	_, _, err = svc.RegisterOrg("乙村", "village2", "s3cret2")
+	if err != nil {
+		t.Fatalf("第二个组织注册失败: %v", err)
+	}
+	if err := svc.repo.db.QueryRow(`SELECT org_id FROM user WHERE username='village2'`).Scan(&org2ID); err != nil {
+		t.Fatalf("查询组织失败: %v", err)
+	}
+	if org2ID == orgID {
+		t.Error("两个组织应各自独立 org_id")
 	}
 }
 
 func TestLoginAndSession(t *testing.T) {
 	svc, _ := newTestEnv(t)
+	if _, _, err := svc.RegisterOrg("甲村", "admin", "s3cret"); err != nil {
+		t.Fatalf("注册失败: %v", err)
+	}
 
 	if _, _, err := svc.Login("admin", "wrong"); err != ErrInvalidCredentials {
 		t.Fatalf("错误密码应返回 ErrInvalidCredentials，实际 %v", err)
@@ -79,24 +117,27 @@ func TestLoginAndSession(t *testing.T) {
 		t.Fatal("登录应返回非空 token 与过期时间")
 	}
 
-	userID, err := svc.Resolve(token)
+	userID, orgID, err := svc.Resolve(token)
 	if err != nil {
 		t.Fatalf("会话校验失败: %v", err)
 	}
-	if userID <= 0 {
-		t.Errorf("用户 id 应为正数，实际 %d", userID)
+	if userID <= 0 || orgID <= 0 {
+		t.Errorf("Resolve 应返回用户与组织 id，userID=%d orgID=%d", userID, orgID)
 	}
 
 	if err := svc.Logout(token); err != nil {
 		t.Fatalf("登出失败: %v", err)
 	}
-	if _, err := svc.Resolve(token); err != ErrUnauthorized {
+	if _, _, err := svc.Resolve(token); err != ErrUnauthorized {
 		t.Errorf("登出后会话应失效，实际 %v", err)
 	}
 }
 
 func TestRequireAuth(t *testing.T) {
-	_, r := newTestEnv(t)
+	svc, r := newTestEnv(t)
+	if _, _, err := svc.RegisterOrg("甲村", "admin", "s3cret"); err != nil {
+		t.Fatalf("注册失败: %v", err)
+	}
 
 	// 1) 无 Cookie → 401
 	w := httptest.NewRecorder()
@@ -116,7 +157,7 @@ func TestRequireAuth(t *testing.T) {
 		t.Fatalf("伪造 token 应 401，实际 %d", w.Code)
 	}
 
-	// 3) 登录后携带 Cookie → 200 且能取到 userID
+	// 3) 登录后携带 Cookie → 200 且能取到 userID 与 orgID
 	w = httptest.NewRecorder()
 	body := strings.NewReader(`{"username":"admin","password":"s3cret"}`)
 	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", body)
@@ -149,13 +190,14 @@ func TestRequireAuth(t *testing.T) {
 	var out struct {
 		Data struct {
 			UserID int `json:"userID"`
+			OrgID  int `json:"orgID"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
 	}
-	if out.Data.UserID <= 0 {
-		t.Errorf("受保护路由应能取到用户 id，实际 %d", out.Data.UserID)
+	if out.Data.UserID <= 0 || out.Data.OrgID <= 0 {
+		t.Errorf("受保护路由应能取到用户与组织 id，userID=%d orgID=%d", out.Data.UserID, out.Data.OrgID)
 	}
 }
 
@@ -170,6 +212,19 @@ func TestLoginBadRequest(t *testing.T) {
 		t.Fatalf("缺少密码应 400，实际 %d", w.Code)
 	}
 	assertErrCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+// TestRegisterBadRequest 注册参数缺失 → 400。
+func TestRegisterBadRequest(t *testing.T) {
+	_, r := newTestEnv(t)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register",
+		strings.NewReader(`{"orgName":"甲村"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("注册缺账号应 400，实际 %d", w.Code)
+	}
 }
 
 func assertErrCode(t *testing.T, body []byte, want string) {

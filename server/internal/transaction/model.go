@@ -6,6 +6,7 @@ import "time"
 // Transaction 对应 txn 表。
 type Transaction struct {
 	ID          int64     `json:"id"`
+	OrgID       int64     `json:"orgId"`
 	TxnDate     string    `json:"txnDate"`
 	Direction   string    `json:"direction"`
 	AmountCents int64     `json:"amountCents"`

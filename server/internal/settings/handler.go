@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/platform"
 )
 
@@ -29,7 +30,12 @@ func (h *Handler) Register(r gin.IRouter) {
 // GetSettings 读取系统配置。
 // GET /api/settings
 func (h *Handler) GetSettings(c *gin.Context) {
-	s, err := h.repo.Get()
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	s, err := h.repo.Get(orgID)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "读取配置失败",
@@ -39,9 +45,21 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	platform.SuccessResponse(c, s)
 }
 
+func (h *Handler) unauthorized(c *gin.Context) {
+	platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+		Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+	})
+}
+
 // UpdateSettings 修改系统配置。
 // PUT /api/settings
 func (h *Handler) UpdateSettings(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
 	var req UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -57,7 +75,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 			})
 			return
 		}
-		if err := h.repo.Upsert("bank_opening_balance_cents",
+		if err := h.repo.Upsert(orgID, "bank_opening_balance_cents",
 			fmt.Sprintf("%d", *req.BankOpeningBalanceCents)); err != nil {
 			platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 				Code: "INTERNAL_ERROR", Message: "保存配置失败",
@@ -66,7 +84,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	s, err := h.repo.Get()
+	s, err := h.repo.Get(orgID)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "读取配置失败",

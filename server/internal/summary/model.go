@@ -1,28 +1,30 @@
 // Package summary 提供汇总查询：资金构成、科目余额、收支小计。
 package summary
 
-// Capital 资金构成（见 D6）。
+// Capital 资金构成（D6/D10）。
 type Capital struct {
-	BankBalanceCents    int64 `json:"bankBalanceCents"`    // 银行存款余额 = 期初 + 收 - 支
-	EarmarkedCents      int64 `json:"earmarkedCents"`      // 专项资金合计 = Σ(参与勾稽科目余额)
-	UnallocatedCents    int64 `json:"unallocatedCents"`    // 未分配 = bank - earmarked
+	BankBalanceCents    int64  `json:"bankBalanceCents"`    // 银行存款余额 = 期初 + Σ收 − Σ支 ± 资金划转
+	AssetTotalCents     int64  `json:"assetTotalCents"`     // 投资资产合计 = Σ(资产科目余额)（D10）
+	EarmarkedCents      int64  `json:"earmarkedCents"`      // 专项资金合计 = Σ(参与勾稽科目余额)
+	UnallocatedCents    int64  `json:"unallocatedCents"`    // 未分配 = (bank + asset) − earmarked
 	Warning             string `json:"warning,omitempty"`    // 警告（未分配为负时）
 }
 
 // CategorySummary 单个科目汇总。
 type CategorySummary struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	Level             int    `json:"level"`
-	ParentID          *int64 `json:"parentId,omitempty"`
-	BalanceType       string `json:"balanceType"` // residual / spending
-	OpeningBalanceCents int64 `json:"openingBalanceCents"`
-	IncludeInReconciliation bool `json:"includeInReconciliation"`
-	CurrentBalanceCents int64 `json:"currentBalanceCents"` // 当前余额（实时计算）
-	TxnCount           int   `json:"txnCount"`           // 流水笔数
-	IncomeCents        int64 `json:"incomeCents"`        // 区间内收入
-	ExpenseCents       int64 `json:"expenseCents"`       // 区间内支出
-	Children           []*CategorySummary `json:"children,omitempty"`
+	ID                      int64   `json:"id"`
+	Name                    string  `json:"name"`
+	Level                   int     `json:"level"`
+	ParentID                *int64  `json:"parentId,omitempty"`
+	BalanceType             string  `json:"balanceType"`  // residual / spending
+	Kind                    string  `json:"kind"`         // normal / asset
+	OpeningBalanceCents     int64   `json:"openingBalanceCents"`
+	IncludeInReconciliation bool    `json:"includeInReconciliation"`
+	CurrentBalanceCents     int64   `json:"currentBalanceCents"` // 当前余额（实时计算）
+	TxnCount                int     `json:"txnCount"`            // 流水笔数
+	IncomeCents             int64   `json:"incomeCents"`         // 区间内收入
+	ExpenseCents            int64   `json:"expenseCents"`        // 区间内支出
+	Children                []*CategorySummary `json:"children,omitempty"`
 }
 
 // SummaryResponse 汇总响应。

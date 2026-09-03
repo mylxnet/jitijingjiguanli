@@ -111,19 +111,19 @@ func (n *catNames) pathOf(catID int64) string {
 // ===== 三种内容的数据渲染 =====
 
 // txnSheet 收支流水明细。
-func (r *renderer) txnSheet(q ExportQuery) (*xlSheet, error) {
+func (r *renderer) txnSheet(orgID int64, q ExportQuery) (*xlSheet, error) {
 	// 一次性全量拉取（页面按 200 条分页，导出不走分页语义；规模上限可接受）
-	txns, _, err := r.txn.List(q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided, 1, 1000000)
+	txns, _, err := r.txn.List(orgID, q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided, 1, 1000000)
 	if err != nil {
 		return nil, fmt.Errorf("查询流水失败: %w", err)
 	}
-	cats, err := r.cat.FindAll()
+	cats, err := r.cat.FindAll(orgID)
 	if err != nil {
 		return nil, fmt.Errorf("查询科目失败: %w", err)
 	}
 	names := loadCatNames(cats)
 
-	incSum, expSum, err := r.txn.GetSummary(q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided)
+	incSum, expSum, err := r.txn.GetSummary(orgID, q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided)
 	if err != nil {
 		return nil, fmt.Errorf("统计收支失败: %w", err)
 	}
@@ -163,8 +163,8 @@ func (r *renderer) txnSheet(q ExportQuery) (*xlSheet, error) {
 }
 
 // summarySheet 区间收支汇总（科目分级小计 + 资金构成）。
-func (r *renderer) summarySheet(q ExportQuery) (*xlSheet, error) {
-	res, err := r.sum.GetSummary(q.From, q.To)
+func (r *renderer) summarySheet(orgID int64, q ExportQuery) (*xlSheet, error) {
+	res, err := r.sum.GetSummary(orgID, q.From, q.To)
 	if err != nil {
 		return nil, fmt.Errorf("查询汇总失败: %w", err)
 	}
@@ -207,8 +207,8 @@ func (r *renderer) summarySheet(q ExportQuery) (*xlSheet, error) {
 }
 
 // balanceSheet 科目余额表（D8）：按一级分组列二级的期初/当前余额，一级合计，表尾资金构成。
-func (r *renderer) balanceSheet(q ExportQuery) (*xlSheet, error) {
-	res, err := r.sum.GetSummary("", "")
+func (r *renderer) balanceSheet(orgID int64, q ExportQuery) (*xlSheet, error) {
+	res, err := r.sum.GetSummary(orgID, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("查询科目余额失败: %w", err)
 	}

@@ -28,9 +28,11 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	if err := platform.Migrate(db); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	seedTestOrg(t, db)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(db).Register(r)
+	authed := r.Group("", orgCtx())
+	NewHandler(db).Register(authed)
 	return db, r
 }
 
@@ -39,7 +41,7 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 func seedAll(t *testing.T, db *sql.DB) {
 	t.Helper()
 	now := time.Now().UTC()
-	if _, err := db.Exec(`INSERT INTO app_setting(key, value) VALUES('bank_opening_balance_cents','100000')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO app_setting(org_id, key, value) VALUES(1,'bank_opening_balance_cents','100000')`); err != nil {
 		t.Fatalf("设期初失败: %v", err)
 	}
 	mk := func(name string, level int, parent any, bt string, opening int64, recon bool) int64 {
@@ -47,9 +49,9 @@ func seedAll(t *testing.T, db *sql.DB) {
 		if recon {
 			inc = 1
 		}
-		res, err := db.Exec(`INSERT INTO category(name, level, parent_id, status, balance_type,
+		res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, balance_type,
 			opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-			VALUES(?,?,?,?,?,?,?,0,?,?)`, name, level, parent, "active", bt, opening, inc, now, now)
+			VALUES(1,?,?,?,?,?,?,?,0,?,?)`, name, level, parent, "active", bt, opening, inc, now, now)
 		if err != nil {
 			t.Fatalf("建科目 %s 失败: %v", name, err)
 		}
@@ -63,8 +65,8 @@ func seedAll(t *testing.T, db *sql.DB) {
 	office := mk("办公费", 2, l1Exp, "spending", 0, false)
 
 	txn := func(date, dir string, amt int64, cat int64, status string) {
-		if _, err := db.Exec(`INSERT INTO txn(txn_date, direction, amount_cents, category_id, note, status, created_at, updated_at)
-			VALUES(?,?,?,?,NULL,?,?,?)`, date, dir, amt, cat, status, now, now); err != nil {
+		if _, err := db.Exec(`INSERT INTO txn(org_id, txn_date, direction, amount_cents, category_id, note, status, created_at, updated_at)
+			VALUES(1,?,?,?,?,NULL,?,?,?)`, date, dir, amt, cat, status, now, now); err != nil {
 			t.Fatalf("记流水失败: %v", err)
 		}
 	}
@@ -308,3 +310,22 @@ func TestExportValidation(t *testing.T) {
 		}
 	}
 }
+
+// seedTestOrg 插入固定测试组织（id=1，每个测试库独立，首个组织 id 恒为 1）。
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
+func orgCtx() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("orgID", int64(1))
+		c.Set("userID", int64(1))
+		c.Next()
+	}
+}
+

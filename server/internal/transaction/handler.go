@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/changelog"
 	"jititaizhang/server/internal/platform"
@@ -47,6 +48,12 @@ func (h *Handler) Register(r gin.IRouter) {
 // CreateTransaction 记一笔。
 // POST /api/transactions
 func (h *Handler) CreateTransaction(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
 	var req CreateTransactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -90,6 +97,16 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 		})
 		return
 	}
+	if cat.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, platform.ErrCategoryNotFound)
+		return
+	}
+	if cat.Kind == "asset" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "CATEGORY_IS_ASSET", Message: "资产型科目不能直接记收/支，请使用「资金划转」",
+		})
+		return
+	}
 
 	// 校验方向
 	if req.Direction != "income" && req.Direction != "expense" {
@@ -102,6 +119,7 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 		note = &req.Note
 	}
 	txn := &Transaction{
+		OrgID:       orgID,
 		TxnDate:     req.TxnDate,
 		Direction:   req.Direction,
 		AmountCents: req.AmountCents,
@@ -118,14 +136,25 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 	}
 
 	// 记录创建日志
-	h.clRepo.LogCreate("transaction", created.ID)
+	h.clRepo.LogCreate(orgID, "transaction", created.ID)
 
 	platform.SuccessResponse(c, created)
+}
+
+func (h *Handler) unauthorized(c *gin.Context) {
+	platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+		Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+	})
 }
 
 // ListTransactions 流水列表 + 筛选。
 // GET /api/transactions
 func (h *Handler) ListTransactions(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
 	from := c.Query("from")
 	to := c.Query("to")
 	keyword := c.Query("keyword")
@@ -159,7 +188,7 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 		}
 	}
 
-	items, total, err := h.repo.List(from, to, categoryID, keyword, minAmount, maxAmount, includeVoided, page, pageSize)
+	items, total, err := h.repo.List(orgID, from, to, categoryID, keyword, minAmount, maxAmount, includeVoided, page, pageSize)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "查询流水失败",
@@ -167,7 +196,7 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 		return
 	}
 
-	incomeTotal, expenseTotal, err := h.repo.GetSummary(from, to, categoryID, keyword, minAmount, maxAmount, includeVoided)
+	incomeTotal, expenseTotal, err := h.repo.GetSummary(orgID, from, to, categoryID, keyword, minAmount, maxAmount, includeVoided)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "计算汇总失败",
@@ -193,6 +222,12 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 // UpdateTransaction 编辑流水 / 作废 / 撤销作废。
 // PUT /api/transactions/:id
 func (h *Handler) UpdateTransaction(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -208,7 +243,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		})
 		return
 	}
-	if txn == nil {
+	if txn == nil || txn.OrgID != orgID {
 		platform.ErrResponse(c, http.StatusNotFound, platform.ErrTransactionNotFound)
 		return
 	}
@@ -271,6 +306,16 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 			})
 			return
 		}
+		if cat.OrgID != orgID {
+			platform.ErrResponse(c, http.StatusNotFound, platform.ErrCategoryNotFound)
+			return
+		}
+		if cat.Kind == "asset" {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "CATEGORY_IS_ASSET", Message: "资产型科目不能直接记收/支，请使用「资金划转」",
+			})
+			return
+		}
 	}
 
 	updates := make(map[string]any)
@@ -293,7 +338,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		updates["status"] = *req.Status
 	}
 
-	if err := h.repo.Update(id, updates); err != nil {
+	if err := h.repo.Update(id, orgID, updates); err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "更新流水失败",
 		})
@@ -308,23 +353,23 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		}
 		field := "status"
 		old, new := txn.Status, *req.Status
-		_ = h.clRepo.LogChange("transaction", id, action, &field, &old, &new)
+		_ = h.clRepo.LogChange(orgID, "transaction", id, action, &field, &old, &new)
 	}
 	if req.Date != nil && *req.Date != txn.TxnDate {
-		h.clRepo.LogUpdateField("transaction", id, "txn_date", txn.TxnDate, *req.Date)
+		h.clRepo.LogUpdateField(orgID, "transaction", id, "txn_date", txn.TxnDate, *req.Date)
 	}
 	if req.Direction != nil && *req.Direction != txn.Direction {
-		h.clRepo.LogUpdateField("transaction", id, "direction", txn.Direction, *req.Direction)
+		h.clRepo.LogUpdateField(orgID, "transaction", id, "direction", txn.Direction, *req.Direction)
 	}
 	if req.AmountCents != nil && *req.AmountCents != txn.AmountCents {
 		oldStr := strconv.FormatInt(txn.AmountCents, 10)
 		newStr := strconv.FormatInt(*req.AmountCents, 10)
-		h.clRepo.LogUpdateField("transaction", id, "amount_cents", oldStr, newStr)
+		h.clRepo.LogUpdateField(orgID, "transaction", id, "amount_cents", oldStr, newStr)
 	}
 	if req.CategoryID != nil && *req.CategoryID != txn.CategoryID {
 		oldStr := strconv.FormatInt(txn.CategoryID, 10)
 		newStr := strconv.FormatInt(*req.CategoryID, 10)
-		h.clRepo.LogUpdateField("transaction", id, "category_id", oldStr, newStr)
+		h.clRepo.LogUpdateField(orgID, "transaction", id, "category_id", oldStr, newStr)
 	}
 	if req.Note != nil {
 		oldNote := ""
@@ -332,7 +377,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 			oldNote = *txn.Note
 		}
 		if *req.Note != oldNote {
-			h.clRepo.LogUpdateField("transaction", id, "note", oldNote, *req.Note)
+			h.clRepo.LogUpdateField(orgID, "transaction", id, "note", oldNote, *req.Note)
 		}
 	}
 
