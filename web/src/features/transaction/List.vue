@@ -293,7 +293,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { api } from '../../lib/http'
 import { downloadExport } from '../../lib/download'
 import { formatFen, formatDate } from '../../types/api'
@@ -346,6 +346,7 @@ interface MergedRow {
 }
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(true)
 const transactions = ref<Transaction[]>([])
 const transfers = ref<TransferItem[]>([])
@@ -403,6 +404,17 @@ const summary = computed(() => {
 })
 
 onMounted(async () => {
+  // 汇总页「点二级科目看流水」会带 from/to/categoryId 跳转过来
+  const q = route.query
+  if (typeof q.from === 'string' && q.from) filters.value.dateFrom = q.from
+  if (typeof q.to === 'string' && q.to) filters.value.dateTo = q.to
+  if (typeof q.categoryId === 'string' && q.categoryId) {
+    const id = Number(q.categoryId)
+    if (Number.isFinite(id) && id > 0) {
+      filters.value.categoryId = id
+      filters.value.categoryName = typeof q.categoryName === 'string' ? q.categoryName : ''
+    }
+  }
   await loadData()
 })
 
@@ -454,7 +466,7 @@ const categoryFilterOptions = computed(() => {
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'normal') {
+        if (l2.status === 'active' && l2.kind === 'equity') {
           options.push({
             text: `${l1.name} / ${l2.name}`,
             value: l2.id,
@@ -645,7 +657,7 @@ const categoryOptions = computed(() => {
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'normal') {
+        if (l2.status === 'active' && l2.kind === 'equity') {
           options.push({
             text: `${l1.name} / ${l2.name}`,
             value: l2.id,

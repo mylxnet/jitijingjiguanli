@@ -28,7 +28,7 @@
             <span class="l1-name">{{ l1.name }}</span>
             <span class="l1-badge">一级</span>
             <span v-if="l1.preset" class="l1-chip preset">预置</span>
-            <span class="l1-chip" :class="l1.balanceType">{{ l1.balanceType === 'residual' ? '余粮型' : '花费型' }}</span>
+            <span class="l1-chip">分组</span>
           </div>
           <div class="l1-actions">
             <van-button size="mini" plain @click="openAddL2(l1)">+二级</van-button>
@@ -42,12 +42,9 @@
             <div class="l2-info">
               <span class="l2-name">{{ l2.name }}</span>
               <span v-if="l2.preset" class="l2-chip preset">预置</span>
-              <span v-if="l2.kind === 'asset'" class="l2-chip asset">资产</span>
-              <span v-else class="l2-chip" :class="l2.balanceType">{{ l2.balanceType === 'residual' ? '余粮' : '花费' }}</span>
-              <span v-if="l2.includeInReconciliation" class="l2-chip reconcile">勾稽</span>
+              <span class="l2-chip" :class="l2.kind">{{ l2.kind === 'asset' ? '资产' : '权益' }}</span>
               <span v-if="l2.status === 'inactive'" class="l2-chip stopped">已停用</span>
               <span class="l2-balance">{{ l2.kind === 'asset' ? '在外' : '余额' }} {{ formatFen(l2.balanceCents ?? 0) }}</span>
-              <span v-if="l2.kind !== 'asset'" class="l2-opening">期初 {{ formatFen(l2.openingBalanceCents) }}</span>
               <span v-if="l2.kind !== 'asset' && l2.txnCount != null" class="l2-count">{{ l2.txnCount }}笔</span>
             </div>
             <div class="l2-actions">
@@ -71,45 +68,36 @@
       已被引用的科目不能删除，只能停用
     </div>
 
-    <!-- 新增一级科目对话框（一级是分组容器：余额=子级之和，不支持期初与勾稽，故只填名称） -->
+    <!-- 新增一级科目对话框（一级是分组容器，只填名称） -->
     <van-dialog v-model:show="showAddDialog" title="新增一级科目" show-cancel-button @confirm="handleAddL1">
-      <div class="dialog-tip">一级科目用于分组，期初余额和余额类型请在其下的二级科目上设置</div>
+      <div class="dialog-tip">一级科目用于分组，二级科目才选择「资产/权益」类型</div>
       <van-field v-model="addForm.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
     </van-dialog>
 
     <!-- 新增/编辑二级科目对话框 -->
     <van-dialog v-model:show="showAddL2Dialog" :title="editL2Mode ? '编辑二级科目' : '新增二级科目 - ' + addL2ParentName" show-cancel-button @confirm="handleAddL2">
-      <van-field v-model="addL2Form.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
+      <van-field v-model="addL2Form.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]">
+        <template v-if="!editL2Mode" #button>
+          <span class="unit-quick" @click="openUnitPicker">选择往来单位 ▾</span>
+        </template>
+      </van-field>
+      <div v-if="!editL2Mode && unitList.length === 0" class="field-hint">
+        暂无往来单位；可手动输入科目名，或先到「往来」页新增单位
+      </div>
       <van-field v-if="!editL2Mode" label="科目类型">
         <template #input>
           <van-radio-group v-model="addL2Form.kind" direction="horizontal">
-            <van-radio name="normal">普通</van-radio>
+            <van-radio name="equity">权益</van-radio>
             <van-radio name="asset">资产</van-radio>
           </van-radio-group>
         </template>
       </van-field>
-      <div v-if="addL2Form.kind === 'asset'" class="field-hint">
-        资产科目记录投到银行外的钱（如对外投资）：无期初、不参与勾稽，进出只能用「资金划转」
+      <div v-if="!editL2Mode && addL2Form.kind === 'asset'" class="field-hint">
+        资产科目代表投到银行外的钱（如对外投资某公司），进出只能走「资金划转」
       </div>
-      <template v-else>
-        <van-field label="余额类型">
-          <template #input>
-            <van-radio-group v-model="addL2Form.balanceType" direction="horizontal">
-              <van-radio name="residual">余粮型</van-radio>
-              <van-radio name="spending">花费型</van-radio>
-            </van-radio-group>
-          </template>
-        </van-field>
-        <van-field v-model="addL2Form.openingBalance" label="期初余额" type="number" placeholder="0" />
-        <van-field label="参与资金勾稽" v-if="addL2Form.balanceType === 'residual'">
-          <template #input>
-            <van-switch v-model="addL2Form.includeInReconciliation" size="20" />
-          </template>
-        </van-field>
-        <div v-else class="field-hint">
-          花费型科目不能参与资金勾稽
-        </div>
-      </template>
+      <div v-else-if="!editL2Mode" class="field-hint">
+        权益科目记录收入/支出的去向与来源（补助、收益、分配、公益等），收增支减
+      </div>
     </van-dialog>
 
     <!-- 重命名对话框 -->
@@ -296,6 +284,7 @@
               type="warning"
               @click="voidFundMove(mv)"
             >作废</van-button>
+            <van-button size="mini" plain @click="openMoveChangelog(mv)">留痕</van-button>
           </div>
         </div>
       </div>
@@ -309,6 +298,18 @@
       @select="onAssetCategorySelect"
       @cancel="showAssetPicker = false"
     />
+
+    <!-- 划转留痕查看 -->
+    <ChangeLogDialog v-model:show="chgShow" entity-type="fund_move" :entity-id="chgId" />
+
+    <!-- 往来单位选择（填入科目名称） -->
+    <van-action-sheet
+      v-model:show="showUnitPicker"
+      title="选择往来单位（自动填入科目名称）"
+      :actions="unitActions"
+      @select="onUnitSelect"
+      @cancel="showUnitPicker = false"
+    />
   </div>
 </template>
 
@@ -316,18 +317,33 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { showToast, showDialog } from 'vant'
-import type { Category, FundMove, FundMoveListResponse, ApiResponse } from '../../types/api'
+import ChangeLogDialog from '../../components/ChangeLogDialog.vue'
+import type { Category, Party, FundMove, FundMoveListResponse, ApiResponse } from '../../types/api'
 import { formatFen, todayStr } from '../../types/api'
 
 const loading = ref(true)
 const categories = ref<Category[]>([])
 
+// ---- 往来单位（新增二级科目名称下拉，需求：可下拉自动填入） ----
+const unitList = ref<Party[]>([])
+const showUnitPicker = ref(false)
+const unitActions = computed(() => unitList.value.map(p => ({ name: p.name, value: p.id })))
+
+async function loadUnits() {
+  try {
+    const res = await api.get<ApiResponse<Party[]>>('/parties')
+    unitList.value = res.data || []
+  } catch {
+    unitList.value = []
+  }
+}
+
 // ---- 新增一级 ----
 const showAddDialog = ref(false)
-const addForm = ref({ name: '', balanceType: 'residual' as 'residual' | 'spending', openingBalance: '0' })
+const addForm = ref({ name: '' })
 
 function openAddL1() {
-  addForm.value = { name: '', balanceType: 'residual', openingBalance: '0' }
+  addForm.value = { name: '' }
   showAddDialog.value = true
 }
 
@@ -337,20 +353,14 @@ const editL2Mode = ref(false)
 const editL2Id = ref(0)
 const addL2Form = ref({
   name: '',
-  kind: 'normal' as 'normal' | 'asset',
-  balanceType: 'residual' as 'residual' | 'spending',
-  openingBalance: '0',
-  includeInReconciliation: false,
+  kind: 'equity' as 'equity' | 'asset',
 })
 const addL2ParentId = ref<number | null>(null)
 const addL2ParentName = ref('')
 
 const defaultAddL2Form = () => ({
   name: '',
-  kind: 'normal' as 'normal' | 'asset',
-  balanceType: 'residual' as 'residual' | 'spending',
-  openingBalance: '0',
-  includeInReconciliation: false,
+  kind: 'equity' as 'equity' | 'asset',
 })
 
 function openAddL2(l1: Category) {
@@ -370,11 +380,17 @@ function editL2(l2: Category) {
   addL2Form.value = {
     name: l2.name,
     kind: l2.kind,
-    balanceType: l2.balanceType,
-    openingBalance: String(l2.openingBalanceCents / 100),
-    includeInReconciliation: l2.includeInReconciliation,
   }
   showAddL2Dialog.value = true
+}
+
+function openUnitPicker() {
+  showUnitPicker.value = true
+}
+
+function onUnitSelect(action: { name: string; value: number }) {
+  addL2Form.value.name = action.name
+  showUnitPicker.value = false
 }
 
 // ---- 重命名 ----
@@ -408,7 +424,7 @@ const activeL2Categories = computed(() => {
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'normal') {
+        if (l2.status === 'active' && l2.kind === 'equity') {
           result.push(l2)
         }
       }
@@ -432,12 +448,7 @@ const assetL2Categories = computed(() => {
   return result
 })
 
-// 启用中的二级余粮型科目（用于转入选择）
-const residualL2Categories = computed(() => {
-  return activeL2Categories.value.filter(c => c.balanceType === 'residual')
-})
-
-// 转出科目选择器选项
+// 转出科目选择器选项（权益二级，带余额）
 const sourceCategoryOptions = computed(() => {
   return activeL2Categories.value.map(c => ({
     name: `${c.name} (余额 ${formatFen(c.balanceCents ?? 0)})`,
@@ -445,9 +456,9 @@ const sourceCategoryOptions = computed(() => {
   }))
 })
 
-// 转入科目选择器选项
+// 转入科目选择：所有启用权益二级（v0.4 无花费型限制）
 const destCategoryOptions = computed(() => {
-  return residualL2Categories.value.map(c => ({
+  return activeL2Categories.value.map(c => ({
     name: `${c.name} (${formatFen(c.balanceCents ?? 0)})`,
     value: c.id,
   }))
@@ -678,9 +689,18 @@ async function voidFundMove(mv: FundMove) {
   }
 }
 
+// ---- 划转留痕（F6） ----
+const chgShow = ref(false)
+const chgId = ref(0)
+
+function openMoveChangelog(mv: FundMove) {
+  chgId.value = mv.id
+  chgShow.value = true
+}
+
 // ---- 生命周期 ----
 onMounted(async () => {
-  await loadCategories()
+  await Promise.all([loadCategories(), loadUnits()])
   loading.value = false
 })
 
@@ -702,11 +722,9 @@ async function handleAddL1() {
     await api.post('/categories', {
       name: addForm.value.name,
       level: 1,
-      balanceType: 'residual', // 一级为分组容器，固定类型，余额在二级上设置
-      openingBalanceCents: 0,
     })
     showToast('创建成功')
-    addForm.value = { name: '', balanceType: 'residual', openingBalance: '0' }
+    addForm.value = { name: '' }
     await loadCategories()
   } catch (e: any) {
     showDialog({ title: '创建失败', message: e.message || '创建失败，请重试' })
@@ -720,45 +738,16 @@ async function handleAddL2() {
   }
   try {
     if (editL2Mode.value) {
-      if (addL2Form.value.kind === 'asset') {
-        // 资产科目固定规则：类型/期初/勾稽不可变，只允许改名（后端会拒绝其他字段）
-        await api.put(`/categories/${editL2Id.value}`, { name: addL2Form.value.name })
-        showToast('更新成功')
-      } else {
-        const payload: Record<string, unknown> = {
-          name: addL2Form.value.name,
-          balanceType: addL2Form.value.balanceType,
-          openingBalanceCents: Math.round(parseFloat(addL2Form.value.openingBalance || '0') * 100),
-        }
-        if (addL2Form.value.balanceType === 'residual') {
-          payload.includeInReconciliation = addL2Form.value.includeInReconciliation
-        } else {
-          payload.includeInReconciliation = false
-        }
-        await api.put(`/categories/${editL2Id.value}`, payload)
-        showToast('更新成功')
-      }
+      // 编辑：只允许改名/停用（kind 不可变，后端忽略其它字段）
+      await api.put(`/categories/${editL2Id.value}`, { name: addL2Form.value.name })
+      showToast('更新成功')
     } else {
-      const payload: Record<string, unknown> = {
+      await api.post('/categories', {
         name: addL2Form.value.name,
         level: 2,
         parentId: addL2ParentId.value,
-      }
-      if (addL2Form.value.kind === 'asset') {
-        // 资产型二级：固定余粮型、无期初、不勾稽（后端同样强制）
-        payload.kind = 'asset'
-        payload.balanceType = 'residual'
-        payload.openingBalanceCents = 0
-        payload.includeInReconciliation = false
-      } else {
-        payload.kind = 'normal'
-        payload.balanceType = addL2Form.value.balanceType
-        payload.openingBalanceCents = Math.round(parseFloat(addL2Form.value.openingBalance || '0') * 100)
-        if (addL2Form.value.balanceType === 'residual') {
-          payload.includeInReconciliation = addL2Form.value.includeInReconciliation
-        }
-      }
-      await api.post('/categories', payload)
+        kind: addL2Form.value.kind,
+      })
       showToast('创建成功')
     }
     showAddL2Dialog.value = false
@@ -963,6 +952,7 @@ async function deleteCat(cat: Category) {
 .l2-chip.residual { border-color: #0f6e56; color: #0f6e56; }
 .l2-chip.spending { border-color: #185fa5; color: #185fa5; }
 .l2-chip.preset { border-color: #8a6d1f; color: #8a6d1f; background: #fbf3df; }
+.l2-chip.equity { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
 .l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
 .l2-chip.reconcile { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
 .l2-chip.stopped { background: #fcebeb; border-color: #a32d2d; color: #a32d2d; }
@@ -999,6 +989,12 @@ async function deleteCat(cat: Category) {
   font-size: 12px;
   color: #8f8e88;
   padding: 8px 16px;
+}
+
+.unit-quick {
+  color: #0f6e56;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 /* 转账弹出表单 */

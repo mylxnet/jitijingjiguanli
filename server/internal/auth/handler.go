@@ -27,6 +27,44 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/auth/logout", h.Logout)
 }
 
+// RegisterAuthed 挂载需要登录的路由（由 main 在鉴权组内调用）。
+func (h *Handler) RegisterAuthed(r gin.IRouter) {
+	r.PUT("/api/auth/password", h.ChangePassword)
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"oldPassword" binding:"required"`
+	NewPassword string `json:"newPassword" binding:"required"`
+}
+
+// ChangePassword 修改当前登录账号口令（校验原口令）。
+// PUT /api/auth/password
+func (h *Handler) ChangePassword(c *gin.Context) {
+	userID, ok := CurrentUserID(c)
+	if !ok {
+		platform.Fail(c, http.StatusUnauthorized, "UNAUTHORIZED", "未登录或登录已过期")
+		return
+	}
+
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.Fail(c, http.StatusBadRequest, "INVALID_REQUEST", "请填写原密码与新密码")
+		return
+	}
+
+	err := h.svc.ChangePassword(userID, req.OldPassword, req.NewPassword)
+	switch err {
+	case nil:
+		platform.OK(c, gin.H{"ok": true})
+	case ErrOldPasswordWrong:
+		platform.Fail(c, http.StatusBadRequest, "OLD_PASSWORD_WRONG", "原密码错误")
+	case ErrInvalidPassword:
+		platform.Fail(c, http.StatusBadRequest, "INVALID_PASSWORD", "密码至少 6 位")
+	default:
+		platform.Fail(c, http.StatusInternalServerError, "CHANGE_PASSWORD_FAILED", "修改密码失败，请重试")
+	}
+}
+
 // RegisterOrg POST /api/auth/register —— 自助注册组织（v0.3 F8）：
 // 组织名 + 管理员账号 + 密码 → 建组织/账号/预置科目并自动登录。
 func (h *Handler) RegisterOrg(c *gin.Context) {

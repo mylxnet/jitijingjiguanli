@@ -7,10 +7,7 @@ export interface Category {
   level: 1 | 2
   parentId: number | null
   status: 'active' | 'inactive'
-  balanceType: 'residual' | 'spending'
-  kind: 'normal' | 'asset'
-  openingBalanceCents: number
-  includeInReconciliation: boolean
+  kind: 'equity' | 'asset' // v0.4：权益 / 资产
   preset?: boolean
   sortOrder: number
   createdAt: string
@@ -38,18 +35,31 @@ export interface FundMoveListResponse {
   total: number
 }
 
-export type PartyKind = 'household' | 'unit'
 export type RecvKind = 'rent' | 'dividend' | 'other'
 
 export interface Party {
   id: number
   orgId: number
   name: string
-  kind: PartyKind
   note: string | null
   createdAt: string
   updatedAt: string
   outstandingCents: number
+}
+
+export interface AccrualStandard {
+  id: number
+  orgId: number
+  partyId: number
+  partyName: string
+  recvKind: RecvKind
+  amountCents: number
+  active: boolean
+}
+
+export interface AccrueResult {
+  created: number
+  skipped: number
 }
 
 export interface Receivable {
@@ -57,6 +67,7 @@ export interface Receivable {
   orgId: number
   partyId: number
   partyName: string
+  recvYear?: number // v0.4：应收归属年度（批量结转用；待后端返回）
   recvKind: RecvKind
   title: string
   amountCents: number
@@ -94,7 +105,6 @@ export interface ReceivableDetail {
 }
 
 // 展示标签
-export const partyKindLabel: Record<PartyKind, string> = { household: '农户', unit: '单位' }
 export const recvKindLabel: Record<RecvKind, string> = { rent: '流转费', dividend: '投资收益', other: '其他' }
 
 export interface Transaction {

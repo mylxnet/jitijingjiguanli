@@ -78,6 +78,14 @@ func (r *Repo) FindUserByID(id int64) (*User, error) {
 	return u, nil
 }
 
+// UpdatePassword 更新口令哈希（修改密码）。
+func (r *Repo) UpdatePassword(userID int64, passwordHash string) error {
+	if _, err := r.db.Exec(`UPDATE user SET password_hash = ? WHERE id = ?`, passwordHash, userID); err != nil {
+		return fmt.Errorf("更新口令失败: %w", err)
+	}
+	return nil
+}
+
 // CreateSession 创建会话。
 func (r *Repo) CreateSession(id string, userID int64, expiresAt time.Time) error {
 	_, err := r.db.Exec(
@@ -151,16 +159,15 @@ func (r *Repo) createUserTx(tx *sql.Tx, orgID int64, username, passwordHash stri
 	return res.LastInsertId()
 }
 
-// seedPresetCategoriesTx 事务内写入预置科目（v0.3 F12，五件套 + 常用二级）。
+// seedPresetCategoriesTx 事务内写入预置科目（v0.4：资产/权益两类；对外投资留空按公司自建资产二级）。
 func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 	now := platform.Now()
-	// (name, level, parentOrder 引用自身 sort，用占位再更新) —— 直接先插一级收集 id
-	insert := func(name string, level int, parentID any, bt, kind string, sort int, preset int) (int64, error) {
+	insert := func(name string, level int, parentID any, kind string, sort int) (int64, error) {
 		res, err := tx.Exec(
-			`INSERT INTO category(org_id, name, level, parent_id, status, balance_type, kind,
-				opening_balance_cents, include_in_reconciliation, preset, sort_order, created_at, updated_at)
-			 VALUES(?,?,?,?, 'active', ?,?, 0,0,?,?,?,?)`,
-			orgID, name, level, parentID, bt, kind, preset, sort, now, now,
+			`INSERT INTO category(org_id, name, level, parent_id, status, kind,
+				preset, sort_order, created_at, updated_at)
+			 VALUES(?,?,?,?, 'active', ?,1,?,?,?)`,
+			orgID, name, level, parentID, kind, sort, now, now,
 		)
 		if err != nil {
 			return 0, err
@@ -168,46 +175,47 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 		return res.LastInsertId()
 	}
 
-	// 一级五件套（v0.3 预置科目，用户审定命名）
-	l1Fund, err := insert("本金", 1, nil, "residual", "normal", 1, 1)
+	// 一级分组（权益容器）
+	l1Fund, err := insert("本金", 1, nil, "equity", 1)
 	if err != nil {
 		return fmt.Errorf("预置科目失败(本金): %w", err)
 	}
-	if _, err := insert("对外投资", 1, nil, "residual", "normal", 2, 1); err != nil {
+	l1Invest, err := insert("对外投资", 1, nil, "equity", 2)
+	if err != nil {
 		return fmt.Errorf("预置科目失败(对外投资): %w", err)
 	}
-	l1Income, err := insert("经营收入", 1, nil, "residual", "normal", 3, 1)
+	l1Income, err := insert("经营收入", 1, nil, "equity", 3)
 	if err != nil {
 		return fmt.Errorf("预置科目失败(经营收入): %w", err)
 	}
-	l1Dist, err := insert("收益分配", 1, nil, "spending", "normal", 4, 1)
+	l1Dist, err := insert("分配与支出", 1, nil, "equity", 4)
 	if err != nil {
-		return fmt.Errorf("预置科目失败(收益分配): %w", err)
-	}
-	if _, err := insert("公益支出", 1, nil, "spending", "normal", 5, 1); err != nil {
-		return fmt.Errorf("预置科目失败(公益支出): %w", err)
+		return fmt.Errorf("预置科目失败(分配与支出): %w", err)
 	}
 
-	// 二级预设（经营收入 / 收益分配 下）
+	// 权益二级预设
 	presetL2 := []struct {
 		name     string
 		parentID int64
-		bt       string
+		kind     string
 		sort     int
 	}{
-		{"土地流转费收入", l1Income, "residual", 1},
-		{"投资分红收益", l1Income, "residual", 2},
-		{"其他收入", l1Income, "residual", 3},
-		{"收益分红发放", l1Dist, "spending", 1},
-		{"流转费分发", l1Dist, "spending", 2},
-		{"福利发放", l1Dist, "spending", 3},
+		{"上级补助", l1Fund, "equity", 1},
+		{"投资收益", l1Income, "equity", 1},
+		{"土地流转费收入", l1Income, "equity", 2},
+		{"土地流转服务费收入", l1Income, "equity", 3},
+		{"其他收入", l1Income, "equity", 4},
+		{"土地流转费-转付农户", l1Dist, "equity", 1},
+		{"成员分红", l1Dist, "equity", 2},
+		{"福利发放", l1Dist, "equity", 3},
+		{"公益支出", l1Dist, "equity", 4},
 	}
 	for _, c := range presetL2 {
-		if _, err := insert(c.name, 2, c.parentID, c.bt, "normal", c.sort, 1); err != nil {
+		if _, err := insert(c.name, 2, c.parentID, c.kind, c.sort); err != nil {
 			return fmt.Errorf("预置二级科目失败(%s): %w", c.name, err)
 		}
 	}
-	// 本金 / 对外投资 / 公益支出 的二级留空，由使用者按拨款项目/投资项目/用途自建
-	_ = l1Fund
+	// 对外投资一级留空：使用时由操作者按公司建「资产」二级（资金划转）
+	_ = l1Invest
 	return nil
 }

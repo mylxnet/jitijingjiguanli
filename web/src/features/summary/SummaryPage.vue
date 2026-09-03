@@ -30,27 +30,26 @@
     </div>
 
     <template v-else>
-      <!-- 资金构成四卡（D10：可用资金 = 银行存款 + 投资资产） -->
+      <!-- 资金构成（v0.4：银行 / 资产类 / 净资产；总资产=银行+资产，应收欠款见往来） -->
       <div class="capital-cards">
         <div class="capital-card" :class="{ warning: capital?.warning }">
           <div class="card-label">银行存款</div>
           <div class="card-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
         </div>
         <div class="capital-card asset">
-          <div class="card-label">投资资产</div>
+          <div class="card-label">资产类</div>
           <div class="card-value">{{ formatFen(capital?.assetTotalCents ?? 0) }}</div>
         </div>
-        <div class="capital-card earmarked">
-          <div class="card-label">专项资金</div>
-          <div class="card-value">{{ formatFen(capital?.earmarkedCents ?? 0) }}</div>
+        <div class="capital-card equity">
+          <div class="card-label">净资产</div>
+          <div class="card-value">{{ formatFen(capital?.equityTotalCents ?? 0) }}</div>
         </div>
-        <div class="capital-card unallocated">
-          <div class="card-label">未分配资金</div>
-          <div class="card-value">{{ formatFen(capital?.unallocatedCents ?? 0) }}</div>
+        <div class="capital-card total">
+          <div class="card-label">总资产</div>
+          <div class="card-value">{{ formatFen(totalAssets) }}</div>
         </div>
       </div>
 
-      <!-- 未分配为负警告 -->
       <div v-if="capital?.warning" class="warning-banner">
         <van-icon name="warning-o" />
         {{ capital.warning }}
@@ -79,20 +78,21 @@
             <div class="l1-info">
               <van-icon :name="expanded[l1.id] ? 'arrow-down' : 'arrow'" />
               <span class="l1-name">{{ l1.name }}</span>
-              <span class="l1-chip" :class="l1.balanceType">{{ l1.balanceType === 'residual' ? '余粮型' : '花费型' }}</span>
+              <span class="l1-chip">分组</span>
             </div>
             <div class="l1-balance">{{ formatFen(l1.currentBalanceCents) }}</div>
           </div>
           <div v-if="expanded[l1.id] && l1.children && l1.children.length > 0" class="l2-list">
-            <div v-for="l2 in l1.children" :key="l2.id" class="l2-row">
+            <div v-for="l2 in l1.children" :key="l2.id" class="l2-row" @click="openDrill(l2)">
               <div class="l2-info">
                 <span class="l2-name">{{ l2.name }}</span>
-                <span v-if="l2.kind === 'asset'" class="l2-chip asset">资产</span>
-                <span v-else class="l2-chip" :class="l2.balanceType">{{ l2.balanceType === 'residual' ? '余粮' : '花费' }}</span>
-                <span v-if="l2.includeInReconciliation" class="l2-chip reconcile">勾稽</span>
+                <span class="l2-chip" :class="l2.kind || 'equity'">{{ (l2.kind || 'equity') === 'asset' ? '资产' : '权益' }}</span>
                 <span class="l2-count">{{ l2.txnCount }}笔</span>
               </div>
-              <div class="l2-balance">{{ formatFen(l2.currentBalanceCents) }}</div>
+              <div class="l2-balance">
+                {{ formatFen(l2.currentBalanceCents) }}
+                <van-icon name="arrow" class="l2-arrow" />
+              </div>
             </div>
           </div>
           <div v-else-if="expanded[l1.id] && (!l1.children || l1.children.length === 0)" class="l2-empty">
@@ -101,6 +101,34 @@
         </div>
       </div>
     </template>
+
+    <!-- 科目当月流水弹层（点二级科目） -->
+    <van-popup v-model:show="showDrill" position="bottom" round closeable style="max-height: 80vh">
+      <div class="drill-popup">
+        <div class="drill-header">
+          <span class="drill-title">{{ drillCat ? drillCat.name : '' }} · 流水</span>
+        </div>
+        <div class="month-selector drill-month">
+          <van-button size="small" plain @click="drillPrevMonth">&lt;</van-button>
+          <span class="current-month">{{ drillMonth }}</span>
+          <van-button size="small" plain @click="drillNextMonth">&gt;</van-button>
+        </div>
+        <div v-if="drillLoading" class="drill-empty">加载中…</div>
+        <div v-else-if="drillItems.length === 0" class="drill-empty">该科目本月暂无流水</div>
+        <div v-else class="drill-list">
+          <div v-for="t in drillItems" :key="t.id" class="drill-row" @click="goListWithFilter(t)" :class="{ voided: t.status === 'voided' }">
+            <span class="drill-date">{{ t.txnDate }}</span>
+            <span class="drill-dir" :class="t.direction">{{ t.direction === 'income' ? '收' : '支' }}</span>
+            <span class="drill-amount" :class="t.direction">{{ t.direction === 'income' ? '+' : '-' }}{{ formatFen(t.amountCents) }}</span>
+            <span class="drill-note">{{ t.note || '' }}</span>
+            <span v-if="t.status === 'voided'" class="drill-voided">已作废</span>
+          </div>
+        </div>
+        <div v-if="drillItems.length > 0" class="drill-total">
+          收 {{ formatFen(drillIncome) }} · 支 {{ formatFen(drillExpense) }} · 结余 {{ formatFen(drillIncome - drillExpense) }}
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -111,17 +139,14 @@ import { api } from '../../lib/http'
 import { downloadExport, type ExportContent, type ExportFormat } from '../../lib/download'
 import { formatFen, currentMonthStr, getMonthRange } from '../../types/api'
 import { showToast } from 'vant'
-import type { ApiResponse } from '../../types/api'
+import type { ApiResponse, Transaction } from '../../types/api'
 
 interface CategorySummary {
   id: number
   name: string
   level: number
   parentId?: number
-  balanceType: 'residual' | 'spending'
-  kind?: 'normal' | 'asset'
-  openingBalanceCents: number
-  includeInReconciliation: boolean
+  kind?: 'equity' | 'asset'
   currentBalanceCents: number
   txnCount: number
   incomeCents: number
@@ -132,8 +157,7 @@ interface CategorySummary {
 interface Capital {
   bankBalanceCents: number
   assetTotalCents: number
-  earmarkedCents: number
-  unallocatedCents: number
+  equityTotalCents: number
   warning?: string
 }
 
@@ -149,9 +173,10 @@ const router = useRouter()
 const loading = ref(true)
 const loadError = ref(false)
 const currentMonth = ref(currentMonthStr())
-const summary = ref<SummaryResponse>({ incomeTotal: 0, expenseTotal: 0, balance: 0, capital: { bankBalanceCents: 0, assetTotalCents: 0, earmarkedCents: 0, unallocatedCents: 0 }, categories: [] })
+const summary = ref<SummaryResponse>({ incomeTotal: 0, expenseTotal: 0, balance: 0, capital: { bankBalanceCents: 0, assetTotalCents: 0, equityTotalCents: 0 }, categories: [] })
 const capital = computed(() => summary.value.capital)
 const categories = computed(() => summary.value.categories)
+const totalAssets = computed(() => (capital.value?.bankBalanceCents ?? 0) + (capital.value?.assetTotalCents ?? 0))
 const expanded = ref<Record<number, boolean>>({})
 
 onMounted(async () => {
@@ -178,6 +203,79 @@ async function loadSummary() {
 
 function toggleExpand(id: number) {
   expanded.value[id] = !expanded.value[id]
+}
+
+// ---- 科目当月流水弹层（点二级科目） ----
+const showDrill = ref(false)
+const drillCat = ref<CategorySummary | null>(null)
+const drillMonth = ref(currentMonthStr())
+const drillItems = ref<Transaction[]>([])
+const drillLoading = ref(false)
+
+const drillIncome = computed(() =>
+  drillItems.value.filter(i => i.status === 'normal' && i.direction === 'income')
+    .reduce((s, i) => s + i.amountCents, 0))
+const drillExpense = computed(() =>
+  drillItems.value.filter(i => i.status === 'normal' && i.direction === 'expense')
+    .reduce((s, i) => s + i.amountCents, 0))
+
+async function openDrill(l2: CategorySummary) {
+  drillCat.value = l2
+  drillMonth.value = currentMonth.value
+  showDrill.value = true
+  await loadDrill()
+}
+
+async function loadDrill() {
+  if (!drillCat.value) return
+  drillLoading.value = true
+  drillItems.value = []
+  try {
+    const range = getMonthRange(drillMonth.value)
+    const res = await api.get<ApiResponse<{ items: Transaction[] }>>('/transactions', {
+      from: range.from,
+      to: range.to,
+      categoryId: drillCat.value.id,
+      pageSize: 1000,
+      includeVoided: 'true',
+    })
+    drillItems.value = res.data.items || []
+  } catch {
+    drillItems.value = []
+  } finally {
+    drillLoading.value = false
+  }
+}
+
+function shiftDrillMonth(delta: number) {
+  const [y, m] = drillMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  drillMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  void loadDrill()
+}
+
+function drillPrevMonth() {
+  shiftDrillMonth(-1)
+}
+
+function drillNextMonth() {
+  shiftDrillMonth(1)
+}
+
+// 点某条流水跳转到流水页，并带「该科目 + 该月」筛选
+function goListWithFilter(t: Transaction) {
+  if (!drillCat.value) return
+  const range = getMonthRange(drillMonth.value)
+  void t
+  router.push({
+    path: '/transactions',
+    query: {
+      from: range.from,
+      to: range.to,
+      categoryId: String(drillCat.value.id),
+      categoryName: drillCat.value.name,
+    },
+  })
 }
 
 function prevMonth() {
@@ -303,6 +401,14 @@ async function handleExport(action: ExportAction) {
 
 .capital-card.asset {
   background: #fdf3e3;
+}
+
+.capital-card.equity {
+  background: #eaf5ed;
+}
+
+.capital-card.total {
+  background: #e6f1fb;
 }
 
 .capital-card.earmarked {
@@ -455,6 +561,7 @@ async function handleExport(action: ExportAction) {
 
 .l2-chip.residual { border-color: #0f6e56; color: #0f6e56; }
 .l2-chip.spending { border-color: #185fa5; color: #185fa5; }
+.l2-chip.equity { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
 .l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
 .l2-chip.reconcile { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
 
@@ -473,5 +580,119 @@ async function handleExport(action: ExportAction) {
   padding: 8px 0 8px 40px;
   font-size: 12px;
   color: #8f8e88;
+}
+
+.l2-row {
+  cursor: pointer;
+}
+
+.l2-arrow {
+  color: #c4c1ba;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* 科目当月流水弹层 */
+.drill-popup {
+  padding: 16px 0 24px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.drill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 8px;
+}
+
+.drill-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #2c2c2a;
+}
+
+.drill-month {
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+
+.drill-empty {
+  text-align: center;
+  color: #8f8e88;
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.drill-list {
+  padding: 0 16px;
+}
+
+.drill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0f0eb;
+  cursor: pointer;
+}
+
+.drill-row:last-child {
+  border-bottom: none;
+}
+
+.drill-row.voided {
+  opacity: 0.55;
+}
+
+.drill-date {
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.drill-dir {
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex: none;
+}
+
+.drill-dir.income { background: #eaf5ed; color: #0f6e56; }
+.drill-dir.expense { background: #fcebeb; color: #a32d2d; }
+
+.drill-amount {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.drill-amount.income { color: #0f6e56; }
+.drill-amount.expense { color: #a32d2d; }
+
+.drill-note {
+  flex: 1;
+  font-size: 12px;
+  color: #5f5e5a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.drill-voided {
+  font-size: 10px;
+  color: #a32d2d;
+  flex: none;
+}
+
+.drill-total {
+  margin: 12px 16px 0;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0eb;
+  font-size: 12px;
+  color: #5f5e5a;
+  display: flex;
+  justify-content: space-between;
 }
 </style>

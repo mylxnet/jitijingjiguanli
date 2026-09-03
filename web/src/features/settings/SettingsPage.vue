@@ -29,9 +29,38 @@
       </div>
     </van-cell-group>
 
+    <!-- 账号与科目 -->
     <van-cell-group inset style="margin-top: 16px">
+      <div class="section-label">账号</div>
       <van-cell title="科目管理" is-link to="/categories" />
-      <van-cell title="修改密码" is-link @click="showToast('v0.3.0 实现')" />
+      <van-cell title="修改密码" is-link @click="openPwdDialog" />
+    </van-cell-group>
+
+    <!-- 备份与恢复 -->
+    <van-cell-group inset style="margin-top: 16px">
+      <div class="section-label">备份与恢复</div>
+      <div class="backup-tip">
+        每日 03:00 自动备份，保留最近 {{ keepBackup }} 份；备份目录建议放在与数据不同的磁盘
+      </div>
+      <div style="margin: 4px 16px 8px">
+        <van-button
+          round
+          block
+          type="primary"
+          size="small"
+          :loading="backingUp"
+          @click="createBackup"
+        >立即备份</van-button>
+      </div>
+      <div v-if="backups.length === 0" class="backup-empty">尚无备份记录</div>
+      <van-cell v-for="b in backups" :key="b.id" :title="formatBackupTime(b.createdAt)">
+        <template #label>
+          <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
+        </template>
+        <template #right-icon>
+          <van-button size="mini" plain type="warning" @click="restoreBackup(b)">恢复</van-button>
+        </template>
+      </van-cell>
     </van-cell-group>
 
     <div style="margin: 16px; padding: 0 16px">
@@ -39,6 +68,28 @@
     </div>
 
     <div class="version">v0.2.0</div>
+
+    <!-- 修改密码 -->
+    <van-popup v-model:show="showPwd" position="bottom" round closeable style="max-height: 90vh">
+      <div class="pwd-popup">
+        <div class="popup-title">修改密码</div>
+        <van-field v-model="pwdForm.oldPassword" type="password" label="原密码" placeholder="当前登录密码" />
+        <van-field v-model="pwdForm.newPassword" type="password" label="新密码" placeholder="至少 6 位" />
+        <van-field v-model="pwdForm.confirm" type="password" label="确认新密码" placeholder="再次输入新密码" />
+        <div v-if="pwdError" class="pwd-error">{{ pwdError }}</div>
+        <div class="pwd-save">
+          <van-button round block type="primary" :loading="savingPwd" @click="savePassword">保存新密码</van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- 恢复中遮罩 -->
+    <van-overlay :show="restoring" :z-index="2000">
+      <div class="restore-mask">
+        <van-loading color="#fff" size="36" />
+        <div class="restore-text">正在恢复，请勿关闭页面</div>
+      </div>
+    </van-overlay>
   </div>
 </template>
 
@@ -49,10 +100,16 @@ import { useAuthStore } from '../auth/store'
 import { api } from '../../lib/http'
 import { formatFen } from '../../types/api'
 import type { ApiResponse } from '../../types/api'
-import { showToast } from 'vant'
+import { showToast, showDialog } from 'vant'
 
 interface Settings {
   bankOpeningBalanceCents: number
+}
+
+interface BackupItem {
+  id: string
+  sizeBytes: number
+  createdAt: string
 }
 
 const router = useRouter()
@@ -62,8 +119,18 @@ const bankBalance = ref('')
 const currentBankBalance = ref<number | null>(null)
 const saving = ref(false)
 
+const keepBackup = 30
+const backingUp = ref(false)
+const backups = ref<BackupItem[]>([])
+const restoring = ref(false)
+
+const showPwd = ref(false)
+const savingPwd = ref(false)
+const pwdError = ref('')
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
+
 onMounted(async () => {
-  await loadSettings()
+  await Promise.all([loadSettings(), loadBackups()])
 })
 
 async function loadSettings() {
@@ -71,7 +138,6 @@ async function loadSettings() {
     const res = await api.get<ApiResponse<Settings>>('/settings')
     const val = res.data.bankOpeningBalanceCents
     bankBalance.value = val > 0 ? (val / 100).toFixed(2) : ''
-    // 计算当前余额需要汇总接口
     try {
       const summaryRes = await api.get<ApiResponse<any>>('/summary', { from: '', to: '' })
       currentBankBalance.value = summaryRes.data.capital?.bankBalanceCents ?? null
@@ -99,6 +165,101 @@ async function saveBankBalance() {
   } finally {
     saving.value = false
   }
+}
+
+// ---- 修改密码 ----
+function openPwdDialog() {
+  pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' }
+  pwdError.value = ''
+  showPwd.value = true
+}
+
+async function savePassword() {
+  pwdError.value = ''
+  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) {
+    pwdError.value = '请填写原密码与新密码'
+    return
+  }
+  if (pwdForm.value.newPassword.length < 6) {
+    pwdError.value = '新密码至少 6 位'
+    return
+  }
+  if (pwdForm.value.newPassword !== pwdForm.value.confirm) {
+    pwdError.value = '两次输入的新密码不一致'
+    return
+  }
+  savingPwd.value = true
+  try {
+    await api.put('/auth/password', {
+      oldPassword: pwdForm.value.oldPassword,
+      newPassword: pwdForm.value.newPassword,
+    })
+    showPwd.value = false
+    showToast('修改成功')
+  } catch (e: any) {
+    pwdError.value = e.message || '修改失败'
+  } finally {
+    savingPwd.value = false
+  }
+}
+
+// ---- 备份与恢复 ----
+async function loadBackups() {
+  try {
+    const res = await api.get<ApiResponse<{ items: BackupItem[] }>>('/backups')
+    backups.value = res.data.items || []
+  } catch {
+    backups.value = []
+  }
+}
+
+async function createBackup() {
+  backingUp.value = true
+  try {
+    await api.post('/backups')
+    showToast('备份完成')
+    await loadBackups()
+  } catch (e: any) {
+    showToast(e.message || '备份失败')
+  } finally {
+    backingUp.value = false
+  }
+}
+
+async function restoreBackup(b: BackupItem) {
+  try {
+    await showDialog({
+      title: '确认恢复',
+      message: `将用 ${formatBackupTime(b.createdAt)} 的备份覆盖当前数据，之后需要重新登录。确定恢复吗？`,
+      showCancelButton: true,
+    })
+  } catch {
+    return // 取消
+  }
+  restoring.value = true
+  try {
+    await api.post(`/backups/${encodeURIComponent(b.id)}/restore`)
+    showToast('恢复成功，请重新登录')
+    await auth.logout()
+    router.push('/login')
+  } catch (e: any) {
+    restoring.value = false
+    showToast(e.message || '恢复失败')
+  }
+}
+
+function formatBackupTime(ts: string): string {
+  if (!ts) return ts
+  // jz-backup-YYYYMMDD-HHMMSS.db → YYYY-MM-DD HH:MM
+  const m = ts.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`
+  return ts
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
 }
 
 async function handleLogout() {
@@ -144,5 +305,61 @@ async function handleLogout() {
   font-size: 12px;
   color: #8f8e88;
   margin-top: 24px;
+}
+
+.backup-tip {
+  font-size: 12px;
+  color: #8f8e88;
+  padding: 8px 16px 4px;
+  line-height: 1.5;
+}
+
+.backup-empty {
+  text-align: center;
+  font-size: 12px;
+  color: #8f8e88;
+  padding: 12px 0;
+}
+
+.backup-size {
+  font-size: 11px;
+  color: #8f8e88;
+}
+
+.pwd-popup {
+  padding: 16px 0 24px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popup-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #2c2c2a;
+  padding: 0 16px 12px;
+}
+
+.pwd-error {
+  color: #a32d2d;
+  font-size: 13px;
+  padding: 0 16px 8px;
+}
+
+.pwd-save {
+  margin: 8px 16px 0;
+}
+
+.restore-mask {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.restore-text {
+  color: #fff;
+  font-size: 14px;
 }
 </style>

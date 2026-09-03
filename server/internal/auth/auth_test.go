@@ -65,8 +65,8 @@ func TestRegisterOrg(t *testing.T) {
 		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
 		t.Fatalf("统计预置科目失败: %v", err)
 	}
-	if presetCount != 11 {
-		t.Errorf("预置科目应为 11 个（5 一级 + 6 二级），实际 %d", presetCount)
+	if presetCount != 13 {
+		t.Errorf("预置科目应为 13 个（4 一级 + 9 二级），实际 %d", presetCount)
 	}
 
 	// 重复账号名 → 友好错误

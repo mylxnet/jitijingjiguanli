@@ -34,12 +34,13 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	return db, r
 }
 
-func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, status, bt string) int64 {
+func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, status string, _ ...string) int64 {
 	t.Helper()
 	now := time.Now().UTC()
-	res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, balance_type,
-		opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-		VALUES(1,?,?,?,?,?,0,0,0,?,?)`, name, level, parent, status, bt, now, now)
+	// v0.4：kind 恒为 equity（旧第 6 个实参为余额类型，忽略）
+	res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, kind,
+		sort_order, created_at, updated_at)
+		VALUES(1,?,?,?,?,'equity',0,?,?)`, name, level, parent, status, now, now)
 	if err != nil {
 		t.Fatalf("插入科目 %s 失败: %v", name, err)
 	}
@@ -249,4 +250,3 @@ func orgCtx() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

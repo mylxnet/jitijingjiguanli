@@ -24,15 +24,15 @@ func NewRepo(db *sql.DB) *Repo {
 
 // ---------- party ----------
 
-// CreateParty 新建往来对象。
+// CreateParty 新建往来单位。
 func (r *Repo) CreateParty(p *Party) (*Party, error) {
 	now := platform.Now()
 	res, err := r.db.Exec(
-		`INSERT INTO party(org_id, name, kind, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)`,
-		p.OrgID, p.Name, p.Kind, p.Note, now, now,
+		`INSERT INTO party(org_id, name, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?)`,
+		p.OrgID, p.Name, p.Note, now, now,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("新建往来对象失败: %w", err)
+		return nil, fmt.Errorf("新建往来单位失败: %w", err)
 	}
 	id, _ := res.LastInsertId()
 	p.ID = id
@@ -41,38 +41,34 @@ func (r *Repo) CreateParty(p *Party) (*Party, error) {
 	return p, nil
 }
 
-// FindPartyByID 按 ID 查询往来对象（调用方需校验 OrgID）。
+// FindPartyByID 按 ID 查询往来单位（调用方需校验 OrgID）。
 func (r *Repo) FindPartyByID(id int64) (*Party, error) {
 	p := &Party{}
 	err := r.db.QueryRow(
-		`SELECT id, org_id, name, kind, note, created_at, updated_at FROM party WHERE id = ?`, id,
-	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Kind, &p.Note, &p.CreatedAt, &p.UpdatedAt)
+		`SELECT id, org_id, name, note, created_at, updated_at FROM party WHERE id = ?`, id,
+	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Note, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("查询往来对象失败: %w", err)
+		return nil, fmt.Errorf("查询往来单位失败: %w", err)
 	}
 	return p, nil
 }
 
-// ListParties 查询某组织往来对象（含欠款合计 = Σ未核销应收余额）。
-// kind 传 "" 表示全部；keyword 非空时按名称模糊过滤。
-func (r *Repo) ListParties(orgID int64, kind, keyword string) ([]Party, error) {
+// ListParties 查询某组织往来单位（含欠款合计 = Σ未核销应收余额）。
+// keyword 非空时按名称模糊过滤。
+func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	where := "WHERE p.org_id = ?"
 	var args []any
 	args = append(args, orgID)
-	if kind == "household" || kind == "unit" {
-		where += " AND p.kind = ?"
-		args = append(args, kind)
-	}
 	if keyword != "" {
 		where += " AND p.name LIKE ?"
 		args = append(args, "%"+keyword+"%")
 	}
 
 	rows, err := r.db.Query(
-		`SELECT p.id, p.org_id, p.name, p.kind, p.note, p.created_at, p.updated_at,
+		`SELECT p.id, p.org_id, p.name, p.note, p.created_at, p.updated_at,
 		        COALESCE((SELECT SUM(rec.amount_cents - COALESCE((
 		            SELECT SUM(re2.amount_cents) FROM receipt re2
 		            WHERE re2.org_id = p.org_id AND re2.receivable_id = rec.id AND re2.status = 'normal'
@@ -81,22 +77,22 @@ func (r *Repo) ListParties(orgID int64, kind, keyword string) ([]Party, error) {
 		 FROM party p `+where+` ORDER BY p.id DESC`, args...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询往来对象失败: %w", err)
+		return nil, fmt.Errorf("查询往来单位失败: %w", err)
 	}
 	defer rows.Close()
 
 	var items []Party
 	for rows.Next() {
 		p := Party{}
-		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Kind, &p.Note, &p.CreatedAt, &p.UpdatedAt, &p.OutstandingCents); err != nil {
-			return nil, fmt.Errorf("扫描往来对象行失败: %w", err)
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Note, &p.CreatedAt, &p.UpdatedAt, &p.OutstandingCents); err != nil {
+			return nil, fmt.Errorf("扫描往来单位行失败: %w", err)
 		}
 		items = append(items, p)
 	}
 	return items, rows.Err()
 }
 
-// UpdateParty 更新往来对象（限定本组织）。
+// UpdateParty 更新往来单位（限定本组织）。
 func (r *Repo) UpdateParty(id, orgID int64, updates map[string]any) error {
 	if len(updates) == 0 {
 		return nil
@@ -111,7 +107,7 @@ func (r *Repo) UpdateParty(id, orgID int64, updates map[string]any) error {
 	args = append(args, id, orgID)
 	_, err := r.db.Exec("UPDATE party SET "+strings.Join(setClauses, ", ")+" WHERE id = ? AND org_id = ?", args...)
 	if err != nil {
-		return fmt.Errorf("更新往来对象失败: %w", err)
+		return fmt.Errorf("更新往来单位失败: %w", err)
 	}
 	return nil
 }
@@ -122,9 +118,9 @@ func (r *Repo) UpdateParty(id, orgID int64, updates map[string]any) error {
 func (r *Repo) CreateReceivable(rec *Receivable) (*Receivable, error) {
 	now := platform.Now()
 	res, err := r.db.Exec(
-		`INSERT INTO receivable(org_id, party_id, recv_kind, title, amount_cents, income_category_id, status, note, created_at, updated_at)
-		 VALUES(?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
-		rec.OrgID, rec.PartyID, rec.RecvKind, rec.Title, rec.AmountCents, rec.IncomeCategoryID, rec.Note, now, now,
+		`INSERT INTO receivable(org_id, party_id, recv_year, recv_kind, title, amount_cents, income_category_id, status, note, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+		rec.OrgID, rec.PartyID, rec.RecvYear, rec.RecvKind, rec.Title, rec.AmountCents, rec.IncomeCategoryID, rec.Note, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("登记应收单失败: %w", err)
@@ -141,9 +137,9 @@ func (r *Repo) CreateReceivable(rec *Receivable) (*Receivable, error) {
 func (r *Repo) FindReceivableByID(id int64) (*Receivable, error) {
 	rec := &Receivable{}
 	err := r.db.QueryRow(
-		`SELECT id, org_id, party_id, recv_kind, title, amount_cents, income_category_id, status, note, created_at, updated_at
+		`SELECT id, org_id, party_id, recv_year, recv_kind, title, amount_cents, income_category_id, status, note, created_at, updated_at
 		 FROM receivable WHERE id = ?`, id,
-	).Scan(&rec.ID, &rec.OrgID, &rec.PartyID, &rec.RecvKind, &rec.Title, &rec.AmountCents, &rec.IncomeCategoryID, &rec.Status, &rec.Note, &rec.CreatedAt, &rec.UpdatedAt)
+	).Scan(&rec.ID, &rec.OrgID, &rec.PartyID, &rec.RecvYear, &rec.RecvKind, &rec.Title, &rec.AmountCents, &rec.IncomeCategoryID, &rec.Status, &rec.Note, &rec.CreatedAt, &rec.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -154,14 +150,18 @@ func (r *Repo) FindReceivableByID(id int64) (*Receivable, error) {
 }
 
 // ListReceivables 查询应收单列表（join party 名称，含已收/未收）。
-// partyID/kind/status 可空过滤。
-func (r *Repo) ListReceivables(orgID int64, partyID *int64, kind, status string, page, pageSize int) ([]Receivable, int, error) {
+// partyID/kind/status 可空过滤；year=0 表示全部年度。
+func (r *Repo) ListReceivables(orgID int64, partyID *int64, year int, kind, status string, page, pageSize int) ([]Receivable, int, error) {
 	where := "WHERE r.org_id = ?"
 	var args []any
 	args = append(args, orgID)
 	if partyID != nil {
 		where += " AND r.party_id = ?"
 		args = append(args, *partyID)
+	}
+	if year > 0 {
+		where += " AND r.recv_year = ?"
+		args = append(args, year)
 	}
 	if kind == "rent" || kind == "dividend" || kind == "other" {
 		where += " AND r.recv_kind = ?"
@@ -172,7 +172,7 @@ func (r *Repo) ListReceivables(orgID int64, partyID *int64, kind, status string,
 		args = append(args, status)
 	}
 
-	sel := `SELECT r.id, r.org_id, r.party_id, p.name, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
+	sel := `SELECT r.id, r.org_id, r.party_id, p.name, r.recv_year, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
 	        r.status, r.note, r.created_at, r.updated_at,
 	        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
 	            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid
@@ -211,7 +211,7 @@ func scanReceivableRow(row receivableScanner) (*Receivable, error) {
 	rec := &Receivable{}
 	var paid int64
 	err := row.Scan(
-		&rec.ID, &rec.OrgID, &rec.PartyID, &rec.PartyName, &rec.RecvKind, &rec.Title, &rec.AmountCents,
+		&rec.ID, &rec.OrgID, &rec.PartyID, &rec.PartyName, &rec.RecvYear, &rec.RecvKind, &rec.Title, &rec.AmountCents,
 		&rec.IncomeCategoryID, &rec.Status, &rec.Note, &rec.CreatedAt, &rec.UpdatedAt, &paid,
 	)
 	if err != nil {
@@ -226,7 +226,7 @@ func scanReceivableRow(row receivableScanner) (*Receivable, error) {
 func (r *Repo) GetReceivableDetail(orgID, id int64) (*ReceivableDetail, error) {
 	var rec *Receivable
 	row := r.db.QueryRow(
-		`SELECT r.id, r.org_id, r.party_id, p.name, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
+		`SELECT r.id, r.org_id, r.party_id, p.name, r.recv_year, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
 		        r.status, r.note, r.created_at, r.updated_at,
 		        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
 		            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid
@@ -473,6 +473,141 @@ func (r *Repo) VoidReceipt(orgID, receiptID int64) (*VoidOutcome, error) {
 	rc.Status = "voided"
 	rc.UpdatedAt = now
 	return &VoidOutcome{Receipt: rc, ReceivableStatus: newStatus, TxnVoided: txnVoided}, nil
+}
+
+// ---------- 批量计提与计提标准（v0.4） ----------
+
+// ReceivableExists 判断 单位+年度+类别 应收单是否已存在（防重）。
+func (r *Repo) ReceivableExists(orgID, partyID int64, year int, kind string) (bool, error) {
+	var n int
+	err := r.db.QueryRow(
+		`SELECT COUNT(*) FROM receivable WHERE org_id=? AND party_id=? AND recv_year=? AND recv_kind=?`,
+		orgID, partyID, year, kind,
+	).Scan(&n)
+	return n > 0, err
+}
+
+// BatchCreateReceivables 批量计提应收（同年+同类已存在则跳过）。
+func (r *Repo) BatchCreateReceivables(orgID int64, year int, title string, items []BatchAccrueItem) (*BatchAccrueResult, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	result := &BatchAccrueResult{}
+	now := platform.Now()
+	for _, it := range items {
+		var n int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM receivable WHERE org_id=? AND party_id=? AND recv_year=? AND recv_kind=?`,
+			orgID, it.PartyID, year, it.RecvKind,
+		).Scan(&n); err != nil {
+			return nil, fmt.Errorf("查重失败: %w", err)
+		}
+		if n > 0 {
+			result.Skipped++
+			continue
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO receivable(org_id, party_id, recv_year, recv_kind, title, amount_cents, income_category_id, status, note, created_at, updated_at)
+			 VALUES(?,?,?,?,?,?,NULL,'open',NULL,?,?)`,
+			orgID, it.PartyID, year, it.RecvKind, title, it.AmountCents, now, now,
+		); err != nil {
+			return nil, fmt.Errorf("批量计提失败: %w", err)
+		}
+		result.Created++
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交批量计提失败: %w", err)
+	}
+	return result, nil
+}
+
+// ListStandards 列出某组织计提标准（含单位名）。
+func (r *Repo) ListStandards(orgID int64, kind string) ([]AccrualStandard, error) {
+	where := "WHERE s.org_id = ?"
+	args := []any{orgID}
+	if kind == "rent" || kind == "dividend" || kind == "other" {
+		where += " AND s.recv_kind = ?"
+		args = append(args, kind)
+	}
+	rows, err := r.db.Query(`SELECT s.id, s.org_id, s.party_id, p.name, s.recv_kind, s.amount_cents, s.active,
+		s.created_at, s.updated_at FROM recv_standard s JOIN party p ON p.id=s.party_id AND p.org_id=s.org_id `+where+` ORDER BY p.name`,
+		args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询计提标准失败: %w", err)
+	}
+	defer rows.Close()
+	var items []AccrualStandard
+	for rows.Next() {
+		s := AccrualStandard{}
+		var active int
+		if err := rows.Scan(&s.ID, &s.OrgID, &s.PartyID, &s.PartyName, &s.RecvKind, &s.AmountCents, &active, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描计提标准失败: %w", err)
+		}
+		s.Active = active == 1
+		items = append(items, s)
+	}
+	return items, rows.Err()
+}
+
+// UpsertStandard 保存计提标准（同单位+类别唯一）。
+func (r *Repo) UpsertStandard(orgID int64, s *AccrualStandard) (*AccrualStandard, error) {
+	now := platform.Now()
+	active := 1
+	if !s.Active {
+		active = 0
+	}
+	res, err := r.db.Exec(
+		`INSERT INTO recv_standard(org_id, party_id, recv_kind, amount_cents, active, created_at, updated_at)
+		 VALUES(?,?,?,?,?,?,?)
+		 ON CONFLICT(org_id, party_id, recv_kind) DO UPDATE SET amount_cents=excluded.amount_cents, active=excluded.active, updated_at=excluded.updated_at`,
+		orgID, s.PartyID, s.RecvKind, s.AmountCents, active, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("保存计提标准失败: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	if id == 0 {
+		if err := r.db.QueryRow(`SELECT id FROM recv_standard WHERE org_id=? AND party_id=? AND recv_kind=?`,
+			orgID, s.PartyID, s.RecvKind).Scan(&id); err != nil {
+			return nil, fmt.Errorf("查询计提标准失败: %w", err)
+		}
+	}
+	s.ID = id
+	s.OrgID = orgID
+	return s, nil
+}
+
+// SetStandardActive 启停标准。
+func (r *Repo) SetStandardActive(id, orgID int64, active bool) error {
+	v := 0
+	if active {
+		v = 1
+	}
+	if _, err := r.db.Exec(`UPDATE recv_standard SET active=?, updated_at=? WHERE id=? AND org_id=?`, v, platform.Now(), id, orgID); err != nil {
+		return fmt.Errorf("更新计提标准失败: %w", err)
+	}
+	return nil
+}
+
+// AccrueFromStandards 按标准一键结转年度应收（存在则跳过）。
+func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*BatchAccrueResult, error) {
+	standards, err := r.ListStandards(orgID, kind)
+	if err != nil {
+		return nil, err
+	}
+	var items []BatchAccrueItem
+	for _, s := range standards {
+		if !s.Active {
+			continue
+		}
+		items = append(items, BatchAccrueItem{PartyID: s.PartyID, RecvKind: s.RecvKind, AmountCents: s.AmountCents})
+	}
+	if len(items) == 0 {
+		return &BatchAccrueResult{}, nil
+	}
+	return r.BatchCreateReceivables(orgID, year, title, items)
 }
 
 func sumPaidTx(tx *sql.Tx, orgID, receivableID int64) (int64, error) {

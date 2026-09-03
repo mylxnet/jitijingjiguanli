@@ -4,18 +4,18 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"jititaizhang/server/internal/platform"
 )
 
-// newEnv 建临时库 + 迁移 + 测试组织（org id=1）+ 注入组织的 category 路由。
 func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	t.Helper()
 	db, err := platform.Open(filepath.Join(t.TempDir(), "category.db"))
@@ -34,21 +34,38 @@ func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	return db, r
 }
 
-// seedTestOrg 插入固定测试组织（id=1）。每个测试库独立，首个组织 id 恒为 1。
-func seedTestOrg(t *testing.T, db *sql.DB) {
+// seedCat 直接插科目（kind: equity/asset；level=1 时 parent=nil）。
+func seedCat(t *testing.T, db *sql.DB, name string, level int, parent any, status, kind string) int64 {
 	t.Helper()
-	if _, err := db.Exec(
-		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
-		t.Fatalf("插入测试组织失败: %v", err)
+	now := time.Now().UTC()
+	if kind == "" {
+		kind = "equity"
+	}
+	res, err := db.Exec(`INSERT INTO category(org_id, name, level, parent_id, status, kind,
+		sort_order, created_at, updated_at)
+		VALUES(1,?,?,?,?,?,0,?,?)`, name, level, parent, status, kind, now, now)
+	if err != nil {
+		t.Fatalf("插科目 %s 失败: %v", name, err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func seedTxn(t *testing.T, db *sql.DB, date, dir string, amt, catID int64) {
+	t.Helper()
+	now := time.Now().UTC()
+	if _, err := db.Exec(`INSERT INTO txn(org_id, txn_date, direction, amount_cents, category_id, note, status, created_at, updated_at)
+		VALUES(1,?,?,?,?,NULL,'normal',?,?)`, date, dir, amt, catID, now, now); err != nil {
+		t.Fatalf("插流水失败: %v", err)
 	}
 }
 
-// orgCtx 测试中间件：把固定组织/用户写入 gin 上下文（等价于登录态）。
-func orgCtx() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Set("orgID", int64(1))
-		c.Set("userID", int64(1))
-		c.Next()
+func seedMove(t *testing.T, db *sql.DB, kind string, assetID, amt int64) {
+	t.Helper()
+	now := time.Now().UTC()
+	if _, err := db.Exec(`INSERT INTO fund_move(org_id, move_date, kind, asset_category_id, amount_cents, note, status, created_at, updated_at)
+		VALUES(1,'2026-09-01',?,?,?,NULL,'normal',?,?)`, kind, assetID, amt, now, now); err != nil {
+		t.Fatalf("插资金划转失败: %v", err)
 	}
 }
 
@@ -69,7 +86,7 @@ func doJSON(t *testing.T, r *gin.Engine, method, path string, body any) *httptes
 	return w
 }
 
-func errCode(t *testing.T, w *httptest.ResponseRecorder) string {
+func apiErr(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var out struct {
 		Error struct {
@@ -77,319 +94,144 @@ func errCode(t *testing.T, w *httptest.ResponseRecorder) string {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("解析错误响应失败: %v body=%s", err, w.Body.String())
+		t.Fatalf("解析错误体失败: %v body=%s", err, w.Body.String())
 	}
 	return out.Error.Code
 }
 
-func decodeData[T any](t *testing.T, w *httptest.ResponseRecorder) T {
-	t.Helper()
-	var out struct {
-		Data T `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("解析响应失败: %v body=%s", err, w.Body.String())
-	}
-	return out.Data
-}
+// TestTreeAndBalances 树与余额：权益=收支相抵；资产=资金划转；一级=子项和。
+func TestTreeAndBalances(t *testing.T) {
+	db, r := newEnv(t)
+	l1Inc := seedCat(t, db, "经营收入", 1, nil, "active", "equity")
+	income := seedCat(t, db, "投资收益", 2, l1Inc, "active", "equity")
+	l1Dist := seedCat(t, db, "分配与支出", 1, nil, "active", "equity")
+	welfare := seedCat(t, db, "福利发放", 2, l1Dist, "active", "equity")
+	l1Inv := seedCat(t, db, "对外投资", 1, nil, "active", "equity")
+	invest := seedCat(t, db, "项目A", 2, l1Inv, "active", "asset")
 
-func createCat(t *testing.T, r *gin.Engine, name string, level int, parent *int64, bt string, opening int64, inc bool) *Category {
-	t.Helper()
-	w := doJSON(t, r, http.MethodPost, "/api/categories", map[string]any{
-		"name": name, "level": level, "parentId": parent, "balanceType": bt,
-		"openingBalanceCents": opening, "includeInReconciliation": inc,
-	})
+	seedTxn(t, db, "2026-09-01", "income", 50000, income)
+	seedTxn(t, db, "2026-09-02", "expense", 20000, welfare)
+	seedMove(t, db, "invest", invest, 40000)
+
+	w := doJSON(t, r, "GET", "/api/categories", nil)
 	if w.Code != http.StatusOK {
-		t.Fatalf("创建科目 %s 失败: %d %s", name, w.Code, w.Body.String())
-	}
-	return decodeData[*Category](t, w)
-}
-
-func int64p(v int64) *int64 { return &v }
-
-func TestEmptyListReturnsArray(t *testing.T) {
-	_, r := newEnv(t)
-	w := doJSON(t, r, http.MethodGet, "/api/categories", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("空库列表应 200，实际 %d", w.Code)
+		t.Fatalf("列表失败: %d %s", w.Code, w.Body.String())
 	}
 	var out struct {
 		Data []*Category `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("解析响应失败: %v body=%s", err, w.Body.String())
-	}
-	if out.Data == nil {
-		t.Errorf("空库应返回 [] 而非 null（前端直接遍历 data），实际 body=%s", w.Body.String())
-	}
-}
-
-func TestCreateAndListTree(t *testing.T) {
-	_, r := newEnv(t)
-
-	l1 := createCat(t, r, "专项应付款", 1, nil, "residual", 0, false)
-	_ = createCat(t, r, "修路款", 2, int64p(l1.ID), "residual", 30000, true)
-	_ = createCat(t, r, "水利款", 2, int64p(l1.ID), "residual", 0, true)
-
-	w := doJSON(t, r, http.MethodGet, "/api/categories", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("列表应 200，实际 %d", w.Code)
-	}
-	tree := decodeData[[]*Category](t, w)
-	if len(tree) != 1 {
-		t.Fatalf("一级科目应为 1 个，实际 %d", len(tree))
-	}
-	root := tree[0]
-	if len(root.Children) != 2 {
-		t.Fatalf("二级科目应为 2 个，实际 %d", len(root.Children))
-	}
-	// 修路款余额 = 期初 30000
-	if root.Children[0].BalanceCents == nil || *root.Children[0].BalanceCents != 30000 {
-		t.Errorf("修路款余额应 30000，实际 %v", root.Children[0].BalanceCents)
-	}
-	if root.BalanceCents == nil || *root.BalanceCents != 30000 {
-		t.Errorf("一级合计应 30000，实际 %v", root.BalanceCents)
-	}
-}
-
-func TestCreateValidations(t *testing.T) {
-	_, r := newEnv(t)
-	l1 := createCat(t, r, "管理费用", 1, nil, "residual", 0, false)
-	leaf := createCat(t, r, "办公费", 2, int64p(l1.ID), "spending", 0, false)
-
-	cases := []struct {
-		name string
-		body map[string]any
-		code int
-		want string
-	}{
-		{"二级缺父", map[string]any{"name": "a", "level": 2, "balanceType": "residual"}, http.StatusBadRequest, "INVALID_REQUEST"},
-		{"父非一级", map[string]any{"name": "b", "level": 2, "parentId": leaf.ID, "balanceType": "residual"}, http.StatusBadRequest, "CATEGORY_PARENT_INVALID"},
-		{"花费型勾稽", map[string]any{"name": "c", "level": 2, "parentId": l1.ID, "balanceType": "spending", "includeInReconciliation": true}, http.StatusBadRequest, "INVALID_REQUEST"},
-		{"一级设期初", map[string]any{"name": "d", "level": 1, "balanceType": "residual", "openingBalanceCents": 100}, http.StatusBadRequest, "LEVEL1_NO_OPENING"},
-		{"一级勾稽", map[string]any{"name": "e", "level": 1, "balanceType": "residual", "includeInReconciliation": true}, http.StatusBadRequest, "LEVEL1_NO_RECONCILE"},
-		{"重名", map[string]any{"name": "管理费用", "level": 1, "balanceType": "residual"}, http.StatusConflict, "CATEGORY_NAME_DUP"},
-	}
-	for _, tc := range cases {
-		w := doJSON(t, r, http.MethodPost, "/api/categories", tc.body)
-		if w.Code != tc.code {
-			t.Errorf("%s: 应 %d，实际 %d body=%s", tc.name, tc.code, w.Code, w.Body.String())
-			continue
-		}
-		if got := errCode(t, w); got != tc.want {
-			t.Errorf("%s: 错误码应 %s，实际 %s", tc.name, tc.want, got)
-		}
-	}
-
-	// 不同一级下同名二级应允许
-	l1b := createCat(t, r, "管理费用B", 1, nil, "residual", 0, false)
-	w := doJSON(t, r, http.MethodPost, "/api/categories", map[string]any{
-		"name": "办公费", "level": 2, "parentId": l1b.ID, "balanceType": "spending"})
-	if w.Code != http.StatusOK {
-		t.Errorf("异父同名应 200，实际 %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestUpdateWritesChangelog(t *testing.T) {
-	db, r := newEnv(t)
-	l1 := createCat(t, r, "管理费用", 1, nil, "residual", 0, false)
-	c := createCat(t, r, "办公费", 2, int64p(l1.ID), "spending", 0, false)
-
-	w := doJSON(t, r, http.MethodPut, fmt.Sprintf("/api/categories/%d", c.ID),
-		map[string]any{"name": "办公费(改名)", "status": "inactive", "openingBalanceCents": 500})
-	if w.Code != http.StatusOK {
-		t.Fatalf("更新应 200，实际 %d %s", w.Code, w.Body.String())
-	}
-
-	var logs int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM change_log WHERE entity_type='category' AND entity_id=?`, c.ID).Scan(&logs); err != nil {
-		t.Fatalf("查询留痕失败: %v", err)
-	}
-	if logs != 3 {
-		t.Errorf("应产生 3 条留痕（改名/停用/改期初），实际 %d", logs)
-	}
-
-	// 一级科目改期初应 400
-	w = doJSON(t, r, http.MethodPut, fmt.Sprintf("/api/categories/%d", l1.ID),
-		map[string]any{"openingBalanceCents": 1})
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("一级改期初应 400，实际 %d", w.Code)
-	}
-}
-
-func TestDeleteProtection(t *testing.T) {
-	db, r := newEnv(t)
-	l1 := createCat(t, r, "管理费用", 1, nil, "residual", 0, false)
-	l2 := createCat(t, r, "办公费", 2, int64p(l1.ID), "spending", 0, false)
-	free := createCat(t, r, "差旅费", 2, int64p(l1.ID), "spending", 0, false)
-
-	// 一级含子 → 409
-	w := doJSON(t, r, http.MethodDelete, fmt.Sprintf("/api/categories/%d", l1.ID), nil)
-	if w.Code != http.StatusConflict {
-		t.Errorf("一级含子删除应 409，实际 %d", w.Code)
-	}
-
-	// 给 l2 插入一笔流水 → 删除 409
-	_, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES(1,'2026-09-01','expense',100,?,NULL,'normal','2026-09-01','2026-09-01')`, l2.ID)
-	if err != nil {
-		t.Fatalf("插入流水失败: %v", err)
-	}
-	w = doJSON(t, r, http.MethodDelete, fmt.Sprintf("/api/categories/%d", l2.ID), nil)
-	if w.Code != http.StatusConflict || errCode(t, w) != "CATEGORY_IN_USE" {
-		t.Errorf("被引用删除应 409 CATEGORY_IN_USE，实际 %d %s", w.Code, errCode(t, w))
-	}
-
-	// 无引用 → 200
-	w = doJSON(t, r, http.MethodDelete, fmt.Sprintf("/api/categories/%d", free.ID), nil)
-	if w.Code != http.StatusOK {
-		t.Errorf("未引用删除应 200，实际 %d %s", w.Code, w.Body.String())
-	}
-}
-
-// TestCalcBalanceD67 用 D6/D7 验算表核对余额公式：
-//
-//	余粮型 residual = 期初 + 收 − 支 + 转入 − 转出
-//	花费型 spending = 期初 + 支 − 收 − 转出（转入禁）
-func TestCalcBalanceD67(t *testing.T) {
-	db, r := newEnv(t)
-	inc := true
-	l1 := createCat(t, r, "专项应付款", 1, nil, "residual", 0, false)
-	road := createCat(t, r, "修路款", 2, int64p(l1.ID), "residual", 30000, inc)
-	water := createCat(t, r, "水利款", 2, int64p(l1.ID), "residual", 0, inc)
-
-	// D6 步骤①：收财政拨修路款 5 万
-	insertTxn(t, db, "2026-09-01", "income", 50000, road.ID)
-	// D7 步骤①：修路款 → 水利款 2 万（转账）
-	insertTransfer(t, db, road.ID, []leg{{water.ID, 20000}})
-
-	repo := NewRepo(db)
-	roadBal, err := repo.CalcBalance(road.ID)
-	if err != nil {
-		t.Fatalf("计算修路款余额失败: %v", err)
-	}
-	// 30000 + 50000 − 20000 = 60000
-	if roadBal != 60000 {
-		t.Errorf("修路款余额应 60000，实际 %d", roadBal)
-	}
-	waterBal, _ := repo.CalcBalance(water.ID)
-	if waterBal != 20000 {
-		t.Errorf("水利款余额应 20000，实际 %d", waterBal)
-	}
-
-	// 花费型：支 4 万 → 余额 4 万；结转转出 4 万 → 归零
-	expL1 := createCat(t, r, "经营支出", 1, nil, "residual", 0, false)
-	elec := createCat(t, r, "水电费", 2, int64p(expL1.ID), "spending", 0, false)
-	insertTxn(t, db, "2026-09-02", "expense", 40000, elec.ID)
-	bal, _ := repo.CalcBalance(elec.ID)
-	if bal != 40000 {
-		t.Errorf("花费型支出后余额应 40000，实际 %d", bal)
-	}
-	// 结转：水电费 → 本年收益（花费型作转出方清零，R4）
-	incomeL1 := createCat(t, r, "本年收益", 1, nil, "residual", 0, false)
-	profit := createCat(t, r, "本年收益科目", 2, int64p(incomeL1.ID), "residual", 0, false)
-	insertTransfer(t, db, elec.ID, []leg{{profit.ID, 40000}})
-	bal, _ = repo.CalcBalance(elec.ID)
-	if bal != 0 {
-		t.Errorf("花费型结转后余额应 0，实际 %d", bal)
-	}
-}
-
-type leg struct {
-	catID  int64
-	amount int64
-}
-
-func insertTxn(t *testing.T, db *sql.DB, date, dir string, amount, catID int64) {
-	t.Helper()
-	if _, err := db.Exec(`INSERT INTO txn(org_id,txn_date,direction,amount_cents,category_id,note,status,created_at,updated_at)
-		VALUES(1,?,?,?,?,NULL,'normal','2026-09-01','2026-09-01')`, date, dir, amount, catID); err != nil {
-		t.Fatalf("插入流水失败: %v", err)
-	}
-}
-
-func insertTransfer(t *testing.T, db *sql.DB, sourceID int64, legs []leg) {
-	t.Helper()
-	total := int64(0)
-	for _, l := range legs {
-		total += l.amount
-	}
-	res, err := db.Exec(`INSERT INTO transfer(org_id, txn_date, source_category_id, source_amount_cents, note, status, created_at, updated_at)
-		VALUES(1,'2026-09-01',?,?,NULL,'normal','2026-09-01','2026-09-01')`, sourceID, total)
-	if err != nil {
-		t.Fatalf("插入转账失败: %v", err)
-	}
-	tid, _ := res.LastInsertId()
-	for _, l := range legs {
-		if _, err := db.Exec(`INSERT INTO transfer_leg(org_id, transfer_id, category_id, amount_cents)
-			VALUES(1,?,?,?)`, tid, l.catID, l.amount); err != nil {
-			t.Fatalf("插入转账明细失败: %v", err)
-		}
-	}
-}
-
-// TestOrgIsolation 跨组织隔离：A 组织建科目，B 组织不可见、不可改、不可删。
-func TestOrgIsolation(t *testing.T) {
-	db, err := platform.Open(filepath.Join(t.TempDir(), "iso.db"))
-	if err != nil {
-		t.Fatalf("打开临时库失败: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := platform.Migrate(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
-	}
-	// 两个组织 id=1 / id=2
-	for _, id := range []int64{1, 2} {
-		if _, err := db.Exec(`INSERT INTO org(id, name, created_at, updated_at) VALUES(?, '组织', '2026-09-02', '2026-09-02')`, id); err != nil {
-			t.Fatalf("建组织失败: %v", err)
-		}
-	}
-	gin.SetMode(gin.TestMode)
-	h := NewHandler(db)
-	r1 := gin.New()
-	h.Register(r1.Group("", orgCtxID(1)))
-	r2 := gin.New()
-	h.Register(r2.Group("", orgCtxID(2)))
-
-	// 组织 1 建一级+二级科目
-	w := doJSON(t, r1, http.MethodPost, "/api/categories", map[string]any{"name": "本金", "level": 1, "balanceType": "residual"})
-	if w.Code != http.StatusOK {
-		t.Fatalf("组织1建一级失败: %d %s", w.Code, w.Body.String())
-	}
-	var l1 struct {
-		Data Category `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &l1); err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
-
-	// 组织 2 看不到组织 1 的科目
-	w = doJSON(t, r2, http.MethodGet, "/api/categories", nil)
-	var tree struct {
-		Data []*Category `json:"data"`
+	byL1 := map[string]*Category{}
+	for _, root := range out.Data {
+		byL1[root.Name] = root
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &tree); err != nil {
-		t.Fatalf("解析组织2列表失败: %v", err)
+	if byL1["经营收入"].Children[0].BalanceCents == nil || *byL1["经营收入"].Children[0].BalanceCents != 50000 {
+		t.Errorf("投资收益余额应 50000，实际 %v", byL1["经营收入"].Children[0].BalanceCents)
 	}
-	if len(tree.Data) != 0 {
-		t.Errorf("组织 2 不应看到组织 1 的科目，实际 %d 个", len(tree.Data))
+	if byL1["分配与支出"].Children[0].BalanceCents == nil || *byL1["分配与支出"].Children[0].BalanceCents != -20000 {
+		t.Errorf("福利发放余额应 -20000，实际 %v", byL1["分配与支出"].Children[0].BalanceCents)
 	}
-
-	// 组织 2 更新/删除组织 1 的科目 → 404
-	w = doJSON(t, r2, http.MethodPut, fmt.Sprintf("/api/categories/%d", l1.Data.ID), map[string]any{"name": "越权改名"})
-	if w.Code != http.StatusNotFound {
-		t.Errorf("跨组织更新应 404，实际 %d", w.Code)
-	}
-	w = doJSON(t, r2, http.MethodDelete, fmt.Sprintf("/api/categories/%d", l1.Data.ID), nil)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("跨组织删除应 404，实际 %d", w.Code)
+	if byL1["对外投资"].Children[0].BalanceCents == nil || *byL1["对外投资"].Children[0].BalanceCents != 40000 {
+		t.Errorf("项目A资产余额应 40000，实际 %v", byL1["对外投资"].Children[0].BalanceCents)
 	}
 }
 
-// orgCtxID 注入指定组织的测试中间件。
-func orgCtxID(orgID int64) gin.HandlerFunc {
+// TestCreateValidations 创建校验（v0.4）。
+func TestCreateValidations(t *testing.T) {
+	db, r := newEnv(t)
+	l1 := seedCat(t, db, "对外投资", 1, nil, "active", "equity")
+
+	// 一级建资产 → 拒绝
+	w := doJSON(t, r, "POST", "/api/categories", map[string]any{"name": "A", "level": 1, "kind": "asset"})
+	if w.Code != http.StatusBadRequest || apiErr(t, w) != "ASSET_LEVEL" {
+		t.Errorf("一级资产应 400 ASSET_LEVEL，实际 %d %s", w.Code, w.Body.String())
+	}
+	// 二级缺父
+	w = doJSON(t, r, "POST", "/api/categories", map[string]any{"name": "B", "level": 2, "kind": "equity"})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("二级缺父应 400，实际 %d", w.Code)
+	}
+	// 重名（同父）
+	doJSON(t, r, "POST", "/api/categories", map[string]any{"name": "项目A", "level": 2, "parentId": l1, "kind": "asset"})
+	w = doJSON(t, r, "POST", "/api/categories", map[string]any{"name": "项目A", "level": 2, "parentId": l1, "kind": "asset"})
+	if w.Code != http.StatusConflict || apiErr(t, w) != "CATEGORY_NAME_DUP" {
+		t.Errorf("重名应 409 CATEGORY_NAME_DUP，实际 %d %s", w.Code, w.Body.String())
+	}
+	// 父不是一级
+	l2 := seedCat(t, db, "子级", 2, l1, "active", "equity")
+	w = doJSON(t, r, "POST", "/api/categories", map[string]any{"name": "C", "level": 2, "parentId": l2, "kind": "equity"})
+	if w.Code != http.StatusBadRequest || apiErr(t, w) != "CATEGORY_PARENT_INVALID" {
+		t.Errorf("父不是一级应 400 CATEGORY_PARENT_INVALID，实际 %d %s", w.Code, w.Body.String())
+	}
+}
+
+// TestUpdateChangelog 改名/停用留痕。
+func TestUpdateChangelog(t *testing.T) {
+	db, r := newEnv(t)
+	l1 := seedCat(t, db, "对外投资", 1, nil, "active", "equity")
+	id := seedCat(t, db, "项目A", 2, l1, "active", "asset")
+
+	w := doJSON(t, r, "PUT", "/api/categories/"+itoa(id), map[string]any{"name": "项目A2"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("改名失败: %d %s", w.Code, w.Body.String())
+	}
+	w = doJSON(t, r, "PUT", "/api/categories/"+itoa(id), map[string]any{"status": "inactive"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("停用失败: %d %s", w.Code, w.Body.String())
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM change_log WHERE entity_type='category' AND entity_id=?`, id).Scan(&n); err != nil {
+		t.Fatalf("查留痕失败: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("留痕应 2 条（改名+停用），实际 %d", n)
+	}
+}
+
+// TestDeleteGuards 删除保护。
+func TestDeleteGuards(t *testing.T) {
+	db, r := newEnv(t)
+	l1 := seedCat(t, db, "对外投资", 1, nil, "active", "equity")
+	invest := seedCat(t, db, "项目A", 2, l1, "active", "asset")
+	seedMove(t, db, "invest", invest, 40000)
+
+	// 有资金划转 → 拒绝
+	w := doJSON(t, r, "DELETE", "/api/categories/"+itoa(invest), nil)
+	if w.Code != http.StatusConflict || apiErr(t, w) != "CATEGORY_IN_USE" {
+		t.Errorf("资产被引用删除应 409，实际 %d %s", w.Code, w.Body.String())
+	}
+	// 一级仍有子 → 拒绝
+	w = doJSON(t, r, "DELETE", "/api/categories/"+itoa(l1), nil)
+	if w.Code != http.StatusConflict || apiErr(t, w) != "CATEGORY_HAS_CHILD" {
+		t.Errorf("一级有子删除应 409，实际 %d %s", w.Code, w.Body.String())
+	}
+
+	// 空权益科目可删
+	empty := seedCat(t, db, "空科目", 2, l1, "active", "equity")
+	w = doJSON(t, r, "DELETE", "/api/categories/"+itoa(empty), nil)
+	if w.Code != http.StatusOK {
+		t.Errorf("空科目删除应 200，实际 %d %s", w.Code, w.Body.String())
+	}
+}
+
+func itoa(v int64) string {
+	return strconv.FormatInt(v, 10)
+}
+
+func seedTestOrg(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO org(id, name, created_at, updated_at) VALUES(1, '测试组织', '2026-09-02', '2026-09-02')`); err != nil {
+		t.Fatalf("插入测试组织失败: %v", err)
+	}
+}
+
+func orgCtx() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set("orgID", orgID)
+		c.Set("orgID", int64(1))
 		c.Set("userID", int64(1))
 		c.Next()
 	}

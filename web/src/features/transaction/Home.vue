@@ -1,208 +1,240 @@
 <template>
   <div class="home-page">
-    <!-- 顶部信息 -->
-    <div class="home-header">
-      <div class="today-info">
-        <span class="today-date">{{ todayStr() }}</span>
-        <span class="today-count" v-if="todayCount > 0">
-          今日 {{ todayCount }} 笔
-        </span>
+    <div class="page-header">
+      <h3>看板</h3>
+      <span class="today">{{ todayStr() }}</span>
+    </div>
+
+    <!-- 资产快览 -->
+    <div class="cards">
+      <div class="dash-card">
+        <div class="dash-label">银行存款</div>
+        <div class="dash-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
+      </div>
+      <div class="dash-card asset">
+        <div class="dash-label">资产类（对外投资）</div>
+        <div class="dash-value">{{ formatFen(capital?.assetTotalCents ?? 0) }}</div>
+      </div>
+      <div class="dash-card owe">
+        <div class="dash-label">待收欠款</div>
+        <div class="dash-value">{{ formatFen(owedTotal) }}</div>
+      </div>
+      <div class="dash-card equity">
+        <div class="dash-label">净资产</div>
+        <div class="dash-value">{{ formatFen(capital?.equityTotalCents ?? 0) }}</div>
+      </div>
+    </div>
+
+    <!-- 本年收益 -->
+    <div class="income-strip">
+      <span>本年收益（到账）</span>
+      <strong>{{ formatFen(summary?.incomeTotal ?? 0) }}</strong>
+      <span class="sub">收 {{ formatFen(summary?.incomeTotal ?? 0) }} · 支 {{ formatFen(summary?.expenseTotal ?? 0) }}</span>
+    </div>
+
+    <!-- 欠款明细 -->
+    <div class="section-head">
+      <span>欠款明细</span>
+      <span class="more" @click="goContacts">查看全部 ›</span>
+    </div>
+    <div class="owe-list">
+      <div v-if="oweRows.length === 0" class="owe-empty">暂无欠款（全部已收）</div>
+      <div v-for="row in oweRows" :key="row.key" class="owe-row" @click="goContacts">
+        <div class="owe-main">
+          <span class="owe-party">{{ row.partyName }}</span>
+          <span class="owe-kind" :class="row.recvKind">{{ recvKindLabel[row.recvKind] }}</span>
+          <span class="owe-title">{{ row.title }}</span>
+        </div>
+        <span class="owe-amount">{{ formatFen(row.outstanding) }}</span>
       </div>
     </div>
 
     <!-- 无科目引导 -->
-    <div v-if="noCategories" class="empty-guide">
-      <div class="empty-icon">📋</div>
-      <p>还没有科目，先去创建</p>
-      <van-button type="primary" size="small" @click="goCategories">
-        去创建科目
-      </van-button>
+    <div v-if="noCategory" class="empty-guide">
+      <p>还没有科目，先去创建科目才能记一笔</p>
+      <van-button size="small" type="primary" @click="goCategories">去建科目</van-button>
     </div>
 
-    <!-- 记账表单 -->
-    <div v-else class="form-card">
-      <!-- 收/支切换 -->
-      <div class="direction-toggle">
-        <van-button
-          :type="direction === 'income' ? 'primary' : 'default'"
-          size="small"
-          @click="direction = 'income'"
-        >收入</van-button>
-        <van-button
-          :type="direction === 'expense' ? 'primary' : 'default'"
-          size="small"
-          @click="direction = 'expense'"
-        >支出</van-button>
-      </div>
+    <!-- 记一笔（悬浮于底部） -->
+    <div class="quick-record" @click="openRecord">
+      <van-icon name="plus" class="quick-icon" />
+      <span>记一笔</span>
+    </div>
 
-      <van-form @submit="handleSave">
-        <!-- 日期 -->
-        <van-field
-          v-model="form.date"
-          label="日期"
-          placeholder="YYYY-MM-DD"
-          :rules="[{ required: true, message: '请填写日期' }]"
-        />
-
-        <!-- 摘要 -->
-        <van-field
-          v-model="form.note"
-          label="摘要"
-          placeholder="买了什么、给了谁（可选）"
-        />
-
-        <!-- 科目选择 -->
-        <van-field
-          v-model="form.categoryName"
-          is-link
-          readonly
-          label="科目"
-          placeholder="请选择科目"
-          :rules="[{ required: true, message: '请选择科目' }]"
-          @click="showCategoryPicker = true"
-        />
-        <van-popup v-model:show="showCategoryPicker" position="bottom">
-          <van-picker
-            :columns="categoryOptions"
-            @confirm="onCategoryConfirm"
-            @cancel="showCategoryPicker = false"
-          />
-        </van-popup>
-
-        <!-- 金额 -->
-        <van-field
-          v-model="form.amount"
-          label="金额"
-          type="number"
-          placeholder="0.00"
-          :rules="[
-            { required: true, message: '请填写金额' },
-            { validator: validateAmount, message: '金额必须大于 0' }
-          ]"
-        />
-
-        <div style="margin: 16px">
-          <van-button round block type="primary" native-type="submit" :loading="saving">
-            保存
-          </van-button>
+    <!-- 记一笔弹层 -->
+    <van-popup v-model:show="showRecord" position="bottom" round closeable style="max-height: 90vh">
+      <div class="record-popup">
+        <div class="popup-title">记一笔</div>
+        <div class="direction-toggle">
+          <van-button :type="record.direction === 'income' ? 'primary' : 'default'" size="small" @click="record.direction = 'income'">收入</van-button>
+          <van-button :type="record.direction === 'expense' ? 'primary' : 'default'" size="small" @click="record.direction = 'expense'">支出</van-button>
         </div>
-      </van-form>
+        <van-field v-model="record.date" label="日期" placeholder="YYYY-MM-DD" />
+        <van-field v-model="record.note" label="摘要" placeholder="买了什么、给了谁（可选）" />
+        <van-field
+          :model-value="record.categoryName || '请选择科目'"
+          is-link readonly label="科目"
+          @click="showCatPicker = true"
+        />
+        <van-field v-model="record.amount" label="金额" type="number" placeholder="0.00" inputmode="decimal" />
+        <div v-if="recordError" class="record-error">{{ recordError }}</div>
+        <div class="record-save">
+          <van-button round block type="primary" :loading="saving" @click="saveRecord">保存</van-button>
+        </div>
+      </div>
+    </van-popup>
 
-      <div v-if="saveError" class="save-error">{{ saveError }}</div>
-    </div>
+    <!-- 科目选择 -->
+    <van-popup v-model:show="showCatPicker" position="bottom">
+      <van-picker :columns="catColumns" @confirm="onCatConfirm" @cancel="showCatPicker = false" />
+    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
-import { todayStr, formatFen } from '../../types/api'
+import { formatFen, todayStr, currentMonthStr, recvKindLabel } from '../../types/api'
 import { showToast } from 'vant'
-import type { Category, ApiResponse } from '../../types/api'
+import type { Category, Receivable, ReceivableListResponse, RecvKind, ApiResponse } from '../../types/api'
 
 const router = useRouter()
+
+interface Cap {
+  bankBalanceCents: number
+  assetTotalCents: number
+  equityTotalCents: number
+}
+interface SummaryPayload {
+  incomeTotal: number
+  expenseTotal: number
+  capital: Cap
+}
+
+const capital = ref<Cap | null>(null)
+const summary = ref<SummaryPayload | null>(null)
+const oweRows = ref<{ key: string; partyName: string; recvKind: RecvKind; title: string; outstanding: number }[]>([])
+const noCategory = ref(false)
+const owedTotal = computed(() => oweRows.value.reduce((s, r) => s + r.outstanding, 0))
+
+const showRecord = ref(false)
 const saving = ref(false)
-const saveError = ref('')
-const noCategories = ref(false)
-const showCategoryPicker = ref(false)
-const direction = ref<'income' | 'expense'>('expense')
-const todayCount = ref(0)
+const recordError = ref('')
+const record = ref({ date: todayStr(), note: '', categoryName: '', categoryId: null as number | null, amount: '', direction: 'expense' as 'income' | 'expense' })
+const showCatPicker = ref(false)
+const catColumns = ref<{ text: string; value: number }[]>([])
 
-const categories = ref<Category[]>([])
-const selectedCategoryId = ref<number | null>(null)
+onMounted(loadAll)
 
-const form = ref({
-  date: todayStr(),
-  note: '',
-  categoryName: '',
-  amount: '',
-})
+async function loadAll() {
+  await Promise.all([loadSummary(), loadOwed(), loadCats()])
+}
 
-const categoryOptions = ref<{ text: string; value: number }[]>([])
+async function loadSummary() {
+  try {
+    const y = new Date().getFullYear()
+    const from = `${y}-01-01`
+    const to = todayStr()
+    const res = await api.get<ApiResponse<SummaryPayload>>('/summary', { from, to })
+    summary.value = res.data
+    capital.value = res.data.capital
+  } catch {
+    summary.value = null
+    capital.value = null
+  }
+}
 
-onMounted(async () => {
-  await loadCategories()
-})
+async function loadOwed() {
+  try {
+    const res = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', { status: 'open', pageSize: 200 })
+    const map = new Map<string, { key: string; partyName: string; recvKind: RecvKind; title: string; outstanding: number }>()
+    for (const it of res.data.items || []) {
+      if (it.outstandingCents <= 0) continue
+      const key = `${it.partyId}:${it.recvKind}:${it.title}`
+      const cur = map.get(key)
+      if (cur) cur.outstanding += it.outstandingCents
+      else map.set(key, { key, partyName: it.partyName, recvKind: it.recvKind, title: it.title, outstanding: it.outstandingCents })
+    }
+    oweRows.value = [...map.values()].sort((a, b) => b.outstanding - a.outstanding).slice(0, 8)
+  } catch {
+    oweRows.value = []
+  }
+}
 
-async function loadCategories() {
+async function loadCats() {
   try {
     const res = await api.get<ApiResponse<Category[]>>('/categories')
     const cats = res.data
-    // 展平为二级科目选择列表（仅普通科目；资产科目走资金划转，见 D10/R12）
     const options: { text: string; value: number }[] = []
-    let hasActiveLevel2 = false
     for (const l1 of cats) {
       if (l1.children) {
         for (const l2 of l1.children) {
-          if (l2.status === 'active' && l2.kind === 'normal') {
-            options.push({
-              text: `${l1.name} / ${l2.name}`,
-              value: l2.id,
-            })
-            hasActiveLevel2 = true
+          if (l2.status === 'active' && l2.kind === 'equity') {
+            options.push({ text: `${l1.name} / ${l2.name}`, value: l2.id })
           }
         }
       }
     }
-    categoryOptions.value = options
-    categories.value = cats
-    if (!hasActiveLevel2) {
-      noCategories.value = true
-    }
+    catColumns.value = options
+    noCategory.value = options.length === 0
   } catch {
-    noCategories.value = true
+    catColumns.value = []
+    noCategory.value = true
   }
 }
 
-function onCategoryConfirm({ selectedOptions }: any) {
+function openRecord() {
+  if (noCategory.value) {
+    showToast('还没有科目，请先创建')
+    return
+  }
+  record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
+  recordError.value = ''
+  showRecord.value = true
+}
+
+function onCatConfirm({ selectedOptions }: any) {
   const opt = selectedOptions[0]
   if (opt) {
-    form.value.categoryName = opt.text
-    selectedCategoryId.value = opt.value
+    record.value.categoryName = opt.text
+    record.value.categoryId = opt.value
   }
-  showCategoryPicker.value = false
+  showCatPicker.value = false
 }
 
-function validateAmount(val: string): boolean {
-  const num = parseFloat(val)
-  return !isNaN(num) && num > 0
-}
-
-async function handleSave() {
-  if (!selectedCategoryId.value) {
+async function saveRecord() {
+  const amount = Math.round(parseFloat(record.value.amount || '0') * 100)
+  if (!record.value.categoryId) {
     showToast('请选择科目')
     return
   }
-
-  const amountFen = Math.round(parseFloat(form.value.amount) * 100)
-  if (amountFen <= 0) {
+  if (amount <= 0) {
     showToast('金额必须大于 0')
     return
   }
-
   saving.value = true
-  saveError.value = ''
+  recordError.value = ''
   try {
     await api.post('/transactions', {
-      txnDate: form.value.date,
-      direction: direction.value,
-      amountCents: amountFen,
-      categoryId: selectedCategoryId.value,
-      note: form.value.note || '',
+      txnDate: record.value.date,
+      direction: record.value.direction,
+      amountCents: amount,
+      categoryId: record.value.categoryId,
+      note: record.value.note || '',
     })
     showToast('保存成功')
-    // 重置表单
-    form.value.note = ''
-    form.value.categoryName = ''
-    form.value.amount = ''
-    selectedCategoryId.value = null
-    todayCount.value++
+    showRecord.value = false
+    await loadAll()
   } catch (e: any) {
-    saveError.value = e.message || '保存失败'
+    recordError.value = e.message || '保存失败'
   } finally {
     saving.value = false
   }
+}
+
+function goContacts() {
+  router.push('/contacts')
 }
 
 function goCategories() {
@@ -213,69 +245,237 @@ function goCategories() {
 <style scoped>
 .home-page {
   padding: 16px;
-  padding-bottom: 60px;
+  padding-bottom: 110px;
   min-height: 100vh;
   background: #f7f7f5;
 }
 
-.home-header {
-  margin-bottom: 16px;
-}
-
-.today-info {
+.page-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  color: #5f5e5a;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
 
-.today-date {
+.page-header h3 {
+  font-size: 16px;
   font-weight: 500;
+  color: #2c2c2a;
+  margin: 0;
 }
 
-.today-count {
+.today {
   font-size: 12px;
   color: #8f8e88;
-  background: #eceae4;
-  padding: 2px 8px;
-  border-radius: 99px;
 }
 
-.form-card {
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dash-card {
+  flex: 1 1 calc(50% - 8px);
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.dash-card.asset {
+  background: #fdf3e3;
+}
+
+.dash-card.owe {
+  background: #fcebeb;
+}
+
+.dash-card.equity {
+  background: #eaf5ed;
+}
+
+.dash-label {
+  font-size: 11px;
+  color: #8f8e88;
+  margin-bottom: 4px;
+}
+
+.dash-value {
+  font-size: 17px;
+  font-weight: 600;
+  color: #2c2c2a;
+  font-variant-numeric: tabular-nums;
+}
+
+.income-strip {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+  color: #5f5e5a;
+  flex-wrap: wrap;
+}
+
+.income-strip strong {
+  color: #0f6e56;
+  font-size: 18px;
+}
+
+.income-strip .sub {
+  margin-left: auto;
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2c2c2a;
+}
+
+.more {
+  font-size: 12px;
+  color: #0f6e56;
+}
+
+.owe-list {
   background: #fff;
   border-radius: 12px;
   overflow: hidden;
 }
 
-.direction-toggle {
+.owe-empty {
+  text-align: center;
+  color: #8f8e88;
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.owe-row {
   display: flex;
-  gap: 8px;
-  padding: 16px 16px 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f0eb;
+  cursor: pointer;
+}
+
+.owe-row:last-child {
+  border-bottom: none;
+}
+
+.owe-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.owe-party {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.owe-kind {
+  font-size: 11px;
+  border-radius: 99px;
+  padding: 1px 8px;
+  border: 1px solid #e3e2dd;
+  color: #8f8e88;
+}
+
+.owe-kind.rent { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
+.owe-kind.dividend { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
+.owe-kind.other { border-color: #8f8e88; color: #5f5e5a; }
+
+.owe-title {
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.owe-amount {
+  font-size: 14px;
+  font-weight: 600;
+  color: #a32d2d;
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-guide {
   text-align: center;
-  padding: 60px 20px;
   background: #fff;
   border-radius: 12px;
-}
-
-.empty-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-}
-
-.empty-guide p {
+  padding: 24px;
+  margin-top: 12px;
   color: #8f8e88;
-  margin-bottom: 16px;
-  font-size: 14px;
 }
 
-.save-error {
+.quick-record {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 76px;
+  z-index: 50;
+  background: #0f6e56;
+  color: #fff;
+  border-radius: 999px;
+  padding: 12px 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.quick-icon {
+  font-size: 18px;
+}
+
+.record-popup {
+  padding: 16px 0 24px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popup-title {
+  font-size: 16px;
+  font-weight: 500;
+  padding: 0 16px 12px;
+}
+
+.direction-toggle {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+
+.record-error {
   color: #a32d2d;
   font-size: 13px;
-  text-align: center;
-  padding: 0 16px 16px;
+  padding: 0 16px 8px;
+}
+
+.record-save {
+  margin: 8px 16px 0;
+}
+
+@media (min-width: 992px) {
+  .quick-record {
+    bottom: 40px;
+  }
+
+  .cards .dash-card {
+    flex: 1 1 23%;
+  }
 }
 </style>

@@ -25,6 +25,7 @@ var (
 	ErrUsernameTaken      = errors.New("该账号已存在，请更换")
 	ErrInvalidOrgName     = errors.New("请填写组织名称")
 	ErrInvalidPassword    = errors.New("密码至少 6 位")
+	ErrOldPasswordWrong   = errors.New("原密码错误")
 )
 
 const (
@@ -152,6 +153,28 @@ func (s *Service) Logout(token string) error {
 		return nil
 	}
 	return s.repo.DeleteSession(token)
+}
+
+// ChangePassword 校验原口令后更新新口令哈希（修改密码）。
+func (s *Service) ChangePassword(userID int64, oldPassword, newPassword string) error {
+	if len(newPassword) < MinPasswordLen {
+		return ErrInvalidPassword
+	}
+	u, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return ErrUnauthorized
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)) != nil {
+		return ErrOldPasswordWrong
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePassword(userID, string(hash))
 }
 
 // newToken 生成 32 字节随机 token（十六进制字符串）。

@@ -125,7 +125,7 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 	if totalLegs != req.SourceAmountCents {
 		diff := req.SourceAmountCents - totalLegs
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-			Code:    "TRANSFER_AMOUNT_MISMATCH",
+			Code: "TRANSFER_AMOUNT_MISMATCH",
 			Message: fmt.Sprintf("转出金额 (%.2f) 与转入合计 (%.2f) 不相等，差额 %.2f",
 				float64(req.SourceAmountCents)/100, float64(totalLegs)/100, float64(diff)/100),
 		})
@@ -178,14 +178,7 @@ func (h *Handler) CreateTransfer(c *gin.Context) {
 		}
 		if dst.Kind == "asset" {
 			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code: "TRANSFER_ASSET", Message: "科目间转账仅限普通科目；资产科目的进出请使用「资金划转」",
-			})
-			return
-		}
-		if dst.BalanceType == "spending" {
-			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code:    "TRANSFER_SPENDING_LEG",
-				Message: "花费型科目不能作为转入方",
+				Code: "TRANSFER_ASSET", Message: "科目间转账仅限权益科目；资产科目的进出请使用「资金划转」",
 			})
 			return
 		}

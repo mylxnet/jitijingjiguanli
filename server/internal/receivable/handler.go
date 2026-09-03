@@ -48,9 +48,15 @@ func (h *Handler) Register(r gin.IRouter) {
 
 	r.GET("/api/receivables", h.ListReceivables)
 	r.POST("/api/receivables", h.CreateReceivable)
+	r.POST("/api/receivables/batch", h.BatchAccrue)
 	r.GET("/api/receivables/:id", h.GetReceivableDetail)
 	r.POST("/api/receivables/:id/receipts", h.CreateReceipt)
 	r.PUT("/api/receipts/:id", h.VoidReceipt)
+
+	r.GET("/api/recv-standards", h.ListStandards)
+	r.POST("/api/recv-standards", h.SaveStandard)
+	r.PUT("/api/recv-standards/:id", h.ToggleStandard)
+	r.POST("/api/recv-standards/accrue", h.AccrueByStandards)
 }
 
 func (h *Handler) unauthorized(c *gin.Context) {
@@ -65,22 +71,21 @@ func (h *Handler) internal(c *gin.Context, msg string) {
 	})
 }
 
-// ---------- 往来对象 ----------
+// ---------- 往来单位 ----------
 
-// ListParties 往来对象列表（含欠款合计）。
-// GET /api/parties?kind=&keyword=
+// ListParties 往来单位列表（含欠款合计）。
+// GET /api/parties?keyword=
 func (h *Handler) ListParties(c *gin.Context) {
 	orgID, ok := auth.CurrentOrgID(c)
 	if !ok {
 		h.unauthorized(c)
 		return
 	}
-	kind := c.Query("kind")
 	keyword := c.Query("keyword")
 
-	items, err := h.repo.ListParties(orgID, kind, keyword)
+	items, err := h.repo.ListParties(orgID, keyword)
 	if err != nil {
-		h.internal(c, "查询往来对象失败")
+		h.internal(c, "查询往来单位失败")
 		return
 	}
 	if items == nil {
@@ -89,7 +94,7 @@ func (h *Handler) ListParties(c *gin.Context) {
 	platform.SuccessResponse(c, items)
 }
 
-// CreateParty 新建往来对象。
+// CreateParty 新建往来单位。
 // POST /api/parties
 func (h *Handler) CreateParty(c *gin.Context) {
 	orgID, ok := auth.CurrentOrgID(c)
@@ -108,7 +113,7 @@ func (h *Handler) CreateParty(c *gin.Context) {
 	req.Name = trimSpace(req.Name)
 	if req.Name == "" {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-			Code: "INVALID_REQUEST", Message: "请填写对象名称",
+			Code: "INVALID_REQUEST", Message: "请填写单位名称",
 		})
 		return
 	}
@@ -117,17 +122,17 @@ func (h *Handler) CreateParty(c *gin.Context) {
 	if req.Note != "" {
 		note = &req.Note
 	}
-	p := &Party{OrgID: orgID, Name: req.Name, Kind: req.Kind, Note: note}
+	p := &Party{OrgID: orgID, Name: req.Name, Note: note}
 	created, err := h.repo.CreateParty(p)
 	if err != nil {
-		h.internal(c, "新建往来对象失败")
+		h.internal(c, "新建往来单位失败")
 		return
 	}
 	h.clRepo.LogCreate(orgID, "party", created.ID)
 	platform.SuccessResponse(c, created)
 }
 
-// UpdateParty 更新往来对象（名称/类别/备注）。
+// UpdateParty 更新往来单位（名称/备注）。
 // PUT /api/parties/:id
 func (h *Handler) UpdateParty(c *gin.Context) {
 	orgID, ok := auth.CurrentOrgID(c)
@@ -139,7 +144,7 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-			Code: "INVALID_REQUEST", Message: "往来对象 ID 不合法",
+			Code: "INVALID_REQUEST", Message: "往来单位 ID 不合法",
 		})
 		return
 	}
@@ -151,7 +156,7 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 	if p == nil || p.OrgID != orgID {
 		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
-			Code: "PARTY_NOT_FOUND", Message: "往来对象不存在",
+			Code: "PARTY_NOT_FOUND", Message: "往来单位不存在",
 		})
 		return
 	}
@@ -169,14 +174,11 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 		name := trimSpace(*req.Name)
 		if name == "" {
 			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code: "INVALID_REQUEST", Message: "请填写对象名称",
+				Code: "INVALID_REQUEST", Message: "请填写单位名称",
 			})
 			return
 		}
 		updates["name"] = name
-	}
-	if req.Kind != nil {
-		updates["kind"] = *req.Kind
 	}
 	if req.Note != nil {
 		if *req.Note == "" {
@@ -187,15 +189,12 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateParty(id, orgID, updates); err != nil {
-		h.internal(c, "更新往来对象失败")
+		h.internal(c, "更新往来单位失败")
 		return
 	}
 
 	if v, ok := updates["name"]; ok {
 		_ = h.clRepo.LogUpdateField(orgID, "party", id, "name", p.Name, v.(string))
-	}
-	if v, ok := updates["kind"]; ok {
-		_ = h.clRepo.LogUpdateField(orgID, "party", id, "kind", p.Kind, v.(string))
 	}
 	if v, ok := updates["note"]; ok {
 		oldNote := ""
@@ -230,6 +229,7 @@ func (h *Handler) ListReceivables(c *gin.Context) {
 			partyID = &id
 		}
 	}
+	year, _ := strconv.Atoi(c.Query("year"))
 	kind := c.Query("kind")
 	status := c.Query("status")
 
@@ -242,7 +242,7 @@ func (h *Handler) ListReceivables(c *gin.Context) {
 		pageSize = 50
 	}
 
-	items, total, err := h.repo.ListReceivables(orgID, partyID, kind, status, page, pageSize)
+	items, total, err := h.repo.ListReceivables(orgID, partyID, year, kind, status, page, pageSize)
 	if err != nil {
 		h.internal(c, "查询应收单失败")
 		return
@@ -301,7 +301,7 @@ func (h *Handler) CreateReceivable(c *gin.Context) {
 			h.internal(c, "服务暂时不可用")
 			return
 		}
-		if cat == nil || cat.OrgID != orgID || cat.Level != 2 || cat.Status != "active" || cat.Kind != "normal" {
+		if cat == nil || cat.OrgID != orgID || cat.Level != 2 || cat.Status != "active" || cat.Kind != "equity" {
 			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
 				Code: "INVALID_INCOME_CATEGORY", Message: "收款入账科目不合法，需为本组织启用中的普通二级科目",
 			})
@@ -310,12 +310,16 @@ func (h *Handler) CreateReceivable(c *gin.Context) {
 		incomeCatID = req.IncomeCategoryID
 	}
 
+	year := req.RecvYear
+	if year == 0 {
+		year = time.Now().Year()
+	}
 	var note *string
 	if req.Note != "" {
 		note = &req.Note
 	}
 	rec := &Receivable{
-		OrgID: orgID, PartyID: req.PartyID, RecvKind: req.RecvKind, Title: req.Title,
+		OrgID: orgID, PartyID: req.PartyID, RecvYear: year, RecvKind: req.RecvKind, Title: req.Title,
 		AmountCents: req.AmountCents, IncomeCategoryID: incomeCatID, Note: note,
 	}
 	created, err := h.repo.CreateReceivable(rec)
@@ -325,6 +329,167 @@ func (h *Handler) CreateReceivable(c *gin.Context) {
 	}
 	h.clRepo.LogCreate(orgID, "receivable", created.ID)
 	platform.SuccessResponse(c, created)
+}
+
+// BatchAccrue 批量计提应收（同年度一批：单位+类别+金额）。
+// POST /api/receivables/batch
+func (h *Handler) BatchAccrue(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	var req BatchAccrueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "INVALID_REQUEST", Message: "参数不合法"})
+		return
+	}
+	year := req.RecvYear
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	for _, it := range req.Items {
+		if it.AmountCents <= 0 {
+			platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+			return
+		}
+		party, err := h.repo.FindPartyByID(it.PartyID)
+		if err != nil {
+			h.internal(c, "服务暂时不可用")
+			return
+		}
+		if party == nil || party.OrgID != orgID {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "PARTY_NOT_FOUND", Message: "往来单位不存在"})
+			return
+		}
+	}
+	result, err := h.repo.BatchCreateReceivables(orgID, year, trimSpace(req.Title), req.Items)
+	if err != nil {
+		h.internal(c, "批量计提失败")
+		return
+	}
+	_ = h.clRepo.LogCreate(orgID, "receivable_batch", int64(year))
+	platform.SuccessResponse(c, result)
+}
+
+// ListStandards 计提标准列表。
+// GET /api/recv-standards?kind=rent
+func (h *Handler) ListStandards(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	items, err := h.repo.ListStandards(orgID, c.Query("kind"))
+	if err != nil {
+		h.internal(c, "查询计提标准失败")
+		return
+	}
+	if items == nil {
+		items = []AccrualStandard{}
+	}
+	platform.SuccessResponse(c, items)
+}
+
+// SaveStandard 保存计提标准（同单位+类别更新）。
+// POST /api/recv-standards
+func (h *Handler) SaveStandard(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	var req AccrualStandardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "INVALID_REQUEST", Message: "参数不合法"})
+		return
+	}
+	if req.AmountCents <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+		return
+	}
+	party, err := h.repo.FindPartyByID(req.PartyID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if party == nil || party.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "PARTY_NOT_FOUND", Message: "往来单位不存在"})
+		return
+	}
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	saved, err := h.repo.UpsertStandard(orgID, &AccrualStandard{
+		PartyID: req.PartyID, RecvKind: req.RecvKind, AmountCents: req.AmountCents, Active: active,
+	})
+	if err != nil {
+		h.internal(c, "保存计提标准失败")
+		return
+	}
+	platform.SuccessResponse(c, saved)
+}
+
+// ToggleStandard 启停计提标准。
+// PUT /api/recv-standards/:id
+func (h *Handler) ToggleStandard(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "INVALID_REQUEST", Message: "标准 ID 不合法"})
+		return
+	}
+	var req struct {
+		Active *bool `json:"active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Active == nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "INVALID_REQUEST", Message: "参数不合法"})
+		return
+	}
+	if err := h.repo.SetStandardActive(id, orgID, *req.Active); err != nil {
+		h.internal(c, "更新计提标准失败")
+		return
+	}
+	platform.SuccessResponse(c, gin.H{"ok": true})
+}
+
+// AccrueByStandards 按启用标准一键结转年度应收。
+// POST /api/recv-standards/accrue  body {year, kind, title}
+func (h *Handler) AccrueByStandards(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	var req struct {
+		Year  int    `json:"year"`
+		Kind  string `json:"kind" binding:"required,oneof=rent dividend other"`
+		Title string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{Code: "INVALID_REQUEST", Message: "参数不合法"})
+		return
+	}
+	year := req.Year
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	title := trimSpace(req.Title)
+	if title == "" {
+		title = fmt.Sprintf("%d年度计提", year)
+	}
+	result, err := h.repo.AccrueFromStandards(orgID, year, req.Kind, title)
+	if err != nil {
+		h.internal(c, "一键结转失败")
+		return
+	}
+	_ = h.clRepo.LogCreate(orgID, "receivable_batch", int64(year))
+	platform.SuccessResponse(c, result)
 }
 
 // GetReceivableDetail 应收单详情（含核销记录）。
@@ -610,7 +775,7 @@ func (h *Handler) validIncomeCategory(orgID, catID int64) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return cat != nil && cat.OrgID == orgID && cat.Level == 2 && cat.Status == "active" && cat.Kind == "normal", nil
+	return cat != nil && cat.OrgID == orgID && cat.Level == 2 && cat.Status == "active" && cat.Kind == "equity", nil
 }
 
 // validOffsetTxn 校验抵销所关联的支出流水（发放应付款）。

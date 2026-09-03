@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -15,6 +16,8 @@ import (
 
 	"jititaizhang/server/internal/platform"
 )
+
+func urlQuery(s string) string { return url.QueryEscape(s) }
 
 func newEnv(t *testing.T) (*sql.DB, *gin.Engine) {
 	t.Helper()
@@ -84,15 +87,15 @@ func itoa(v int64) string {
 	return strconv.FormatInt(v, 10)
 }
 
-// seedParty 直接插入往来对象。
-func seedParty(t *testing.T, db *sql.DB, name, kind string) int64 {
+// seedParty 直接插入往来单位。
+func seedParty(t *testing.T, db *sql.DB, name string) int64 {
 	t.Helper()
 	now := time.Now().UTC()
 	res, err := db.Exec(
-		`INSERT INTO party(org_id, name, kind, note, created_at, updated_at) VALUES(1,?,?,NULL,?,?)`,
-		name, kind, now, now)
+		`INSERT INTO party(org_id, name, note, created_at, updated_at) VALUES(1,?,NULL,?,?)`,
+		name, now, now)
 	if err != nil {
-		t.Fatalf("插入往来对象失败: %v", err)
+		t.Fatalf("插入往来单位失败: %v", err)
 	}
 	id, _ := res.LastInsertId()
 	return id
@@ -115,17 +118,17 @@ func seedTxn(t *testing.T, db *sql.DB, date, direction string, amountCents, catI
 func seedIncomeCat(t *testing.T, db *sql.DB, name string) int64 {
 	t.Helper()
 	now := time.Now().UTC()
-	// 经营收入一级 + 二级普通
+	// 一级分组 + 权益二级（v0.4）
 	res1, err := db.Exec(
-		`INSERT INTO category(org_id, name, level, parent_id, status, balance_type, kind, opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-		 VALUES(1,?,1,NULL,'active','residual','normal',0,0,0,?,?)`, name+"类", now, now)
+		`INSERT INTO category(org_id, name, level, parent_id, status, kind, sort_order, created_at, updated_at)
+		 VALUES(1,?,1,NULL,'active','equity',0,?,?)`, name+"类", now, now)
 	if err != nil {
 		t.Fatalf("插入一级科目失败: %v", err)
 	}
 	l1, _ := res1.LastInsertId()
 	res2, err := db.Exec(
-		`INSERT INTO category(org_id, name, level, parent_id, status, balance_type, kind, opening_balance_cents, include_in_reconciliation, sort_order, created_at, updated_at)
-		 VALUES(1,?,2,?,'active','residual','normal',0,0,0,?,?)`, name, l1, now, now)
+		`INSERT INTO category(org_id, name, level, parent_id, status, kind, sort_order, created_at, updated_at)
+		 VALUES(1,?,2,?,'active','equity',0,?,?)`, name, l1, now, now)
 	if err != nil {
 		t.Fatalf("插入二级科目失败: %v", err)
 	}
@@ -133,12 +136,12 @@ func seedIncomeCat(t *testing.T, db *sql.DB, name string) int64 {
 	return id
 }
 
-// createPartyAPI 通过 API 建往来对象，返回 id。
-func createPartyAPI(t *testing.T, r *gin.Engine, name, kind string) int64 {
+// createPartyAPI 通过 API 建往来单位，返回 id。
+func createPartyAPI(t *testing.T, r *gin.Engine, name string) int64 {
 	t.Helper()
-	w := doJSON(t, r, "POST", "/api/parties", map[string]any{"name": name, "kind": kind})
+	w := doJSON(t, r, "POST", "/api/parties", map[string]any{"name": name})
 	if w.Code != http.StatusOK {
-		t.Fatalf("建往来对象失败: %d %s", w.Code, w.Body.String())
+		t.Fatalf("建往来单位失败: %d %s", w.Code, w.Body.String())
 	}
 	var out struct {
 		Data struct {
@@ -146,7 +149,7 @@ func createPartyAPI(t *testing.T, r *gin.Engine, name, kind string) int64 {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("解析往来对象响应失败: %v", err)
+		t.Fatalf("解析往来单位响应失败: %v", err)
 	}
 	return out.Data.ID
 }
@@ -221,7 +224,7 @@ func countTxns(t *testing.T, db *sql.DB, direction, status string) int {
 func TestCashReceiptFlow(t *testing.T) {
 	db, r := newEnv(t)
 	incCat := seedIncomeCat(t, db, "流转费收入")
-	party := createPartyAPI(t, r, "张三", "household")
+	party := createPartyAPI(t, r, "张三")
 
 	// 登记欠 ¥500（50000 分）
 	rec := createReceivableAPI(t, r, party, "rent", "2026年度土地流转费", 50000, &incCat)
@@ -284,7 +287,7 @@ func TestOffsetReceiptFlow(t *testing.T) {
 	db, r := newEnv(t)
 	incomeCat := seedIncomeCat(t, db, "流转费收入")
 	expenseCat := seedIncomeCat(t, db, "收益分红发放")
-	party := createPartyAPI(t, r, "李四", "household")
+	party := createPartyAPI(t, r, "李四")
 
 	// 先发分红 ¥800（支出流水，真实已付）
 	txnID := seedTxn(t, db, "2026-09-01", "expense", 80000, expenseCat)
@@ -318,7 +321,7 @@ func TestCreateReceiptValidations(t *testing.T) {
 	db, r := newEnv(t)
 	incomeCat := seedIncomeCat(t, db, "流转费收入")
 	otherCat := seedIncomeCat(t, db, "其他收入")
-	party := createPartyAPI(t, r, "王五", "unit")
+	party := createPartyAPI(t, r, "王五")
 
 	// 无预设入账科目的应收单（收款时必须传 categoryId）
 	recNoCat := createReceivableAPI(t, r, party, "other", "货款", 100000, nil)
@@ -368,7 +371,7 @@ func TestVoidReceipt(t *testing.T) {
 	db, r := newEnv(t)
 	incomeCat := seedIncomeCat(t, db, "流转费收入")
 	expenseCat := seedIncomeCat(t, db, "收益分红发放")
-	party := createPartyAPI(t, r, "赵六", "household")
+	party := createPartyAPI(t, r, "赵六")
 
 	// 现金收部分后作废
 	rec1 := createReceivableAPI(t, r, party, "rent", "2026年流转费", 50000, &incomeCat)
@@ -426,8 +429,8 @@ func TestListAndDetail(t *testing.T) {
 	db, r := newEnv(t)
 	incomeCat := seedIncomeCat(t, db, "流转费收入")
 
-	partyA := createPartyAPI(t, r, "张三", "household")
-	partyB := createPartyAPI(t, r, "某公司", "unit")
+	partyA := createPartyAPI(t, r, "张三")
+	partyB := createPartyAPI(t, r, "某公司")
 
 	recA1 := createReceivableAPI(t, r, partyA, "rent", "2026年流转费", 50000, &incomeCat)
 	createReceivableAPI(t, r, partyA, "other", "垫付款", 20000, nil)
@@ -435,14 +438,14 @@ func TestListAndDetail(t *testing.T) {
 	// 收张三 30000（现金），剩余 20000 + 垫付 20000 = 40000 欠款
 	createReceiptAPI(t, r, recA1, 30000, "2026-09-10", "cash", map[string]any{})
 
-	// 对象列表欠款合计：张三 40000，某公司 100000；按 kind 过滤
+	// 对象列表欠款合计：张三 40000，某公司 100000
 	var out []Party
 	w := doJSON(t, r, "GET", "/api/parties", nil)
 	if err := json.Unmarshal(w.Body.Bytes(), &struct{ Data *[]Party }{&out}); err != nil {
-		t.Fatalf("解析往来对象失败: %v", err)
+		t.Fatalf("解析往来单位失败: %v", err)
 	}
 	if len(out) != 2 {
-		t.Fatalf("应有 2 个往来对象，实际 %d", len(out))
+		t.Fatalf("应有 2 个往来单位，实际 %d", len(out))
 	}
 	byName := map[string]int64{}
 	for _, p := range out {
@@ -452,12 +455,13 @@ func TestListAndDetail(t *testing.T) {
 		t.Errorf("欠款合计不对: %+v", byName)
 	}
 
-	w = doJSON(t, r, "GET", "/api/parties?kind=household", nil)
+	// 关键字过滤：命中「公司」
+	w = doJSON(t, r, "GET", "/api/parties?keyword="+urlQuery("公司"), nil)
 	if err := json.Unmarshal(w.Body.Bytes(), &struct{ Data *[]Party }{&out}); err != nil {
-		t.Fatalf("解析过滤对象失败: %v", err)
+		t.Fatalf("解析过滤单位失败: %v", err)
 	}
-	if len(out) != 1 || out[0].Kind != "household" {
-		t.Errorf("kind=household 应命中 1 个，实际 %d", len(out))
+	if len(out) != 1 || out[0].Name != "某公司" {
+		t.Errorf("keyword=公司 应命中 1 个（某公司），实际 %d", len(out))
 	}
 
 	// 应收单按对象过滤：张三有 2 单
@@ -506,14 +510,14 @@ func TestListAndDetail(t *testing.T) {
 
 	// 跨组织：org=2 看不到任何对象与应收单
 	repo := NewRepo(db)
-	items2, err := repo.ListParties(2, "", "")
+	items2, err := repo.ListParties(2, "")
 	if err != nil {
 		t.Fatalf("组织2查询失败: %v", err)
 	}
 	if len(items2) != 0 {
 		t.Errorf("组织 2 应看不到往来对象，实际 %d", len(items2))
 	}
-	itemsRec2, total2, err := repo.ListReceivables(2, nil, "", "", 1, 50)
+	itemsRec2, total2, err := repo.ListReceivables(2, nil, 0, "", "", 1, 50)
 	if err != nil || total2 != 0 || len(itemsRec2) != 0 {
 		t.Errorf("组织 2 应看不到应收单，实际 total=%d err=%v", total2, err)
 	}

@@ -4,7 +4,8 @@
     <div class="page-header" v-if="!currentParty">
       <h3>往来</h3>
       <div class="header-actions">
-        <van-button type="primary" size="small" icon="plus" @click="openAddParty">新增对象</van-button>
+        <van-button type="primary" plain size="small" @click="openAccrue">批量计提</van-button>
+        <van-button type="primary" size="small" icon="plus" @click="openAddParty">新增单位</van-button>
       </div>
     </div>
 
@@ -15,27 +16,17 @@
       <van-button size="small" plain type="primary" @click="openAddReceivable">登记应收</van-button>
     </div>
 
-    <!-- 分类筛选（列表模式） -->
-    <div v-if="!currentParty" class="kind-tabs">
-      <van-tabs v-model:active="kindTab" @change="loadParties">
-        <van-tab title="全部" name="all" />
-        <van-tab title="农户" name="household" />
-        <van-tab title="单位" name="unit" />
-      </van-tabs>
-    </div>
-
-    <!-- 列表：往来对象 -->
+    <!-- 列表：往来单位 -->
     <template v-if="!currentParty">
       <div v-if="loading" class="loading-state"><van-skeleton title :row="4" /></div>
       <div v-else-if="parties.length === 0" class="empty-state">
-        <p>还没有往来对象</p>
-        <van-button size="small" type="primary" @click="openAddParty">新增对象</van-button>
+        <p>还没有往来单位</p>
+        <van-button size="small" type="primary" @click="openAddParty">新增单位</van-button>
       </div>
       <div v-else class="party-list">
         <div v-for="p in parties" :key="p.id" class="party-row" @click="openDetail(p)">
           <div class="party-main">
             <span class="party-name">{{ p.name }}</span>
-            <span class="l2-chip" :class="p.kind">{{ partyKindLabel[p.kind] }}</span>
           </div>
           <div class="party-owed">
             <div class="owed-value" :class="{ zero: p.outstandingCents <= 0 }">
@@ -60,12 +51,12 @@
           <div class="summary-value">{{ receivableItems.length }}</div>
           <div class="summary-label">应收单</div>
         </div>
-        <van-button size="small" plain @click="openAddPartyEdit">编辑对象</van-button>
+        <van-button size="small" plain @click="openAddPartyEdit">编辑单位</van-button>
       </div>
 
       <div v-if="detailLoading" class="loading-state"><van-skeleton title :row="4" /></div>
       <div v-else-if="receivableItems.length === 0" class="empty-state">
-        <p>该对象暂无应收记录</p>
+        <p>该单位暂无应收记录</p>
         <van-button size="small" type="primary" @click="openAddReceivable">登记应收</van-button>
       </div>
 
@@ -109,23 +100,98 @@
       </div>
     </template>
 
-    <!-- 新增对象 -->
-    <van-dialog v-model:show="showAddParty" :title="editParty ? '编辑对象' : '新增往来对象'" show-cancel-button @confirm="saveParty">
-      <van-field v-model="partyForm.name" label="名称" placeholder="对象名称" :rules="[{ required: true }]" />
-      <van-field label="类别">
-        <template #input>
-          <van-radio-group v-model="partyForm.kind" direction="horizontal">
-            <van-radio name="household">农户</van-radio>
-            <van-radio name="unit">单位</van-radio>
-          </van-radio-group>
-        </template>
-      </van-field>
+    <!-- 新增/编辑往来单位 -->
+    <van-dialog v-model:show="showAddParty" :title="editParty ? '编辑单位' : '新增往来单位'" show-cancel-button @confirm="saveParty">
+      <van-field v-model="partyForm.name" label="单位名称" placeholder="如：XX公司 / XX合作社" :rules="[{ required: true }]" />
       <van-field v-model="partyForm.note" label="备注" placeholder="备注（可选）" />
     </van-dialog>
 
+    <!-- 批量计提 / 流转费标准 -->
+    <van-popup v-model:show="showAccrue" position="bottom" round closeable style="max-height: 92vh">
+      <div class="accrue-popup">
+        <van-tabs v-model:active="accrueTab">
+          <!-- 手动批量计提 -->
+          <van-tab title="批量计提" name="batch">
+            <div class="accrue-body">
+              <van-field v-model="accrueYear" type="digit" label="年度" placeholder="如 2026" />
+              <van-field v-model="accrueTitle" label="事由" placeholder="如：2026年度土地流转费" />
+              <div class="accrue-rows">
+                <div v-for="(row, idx) in accrueRows" :key="idx" class="accrue-row">
+                  <van-field
+                    :model-value="row.partyName || '请选择单位'"
+                    is-link readonly label="单位"
+                    @click="openAccrueUnit('row', idx)"
+                  />
+                  <van-field label="类别">
+                    <template #input>
+                      <van-radio-group v-model="row.recvKind" direction="horizontal">
+                        <van-radio name="rent">流转费</van-radio>
+                        <van-radio name="dividend">收益</van-radio>
+                        <van-radio name="other">其他</van-radio>
+                      </van-radio-group>
+                    </template>
+                  </van-field>
+                  <div class="accrue-row-foot">
+                    <van-field v-model="row.amountYuan" type="number" label="金额" placeholder="0.00" inputmode="decimal" />
+                    <van-button
+                      v-if="accrueRows.length > 1" size="mini" plain type="danger"
+                      @click="accrueRows.splice(idx, 1)"
+                    >删除</van-button>
+                  </div>
+                </div>
+              </div>
+              <div class="accrue-add">
+                <van-button size="small" plain type="primary" @click="addAccrueRow">+ 添加一行</van-button>
+              </div>
+              <div class="accrue-save">
+                <van-button round block type="primary" :loading="savingAccrue" @click="saveBatch">保存批量计提</van-button>
+              </div>
+            </div>
+          </van-tab>
+
+          <!-- 流转费标准 + 一键结转 -->
+          <van-tab title="流转费标准" name="std">
+            <div class="accrue-body">
+              <div class="std-form">
+                <van-field
+                  :model-value="stdForm.partyName || '请选择单位'"
+                  is-link readonly label="单位"
+                  @click="openAccrueUnit('std', 0)"
+                />
+                <van-field v-model="stdForm.amountYuan" type="number" label="年度流转费" placeholder="0.00" inputmode="decimal" />
+                <van-button size="small" round block type="primary" :loading="savingStd" @click="saveStandard">保存标准</van-button>
+              </div>
+              <div class="std-list">
+                <div v-for="s in standards" :key="s.id" class="std-row">
+                  <span class="std-name">{{ s.partyName }}</span>
+                  <span class="std-amount">{{ formatFen(s.amountCents) }}</span>
+                  <van-switch :model-value="s.active" size="20" @update:model-value="(v:boolean) => toggleStandard(s, v)" />
+                </div>
+                <div v-if="standards.length === 0" class="accrue-empty">还没有流转费标准，先在上方添加</div>
+              </div>
+              <div class="accrue-save">
+                <van-button round block type="primary" :loading="accruing" @click="accrueNow">
+                  一键结转 {{ accrueYear }} 年度流转费
+                </van-button>
+              </div>
+            </div>
+          </van-tab>
+        </van-tabs>
+      </div>
+    </van-popup>
+
+    <!-- 批量计提/标准：单位选择 -->
+    <van-action-sheet
+      v-model:show="showAccrueUnitPicker"
+      title="选择单位"
+      :actions="accrueUnitActions"
+      @select="onAccrueUnitSelect"
+      @cancel="showAccrueUnitPicker = false"
+    />
+
     <!-- 登记应收 -->
     <van-dialog v-model:show="showAddReceivable" title="登记应收" show-cancel-button @confirm="saveReceivable">
-      <van-field v-if="currentParty" :model-value="currentParty.name" label="对象" readonly />
+      <van-field v-if="currentParty" :model-value="currentParty.name" label="单位" readonly />
       <van-field label="类别">
         <template #input>
           <van-radio-group v-model="recvForm.recvKind" direction="horizontal">
@@ -221,17 +287,16 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { showToast, showDialog } from 'vant'
 import type {
-  Category, Party, PartyKind, Receivable, Receipt, ReceivableDetail,
-  ReceivableListResponse, Transaction, ApiResponse, RecvKind,
+  Category, Party, Receivable, Receipt, ReceivableDetail,
+  ReceivableListResponse, Transaction, ApiResponse, RecvKind, AccrualStandard, AccrueResult,
 } from '../../types/api'
-import { formatFen, todayStr, partyKindLabel, recvKindLabel } from '../../types/api'
+import { formatFen, todayStr, recvKindLabel } from '../../types/api'
 
 const loading = ref(false)
 const detailLoading = ref(false)
 const parties = ref<Party[]>([])
-const kindTab = ref<'all' | PartyKind>('all')
 
-// ---- 对象 ----
+// ---- 往来单位 ----
 const currentParty = ref<Party | null>(null)
 const receivableItems = ref<Receivable[]>([])
 const receiptsByRec = ref<Record<number, Receipt[]>>({})
@@ -239,7 +304,7 @@ const expandedReceipts = ref<Record<number, boolean>>({})
 
 const showAddParty = ref(false)
 const editParty = ref(false)
-const partyForm = ref({ id: 0, name: '', kind: 'household' as PartyKind, note: '' })
+const partyForm = ref({ id: 0, name: '', note: '' })
 
 const showAddReceivable = ref(false)
 const recvForm = ref({
@@ -297,13 +362,11 @@ onMounted(async () => {
   await Promise.all([loadParties(), loadCategories()])
 })
 
-// ---- 对象列表 ----
+// ---- 单位列表 ----
 async function loadParties() {
   loading.value = true
   try {
-    const params: Record<string, string> = {}
-    if (kindTab.value !== 'all') params.kind = kindTab.value
-    const res = await api.get<ApiResponse<Party[]>>('/parties', params)
+    const res = await api.get<ApiResponse<Party[]>>('/parties')
     parties.value = res.data
   } catch {
     parties.value = []
@@ -314,7 +377,7 @@ async function loadParties() {
 
 function openAddParty() {
   editParty.value = false
-  partyForm.value = { id: 0, name: '', kind: 'household', note: '' }
+  partyForm.value = { id: 0, name: '', note: '' }
   showAddParty.value = true
 }
 
@@ -324,7 +387,6 @@ function openAddPartyEdit() {
   partyForm.value = {
     id: currentParty.value.id,
     name: currentParty.value.name,
-    kind: currentParty.value.kind,
     note: currentParty.value.note || '',
   }
   showAddParty.value = true
@@ -332,11 +394,11 @@ function openAddPartyEdit() {
 
 async function saveParty() {
   if (!partyForm.value.name) {
-    showToast('请填写名称')
+    showToast('请填写单位名称')
     return
   }
   try {
-    const payload: Record<string, unknown> = { name: partyForm.value.name, kind: partyForm.value.kind }
+    const payload: Record<string, unknown> = { name: partyForm.value.name }
     if (partyForm.value.note) payload.note = partyForm.value.note
     if (editParty.value) {
       await api.put(`/parties/${partyForm.value.id}`, payload)
@@ -534,6 +596,164 @@ async function voidReceipt(rc: Receipt) {
   }
 }
 
+// ---- 批量计提 / 流转费标准 ----
+const showAccrue = ref(false)
+const accrueTab = ref('batch')
+const accrueYear = ref(String(new Date().getFullYear()))
+const accrueTitle = ref('')
+const savingAccrue = ref(false)
+const accrueRows = ref<{ partyId: number | null; partyName: string; recvKind: RecvKind; amountYuan: string }[]>([
+  { partyId: null, partyName: '', recvKind: 'rent', amountYuan: '' },
+])
+
+const showAccrueUnitPicker = ref(false)
+let accruePickFor = 'row' as 'row' | 'std'
+let accruePickRow = 0
+
+const accrueUnitActions = computed(() =>
+  parties.value.map(p => ({ name: p.name, value: p.id })),
+)
+
+const standards = ref<AccrualStandard[]>([])
+const stdForm = ref<{ partyId: number | null; partyName: string; amountYuan: string }>({ partyId: null, partyName: '', amountYuan: '' })
+const savingStd = ref(false)
+const accruing = ref(false)
+
+async function openAccrue() {
+  accrueTab.value = 'batch'
+  accrueYear.value = String(new Date().getFullYear())
+  accrueTitle.value = ''
+  accrueRows.value = [{ partyId: null, partyName: '', recvKind: 'rent', amountYuan: '' }]
+  stdForm.value = { partyId: null, partyName: '', amountYuan: '' }
+  showAccrue.value = true
+  await loadStandards()
+  await loadParties()
+}
+
+function addAccrueRow() {
+  accrueRows.value.push({ partyId: null, partyName: '', recvKind: 'rent', amountYuan: '' })
+}
+
+function openAccrueUnit(kind: 'row' | 'std', rowIndex: number) {
+  accruePickFor = kind
+  accruePickRow = rowIndex
+  showAccrueUnitPicker.value = true
+}
+
+function onAccrueUnitSelect(action: { name: string; value: number }) {
+  if (accruePickFor === 'row') {
+    const row = accrueRows.value[accruePickRow]
+    if (row) {
+      row.partyId = action.value
+      row.partyName = action.name
+    }
+  } else {
+    stdForm.value.partyId = action.value
+    stdForm.value.partyName = action.name
+  }
+  showAccrueUnitPicker.value = false
+}
+
+async function saveBatch() {
+  const year = parseInt(accrueYear.value || '0', 10)
+  if (!year || year < 2000 || year > 2100) {
+    showToast('请填写正确年度')
+    return
+  }
+  if (!accrueTitle.value.trim()) {
+    showToast('请填写事由')
+    return
+  }
+  const items: { partyId: number; recvKind: RecvKind; amountCents: number }[] = []
+  for (const row of accrueRows.value) {
+    const amount = parseFen(row.amountYuan)
+    if (!row.partyId || amount <= 0) {
+      showToast('请补全各单位与金额')
+      return
+    }
+    items.push({ partyId: row.partyId, recvKind: row.recvKind, amountCents: amount })
+  }
+  savingAccrue.value = true
+  try {
+    const res = await api.post<ApiResponse<AccrueResult>>('/receivables/batch', {
+      recvYear: year,
+      title: accrueTitle.value.trim(),
+      items,
+    })
+    showToast(`新增 ${res.data.created} 条${res.data.skipped ? `，跳过 ${res.data.skipped} 条` : ''}`)
+    showAccrue.value = false
+    if (currentParty.value) await openDetail(currentParty.value)
+  } catch (e: any) {
+    showDialog({ title: '计提失败', message: e.message || '批量计提失败' })
+  } finally {
+    savingAccrue.value = false
+  }
+}
+
+async function loadStandards() {
+  try {
+    const res = await api.get<ApiResponse<AccrualStandard[]>>('/recv-standards', { kind: 'rent' })
+    standards.value = res.data || []
+  } catch {
+    standards.value = []
+  }
+}
+
+async function saveStandard() {
+  const amount = parseFen(stdForm.value.amountYuan)
+  if (!stdForm.value.partyId || amount <= 0) {
+    showToast('请选择单位并填写金额')
+    return
+  }
+  savingStd.value = true
+  try {
+    await api.post('/recv-standards', {
+      partyId: stdForm.value.partyId,
+      recvKind: 'rent',
+      amountCents: amount,
+    })
+    showToast('已保存')
+    stdForm.value = { partyId: null, partyName: '', amountYuan: '' }
+    await loadStandards()
+  } catch (e: any) {
+    showToast(e.message || '保存失败')
+  } finally {
+    savingStd.value = false
+  }
+}
+
+async function toggleStandard(s: AccrualStandard, v: boolean) {
+  try {
+    await api.put(`/recv-standards/${s.id}`, { active: v })
+    s.active = v
+  } catch (e: any) {
+    showToast(e.message || '操作失败')
+  }
+}
+
+async function accrueNow() {
+  const year = parseInt(accrueYear.value || '0', 10)
+  if (!year) {
+    showToast('请填写年度')
+    return
+  }
+  accruing.value = true
+  try {
+    const res = await api.post<ApiResponse<AccrueResult>>('/recv-standards/accrue', {
+      year,
+      kind: 'rent',
+      title: `${year}年度土地流转费`,
+    })
+    showToast(`结转完成：新增 ${res.data.created} 条${res.data.skipped ? `，跳过 ${res.data.skipped} 条` : ''}`)
+    await loadParties()
+    if (currentParty.value) await openDetail(currentParty.value)
+  } catch (e: any) {
+    showToast(e.message || '结转失败')
+  } finally {
+    accruing.value = false
+  }
+}
+
 // ---- 科目与选择器 ----
 async function loadCategories() {
   try {
@@ -543,7 +763,7 @@ async function loadCategories() {
     for (const l1 of res.data) {
       if (l1.children) {
         for (const l2 of l1.children) {
-          if (l2.status === 'active' && l2.kind === 'normal') {
+          if (l2.status === 'active' && l2.kind === 'equity') {
             options.push({ name: `${l1.name} / ${l2.name}`, value: l2.id })
           }
         }
@@ -862,5 +1082,73 @@ function parseFen(yuan: string): number {
 
 .receipt-save {
   margin: 8px 16px 0;
+}
+
+.accrue-popup {
+  padding-bottom: 24px;
+}
+
+.accrue-body {
+  padding: 8px 16px;
+}
+
+.accrue-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.accrue-row {
+  background: #f7f7f5;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.accrue-row-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accrue-add {
+  padding: 8px 0;
+}
+
+.accrue-save {
+  margin-top: 8px;
+}
+
+.accrue-empty {
+  text-align: center;
+  color: #8f8e88;
+  font-size: 13px;
+  padding: 16px 0;
+}
+
+.std-form {
+  padding-bottom: 4px;
+}
+
+.std-list {
+  margin-top: 8px;
+  border-top: 1px solid #f0f0eb;
+}
+
+.std-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0eb;
+}
+
+.std-name {
+  font-size: 14px;
+}
+
+.std-amount {
+  font-size: 13px;
+  color: #5f5e5a;
+  font-variant-numeric: tabular-nums;
 }
 </style>
