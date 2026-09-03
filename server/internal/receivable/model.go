@@ -4,15 +4,24 @@ package receivable
 
 import "time"
 
-// Party 对应 party 表（往来单位；v0.3.6+ 需求：只有往来单位，无农户类型）。
+// Party 对应 party 表（往来单位；v0.6 起带类型：flow 流转企业 / invest 投资公司 / other 其它单位）。
 type Party struct {
-	ID               int64     `json:"id"`
-	OrgID            int64     `json:"orgId"`
-	Name             string    `json:"name"`
-	Note             *string   `json:"note"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	OutstandingCents int64     `json:"outstandingCents"` // 欠款合计 = Σ(未核销应收余额，open)，列表/详情用
+	ID                int64     `json:"id"`
+	OrgID             int64     `json:"orgId"`
+	Name              string    `json:"name"`
+	Type              string    `json:"type"`
+	ContactPhone      string    `json:"contactPhone"` // 联系电话
+	AreaMu            float64   `json:"areaMu"`       // 流转面积（亩，流转企业用）
+	Note              *string   `json:"note"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+	OutstandingCents  int64     `json:"outstandingCents"`  // 欠款合计 = Σ(未核销应收余额，open)，列表/详情用
+	InvestAmountCents int64     `json:"investAmountCents"` // 投资公司：长期投资/公司同名科目累计投出（只读）
+}
+
+// validPartyType 校验单位类型是否合法。
+func validPartyType(t string) bool {
+	return t == "flow" || t == "invest" || t == "other"
 }
 
 // Receivable 对应 receivable 表（应收单）。
@@ -92,6 +101,22 @@ type AccrueResult struct {
 	Skipped int `json:"skipped"`
 }
 
+// PreviewAccrueItem 年度结转预览行（按单位年度标准 + 是否存在同年同类应收单）。
+type PreviewAccrueItem struct {
+	Kind        string `json:"kind"`        // rent / dividend
+	Title       string `json:"title"`       // 将生成的事由（如 2026年度土地流转费）
+	PartyID     int64  `json:"partyId"`
+	PartyName   string `json:"partyName"`
+	AmountCents int64  `json:"amountCents"`
+	Exists      bool   `json:"exists"` // true=同年同类已存在，确认结转时会跳过
+}
+
+// PreviewAccrueResult 预览结果。
+type PreviewAccrueResult struct {
+	Year  int                 `json:"year"`
+	Items []PreviewAccrueItem `json:"items"`
+}
+
 // Receipt 对应 receipt 表（核销记录）。
 type Receipt struct {
 	ID           int64     `json:"id"`
@@ -109,14 +134,20 @@ type Receipt struct {
 
 // CreatePartyRequest 新建往来单位。
 type CreatePartyRequest struct {
-	Name string `json:"name" binding:"required"`
-	Note string `json:"note"`
+	Name         string  `json:"name" binding:"required"`
+	Type         string  `json:"type"` // 空 = flow
+	ContactPhone string  `json:"contactPhone"`
+	AreaMu       float64 `json:"areaMu"`
+	Note         string  `json:"note"`
 }
 
-// UpdatePartyRequest 更新往来单位（名称/备注）。
+// UpdatePartyRequest 更新往来单位（名称/类型/电话/面积/备注）。
 type UpdatePartyRequest struct {
-	Name *string `json:"name"`
-	Note *string `json:"note"`
+	Name         *string  `json:"name"`
+	Type         *string  `json:"type"`
+	ContactPhone *string  `json:"contactPhone"`
+	AreaMu       *float64 `json:"areaMu"`
+	Note         *string  `json:"note"`
 }
 
 // CreateReceiptRequest 收款核销。

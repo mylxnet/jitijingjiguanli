@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { api, setOnUnauthorized } from '../../lib/http'
 import type { ApiResponse } from '../../types/api'
 
+// 本机记住的组织名（登录页大字展示）
+export const ORG_NAME_KEY = 'jt_org_name'
+
 export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
   const loading = ref(false)

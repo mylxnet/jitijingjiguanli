@@ -522,3 +522,147 @@ func TestListAndDetail(t *testing.T) {
 		t.Errorf("组织 2 应看不到应收单，实际 total=%d err=%v", total2, err)
 	}
 }
+
+// createPartyWithType 通过 API 建指定类型往来单位。
+func createPartyWithType(t *testing.T, r *gin.Engine, name, typ string) int64 {
+	t.Helper()
+	w := doJSON(t, r, "POST", "/api/parties", map[string]any{"name": name, "type": typ})
+	if w.Code != http.StatusOK {
+		t.Fatalf("创建单位失败 code=%d body=%s", w.Code, w.Body.String())
+	}
+	var out struct {
+		Data Party `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析创建结果失败: %v", err)
+	}
+	return out.Data.ID
+}
+
+func decodeAccrueResult(t *testing.T, w *httptest.ResponseRecorder) BatchAccrueResult {
+	t.Helper()
+	var out struct {
+		Data BatchAccrueResult `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析结转结果失败: %v", err)
+	}
+	return out.Data
+}
+
+// TestPartyTypeTypedAccrueVoid 验证：单位类型建档 + 按类型结转（rent→流转企业 / dividend→投资公司）+ 未收款应收作废重结。
+func TestPartyTypeTypedAccrueVoid(t *testing.T) {
+	db, r := newEnv(t)
+	_ = db
+	flow := createPartyWithType(t, r, "甲公司", "flow")
+	invest := createPartyWithType(t, r, "乙公司", "invest")
+
+	// 列表返回类型；投资金额初始为 0（同名长期投资公司未投出）
+	wList := doJSON(t, r, "GET", "/api/parties", nil)
+	var list struct {
+		Data []Party `json:"data"`
+	}
+	if err := json.Unmarshal(wList.Body.Bytes(), &list); err != nil {
+		t.Fatalf("解析单位列表失败: %v", err)
+	}
+	byName := map[string]Party{}
+	for _, p := range list.Data {
+		byName[p.Name] = p
+	}
+	if byName["甲公司"].Type != "flow" || byName["乙公司"].Type != "invest" {
+		t.Errorf("单位类型错误：甲=%s 乙=%s", byName["甲公司"].Type, byName["乙公司"].Type)
+	}
+
+	// 标准：流转企业 5 万流转费；投资公司 8 万分红 + 一条不匹配的流转费标准（结转应忽略）
+	saveStd := func(party int64, kind string, amount int64) {
+		w := doJSON(t, r, "POST", "/api/recv-standards", map[string]any{"partyId": party, "recvKind": kind, "amountCents": amount})
+		if w.Code != http.StatusOK {
+			t.Fatalf("保存标准失败 code=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+	saveStd(flow, "rent", 50000)
+	saveStd(invest, "dividend", 80000)
+	saveStd(invest, "rent", 99999)
+
+	// 一键结转 rent：只应给甲公司（乙公司的 rent 标准因类型不符被忽略）
+	wr := decodeAccrueResult(t, doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "rent"}))
+	if wr.Created != 1 || wr.Skipped != 0 {
+		t.Errorf("rent 结转应新增 1 条，实际 created=%d skipped=%d", wr.Created, wr.Skipped)
+	}
+	wd := decodeAccrueResult(t, doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "dividend"}))
+	if wd.Created != 1 || wd.Skipped != 0 {
+		t.Errorf("dividend 结转应新增 1 条，实际 created=%d skipped=%d", wd.Created, wd.Skipped)
+	}
+
+	// 找到甲公司 2026 rent 应收单
+	wRec := doJSON(t, r, "GET", "/api/receivables?partyId="+itoa(flow)+"&kind=rent", nil)
+	var recList struct {
+		Data ReceivableListResponse `json:"data"`
+	}
+	if err := json.Unmarshal(wRec.Body.Bytes(), &recList); err != nil {
+		t.Fatalf("解析应收单失败: %v", err)
+	}
+	if len(recList.Data.Items) != 1 {
+		t.Fatalf("甲公司应有 1 张 rent 应收单，实际 %d", len(recList.Data.Items))
+	}
+	recID := recList.Data.Items[0].ID
+
+	// 作废后可重结：作废 → 2026 rent 应能再次新增
+	if code := apiErr(t, doJSON(t, r, "PUT", "/api/receivables/"+itoa(recID)+"/void", nil)); code != "" {
+		t.Fatalf("作废失败 code=%s", code)
+	}
+	wr2 := decodeAccrueResult(t, doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "rent"}))
+	if wr2.Created != 1 {
+		t.Errorf("作废后重新结转应新增 1 条，实际 created=%d", wr2.Created)
+	}
+}
+
+func decodePreview(t *testing.T, w *httptest.ResponseRecorder) PreviewAccrueResult {
+	t.Helper()
+	var out struct {
+		Data PreviewAccrueResult `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析预览失败: %v body=%s", err, w.Body.String())
+	}
+	return out.Data
+}
+
+// TestPreviewAccrue 验证：预览带出类型匹配标准并标注已存在；与 accrue 一致。
+func TestPreviewAccrue(t *testing.T) {
+	_, r := newEnv(t)
+	flow := createPartyWithType(t, r, "甲公司", "flow")
+	invest := createPartyWithType(t, r, "乙公司", "invest")
+	saveStd := func(party int64, kind string, amount int64) {
+		w := doJSON(t, r, "POST", "/api/recv-standards", map[string]any{"partyId": party, "recvKind": kind, "amountCents": amount})
+		if w.Code != http.StatusOK {
+			t.Fatalf("保存标准失败 body=%s", w.Body.String())
+		}
+	}
+	saveStd(flow, "rent", 50000)
+	saveStd(invest, "dividend", 80000)
+	saveStd(invest, "rent", 99999) // 类型不符，预览应忽略
+
+	pv := decodePreview(t, doJSON(t, r, "GET", "/api/recv-standards/preview?year=2026", nil))
+	if len(pv.Items) != 2 {
+		t.Fatalf("预览应有 2 行，实际 %d", len(pv.Items))
+	}
+	for _, it := range pv.Items {
+		if it.Exists {
+			t.Errorf("结转前不应有已存在行: %+v", it)
+		}
+	}
+
+	// 确认结转后再预览：应全部标注已存在
+	doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "rent"})
+	doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "dividend"})
+	pv2 := decodePreview(t, doJSON(t, r, "GET", "/api/recv-standards/preview?year=2026", nil))
+	if len(pv2.Items) != 2 {
+		t.Fatalf("结转后预览应有 2 行，实际 %d", len(pv2.Items))
+	}
+	for _, it := range pv2.Items {
+		if !it.Exists {
+			t.Errorf("结转后应标注已存在: %+v", it)
+		}
+	}
+}

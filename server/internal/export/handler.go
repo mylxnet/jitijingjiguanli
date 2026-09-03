@@ -13,6 +13,7 @@ import (
 	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/platform"
+	"jititaizhang/server/internal/receivable"
 	"jititaizhang/server/internal/summary"
 	"jititaizhang/server/internal/transaction"
 )
@@ -29,6 +30,7 @@ func NewHandler(db *sql.DB) *Handler {
 			sum: summary.NewRepo(db),
 			txn: transaction.NewRepo(db),
 			cat: category.NewRepo(db),
+			rec: receivable.NewRepo(db),
 		},
 	}
 }
@@ -43,9 +45,10 @@ func (h *Handler) Export(c *gin.Context) {
 	content := Content(c.Query("content"))
 	format := Format(c.DefaultQuery("format", "xlsx"))
 
-	if content != ContentTransactions && content != ContentSummary && content != ContentBalanceSheet {
+	if content != ContentTransactions && content != ContentSummary && content != ContentBalanceSheet &&
+		content != ContentParties && content != ContentReceivables {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-			Code: "INVALID_CONTENT", Message: "导出内容不合法（transactions / summary / balance_sheet）",
+			Code: "INVALID_CONTENT", Message: "导出内容不合法（transactions / summary / balance_sheet / parties / receivables）",
 		})
 		return
 	}
@@ -110,10 +113,27 @@ func (h *Handler) Export(c *gin.Context) {
 			return
 		}
 		sheet = s
+	case ContentParties:
+		s, err := h.renderer.partySheet(orgID)
+		if err != nil {
+			h.fail500(c, "导出单位基本情况失败")
+			return
+		}
+		sheet = s
+	case ContentReceivables:
+		s, err := h.renderer.receivableSheet(orgID)
+		if err != nil {
+			h.fail500(c, "导出欠款明细失败")
+			return
+		}
+		sheet = s
 	}
 
 	// 响应头
-	nameCn := map[Content]string{ContentTransactions: "收支流水", ContentSummary: "收支汇总", ContentBalanceSheet: "科目余额表"}[content]
+	nameCn := map[Content]string{
+		ContentTransactions: "收支流水", ContentSummary: "收支汇总", ContentBalanceSheet: "科目余额表",
+		ContentParties: "单位基本情况", ContentReceivables: "欠款明细",
+	}[content]
 	ext := string(format)
 	stamp := time.Now().Format("20060102")
 	filename := fmt.Sprintf("集体台账-%s-%s.%s", nameCn, stamp, ext)

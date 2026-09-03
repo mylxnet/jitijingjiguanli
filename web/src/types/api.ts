@@ -42,10 +42,14 @@ export interface Party {
   id: number
   orgId: number
   name: string
+  type: 'flow' | 'invest' | 'other' // 流转企业 / 投资公司 / 其它单位
+  contactPhone: string
+  areaMu: number // 流转面积（亩，流转企业）
   note: string | null
   createdAt: string
   updatedAt: string
   outstandingCents: number
+  investAmountCents: number // 投资公司：长期投资同名公司累计投出（只读）
 }
 
 export interface AccrualStandard {
@@ -61,6 +65,20 @@ export interface AccrualStandard {
 export interface AccrueResult {
   created: number
   skipped: number
+}
+
+export interface AccruePreviewItem {
+  kind: RecvKind
+  title: string
+  partyId: number
+  partyName: string
+  amountCents: number
+  exists: boolean
+}
+
+export interface AccruePreview {
+  year: number
+  items: AccruePreviewItem[]
 }
 
 export interface Receivable {

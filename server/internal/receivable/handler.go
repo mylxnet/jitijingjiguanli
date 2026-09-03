@@ -50,10 +50,12 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/receivables", h.CreateReceivable)
 	r.POST("/api/receivables/batch", h.BatchAccrue)
 	r.GET("/api/receivables/:id", h.GetReceivableDetail)
+	r.PUT("/api/receivables/:id/void", h.VoidReceivable)
 	r.POST("/api/receivables/:id/receipts", h.CreateReceipt)
 	r.PUT("/api/receipts/:id", h.VoidReceipt)
 
 	r.GET("/api/recv-standards", h.ListStandards)
+	r.GET("/api/recv-standards/preview", h.PreviewAccrue)
 	r.POST("/api/recv-standards", h.SaveStandard)
 	r.PUT("/api/recv-standards/:id", h.ToggleStandard)
 	r.POST("/api/recv-standards/accrue", h.AccrueByStandards)
@@ -117,12 +119,31 @@ func (h *Handler) CreateParty(c *gin.Context) {
 		})
 		return
 	}
+	ptype := trimSpace(req.Type)
+	if ptype == "" {
+		ptype = "flow"
+	}
+	if !validPartyType(ptype) {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "单位类型不合法",
+		})
+		return
+	}
+	if req.AreaMu < 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "流转面积不能为负数",
+		})
+		return
+	}
 
 	var note *string
 	if req.Note != "" {
 		note = &req.Note
 	}
-	p := &Party{OrgID: orgID, Name: req.Name, Note: note}
+	p := &Party{
+		OrgID: orgID, Name: req.Name, Type: ptype,
+		ContactPhone: trimSpace(req.ContactPhone), AreaMu: req.AreaMu, Note: note,
+	}
 	created, err := h.repo.CreateParty(p)
 	if err != nil {
 		h.internal(c, "新建往来单位失败")
@@ -180,6 +201,28 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 		}
 		updates["name"] = name
 	}
+	if req.Type != nil {
+		ptype := trimSpace(*req.Type)
+		if !validPartyType(ptype) {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_REQUEST", Message: "单位类型不合法",
+			})
+			return
+		}
+		updates["type"] = ptype
+	}
+	if req.ContactPhone != nil {
+		updates["contact_phone"] = trimSpace(*req.ContactPhone)
+	}
+	if req.AreaMu != nil {
+		if *req.AreaMu < 0 {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_REQUEST", Message: "流转面积不能为负数",
+			})
+			return
+		}
+		updates["area_mu"] = *req.AreaMu
+	}
 	if req.Note != nil {
 		if *req.Note == "" {
 			updates["note"] = nil
@@ -195,6 +238,9 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 
 	if v, ok := updates["name"]; ok {
 		_ = h.clRepo.LogUpdateField(orgID, "party", id, "name", p.Name, v.(string))
+	}
+	if v, ok := updates["type"]; ok {
+		_ = h.clRepo.LogUpdateField(orgID, "party", id, "type", p.Type, v.(string))
 	}
 	if v, ok := updates["note"]; ok {
 		oldNote := ""
@@ -391,6 +437,26 @@ func (h *Handler) ListStandards(c *gin.Context) {
 	platform.SuccessResponse(c, items)
 }
 
+// PreviewAccrue 预览年度结转：从各单位启用的年度标准带出数据（流转企业→流转费 / 投资公司→投资收益）。
+// GET /api/recv-standards/preview?year=
+func (h *Handler) PreviewAccrue(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	year, _ := strconv.Atoi(c.Query("year"))
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	result, err := h.repo.PreviewAccrueFromStandards(orgID, year)
+	if err != nil {
+		h.internal(c, "生成年度结转预览失败")
+		return
+	}
+	platform.SuccessResponse(c, result)
+}
+
 // SaveStandard 保存计提标准（同单位+类别更新）。
 // POST /api/recv-standards
 func (h *Handler) SaveStandard(c *gin.Context) {
@@ -481,7 +547,14 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 	}
 	title := trimSpace(req.Title)
 	if title == "" {
-		title = fmt.Sprintf("%d年度计提", year)
+		switch req.Kind {
+		case "rent":
+			title = fmt.Sprintf("%d年度土地流转费", year)
+		case "dividend":
+			title = fmt.Sprintf("%d年度投资收益", year)
+		default:
+			title = fmt.Sprintf("%d年度计提", year)
+		}
 	}
 	result, err := h.repo.AccrueFromStandards(orgID, year, req.Kind, title)
 	if err != nil {
@@ -520,6 +593,47 @@ func (h *Handler) GetReceivableDetail(c *gin.Context) {
 		return
 	}
 	platform.SuccessResponse(c, detail)
+}
+
+// VoidReceivable 作废未收款应收单（允许“作废重结”；已核销的不可作废）。
+// PUT /api/receivables/:id/void
+func (h *Handler) VoidReceivable(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "应收单 ID 不合法",
+		})
+		return
+	}
+	detail, err := h.repo.GetReceivableDetail(orgID, id)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if detail == nil {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "RECEIVABLE_NOT_FOUND", Message: "应收单不存在",
+		})
+		return
+	}
+	rec := detail.Receivable
+	if rec.Status != "open" || rec.PaidCents > 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "RECEIVABLE_HAS_PAYMENT", Message: "该应收已有核销或已结清，不能作废",
+		})
+		return
+	}
+	if err := h.repo.DeleteOpenReceivable(orgID, id); err != nil {
+		h.internal(c, "作废应收单失败")
+		return
+	}
+	_ = h.clRepo.LogUpdateField(orgID, "receivable", id, "status", "open", "voided")
+	platform.SuccessResponse(c, gin.H{"ok": true})
 }
 
 // ---------- 核销 ----------

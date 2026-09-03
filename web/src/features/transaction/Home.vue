@@ -11,8 +11,8 @@
         <div class="dash-label">银行存款</div>
         <div class="dash-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
       </div>
-      <div class="dash-card asset">
-        <div class="dash-label">资产类（对外投资）</div>
+      <div v-if="(capital?.assetTotalCents ?? 0) !== 0" class="dash-card asset">
+        <div class="dash-label">长期投资（在外）</div>
         <div class="dash-value">{{ formatFen(capital?.assetTotalCents ?? 0) }}</div>
       </div>
       <div class="dash-card owe">
@@ -31,6 +31,23 @@
       <strong>{{ formatFen(summary?.incomeTotal ?? 0) }}</strong>
       <span class="sub">收 {{ formatFen(summary?.incomeTotal ?? 0) }} · 支 {{ formatFen(summary?.expenseTotal ?? 0) }}</span>
     </div>
+
+    <!-- 最新流水 -->
+    <div class="section-head">
+      <span>最新流水</span>
+      <span class="more" @click="goTransactions">查看全部 ›</span>
+    </div>
+    <div v-if="latestTxn" class="latest-txn" @click="goTransactions">
+      <div class="latest-main">
+        <span class="latest-date">{{ latestTxn.txnDate }}</span>
+        <span class="latest-cat">{{ latestCatName }}</span>
+        <span v-if="latestTxn.note" class="latest-note">{{ latestTxn.note }}</span>
+      </div>
+      <span class="latest-amount" :class="latestTxn.direction">
+        {{ latestTxn.direction === 'income' ? '+' : '-' }}{{ formatFen(latestTxn.amountCents) }}
+      </span>
+    </div>
+    <div v-else class="owe-empty">暂无流水</div>
 
     <!-- 欠款明细 -->
     <div class="section-head">
@@ -103,14 +120,25 @@
               </select>
             </template>
           </van-field>
-          <van-field v-if="quickNeedAsset" label="公司（资产科目）">
+          <van-field v-if="quickNeedCompany" label="投资对象（长期投资）">
             <template #input>
-              <select v-model="quick.assetCategoryId" class="qselect">
-                <option :value="0" disabled>选择投资对象</option>
-                <option v-for="a in assetOptions" :key="a.value" :value="a.value">{{ a.text }}</option>
+              <select v-model="quick.companyId" class="qselect">
+                <option :value="0" disabled>选择投资公司</option>
+                <option v-for="a in investCompanyOptions" :key="a.value" :value="a.value">{{ a.text }}</option>
               </select>
             </template>
           </van-field>
+          <div v-if="quickNeedCompany && !showNewCompany" class="new-company-link" @click="showNewCompany = true">
+            ＋ 没有这家公司？新增长期投资公司
+          </div>
+          <template v-if="quickNeedCompany && showNewCompany">
+            <van-field v-model="newCompanyName" label="新公司名" placeholder="输入公司全称" />
+            <div class="new-company-hint">创建后自动在「长期投资」下建该公司科目，并在往来中新增同名单位</div>
+            <div class="new-company-actions">
+              <van-button size="small" plain @click="showNewCompany = false">取消</van-button>
+              <van-button size="small" type="primary" :loading="creatingCompany" @click="handleCreateCompany">创建并选中</van-button>
+            </div>
+          </template>
           <van-field v-if="quickNeedParty" label="往来单位">
             <template #input>
               <select v-model="quick.partyId" class="qselect">
@@ -139,14 +167,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { api } from '../../lib/http'
 import { formatFen, todayStr, currentMonthStr, recvKindLabel } from '../../types/api'
 import { showToast } from 'vant'
-import type { Category, Party, Receivable, ReceivableListResponse, RecvKind, ApiResponse } from '../../types/api'
+import type { Category, Party, Receivable, ReceivableListResponse, RecvKind, ApiResponse, Transaction } from '../../types/api'
 
 const router = useRouter()
+const route = useRoute()
 
 interface Cap {
   bankBalanceCents: number
@@ -163,6 +192,8 @@ const capital = ref<Cap | null>(null)
 const summary = ref<SummaryPayload | null>(null)
 const oweRows = ref<{ key: string; partyName: string; recvKind: RecvKind; title: string; outstanding: number }[]>([])
 const noCategory = ref(false)
+const latestTxn = ref<Transaction | null>(null)
+const latestCatName = ref('')
 const owedTotal = computed(() => oweRows.value.reduce((s, r) => s + r.outstanding, 0))
 
 const showRecord = ref(false)
@@ -175,9 +206,15 @@ const catColumns = ref<{ text: string; value: number }[]>([])
 // ---- 快速记账（业务模板自动入账） ----
 const recordMode = ref<'normal' | 'quick'>('normal')
 const fullCats = ref<Category[]>([])
-const assetOptions = ref<{ text: string; value: number }[]>([])
+const investCompanyOptions = ref<{ text: string; value: number }[]>([])
 const partyOptions = ref<{ text: string; value: number }[]>([])
-const quick = ref({ date: todayStr(), biz: '', assetCategoryId: null as number | null, partyId: null as number | null, amount: '' })
+const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, amount: '' })
+const showNewCompany = ref(false)
+const newCompanyName = ref('')
+const creatingCompany = ref(false)
+
+// 长期投资一级科目名（兼容旧库里的「对外投资」）
+const INVEST_L1_NAMES = ['长期投资', '对外投资']
 
 interface QuickBiz {
   key: string
@@ -185,25 +222,25 @@ interface QuickBiz {
   dir?: 'income' | 'expense'
   catName?: string
   invest?: boolean
-  recover?: boolean
   needParty?: boolean
 }
 const quickBusinesses: QuickBiz[] = [
   { key: 'grant', label: '收上级财政补助', dir: 'income', catName: '上级补助' },
   { key: 'dividend', label: '收到投资收益/分红', dir: 'income', catName: '投资收益' },
   { key: 'rent', label: '收到土地流转费（单位缴款）', needParty: true, catName: '土地流转费收入' },
-  { key: 'service', label: '土地流转服务费收入', dir: 'income', catName: '土地流转服务费收入' },
+  { key: 'service', label: '收到流转管理费', dir: 'income', catName: '流转管理费' },
   { key: 'toHousehold', label: '拨付土地流转费给农户', dir: 'expense', catName: '土地流转费-转付农户' },
   { key: 'interest', label: '银行存款利息', dir: 'income', catName: '其他收入' },
   { key: 'member', label: '532-成员分配发放', dir: 'expense', catName: '成员分红' },
   { key: 'welfare', label: '532-公益支出', dir: 'expense', catName: '公益支出' },
+  { key: 'mgmtFee', label: '支出管理费', dir: 'expense', catName: '管理费支出' },
   { key: 'invest', label: '投资给公司', invest: true },
-  { key: 'recover', label: '收回投资', recover: true },
+  { key: 'recover', label: '收回投资' },
 ]
 
-const quickNeedAsset = computed(() => {
+const quickNeedCompany = computed(() => {
   const b = quickBusinesses.find(x => x.key === quick.value.biz)
-  return !!(b && (b.invest || b.recover))
+  return !!(b && b.invest)
 })
 const quickNeedParty = computed(() => {
   const b = quickBusinesses.find(x => x.key === quick.value.biz)
@@ -211,8 +248,10 @@ const quickNeedParty = computed(() => {
 })
 
 function onQuickBizChange() {
-  quick.value.assetCategoryId = null
+  quick.value.companyId = null
   quick.value.partyId = null
+  showNewCompany.value = false
+  newCompanyName.value = ''
 }
 
 function findEquityCat(name: string): Category | null {
@@ -235,6 +274,66 @@ async function loadPartiesQuick() {
   }
 }
 
+function investL1(): Category | null {
+  for (const l1 of fullCats.value) {
+    if (INVEST_L1_NAMES.includes(l1.name)) return l1
+  }
+  return null
+}
+
+async function ensureInvestL1(): Promise<Category> {
+  const existing = investL1()
+  if (existing) return existing
+  await api.post('/categories', { name: '长期投资', level: 1 })
+  await loadCats()
+  const created = investL1()
+  if (!created) throw new Error('创建「长期投资」分组失败，请刷新后重试')
+  return created
+}
+
+async function handleCreateCompany() {
+  const name = newCompanyName.value.trim()
+  if (!name) {
+    showToast('请填写公司名称')
+    return
+  }
+  creatingCompany.value = true
+  try {
+    // 已存在同名长期投资公司：直接选中（避免重复科目）
+    const existing = investCompanyOptions.value.find(o => o.text === name || o.text.startsWith(`${name}（`))
+    if (existing) {
+      quick.value.companyId = existing.value
+      showNewCompany.value = false
+      newCompanyName.value = ''
+      showToast('该公司已存在，已自动选中')
+      return
+    }
+    const l1 = await ensureInvestL1()
+    const res = await api.post<ApiResponse<Category>>('/categories', {
+      name,
+      level: 2,
+      parentId: l1.id,
+      kind: 'equity',
+    })
+    // 往来里没有同名单位则自动新增（投资对象按投资公司建档）
+    if (!partyOptions.value.some(p => p.text === name)) {
+      await api.post('/parties', { name, type: 'invest', note: '自动创建（长期投资）' })
+    }
+    await loadCats()
+    await loadPartiesQuick()
+    const cat = investCompanyOptions.value.find(o => o.value === (res.data?.id ?? -1))
+      || investCompanyOptions.value.find(o => o.text === name || o.text.startsWith(`${name}（`))
+    if (cat) quick.value.companyId = cat.value
+    showNewCompany.value = false
+    newCompanyName.value = ''
+    showToast('已创建并选中')
+  } catch (e: any) {
+    showToast(e.message || '创建失败')
+  } finally {
+    creatingCompany.value = false
+  }
+}
+
 async function saveQuick() {
   const amount = Math.round(parseFloat(quick.value.amount || '0') * 100)
   const biz = quickBusinesses.find(x => x.key === quick.value.biz)
@@ -246,8 +345,8 @@ async function saveQuick() {
     showToast('金额必须大于 0')
     return
   }
-  if (quickNeedAsset.value && !quick.value.assetCategoryId) {
-    showToast('请选择投资对象（公司）')
+  if (quickNeedCompany.value && !quick.value.companyId) {
+    showToast('请选择投资公司')
     return
   }
   if (quickNeedParty.value && !quick.value.partyId) {
@@ -257,13 +356,25 @@ async function saveQuick() {
   saving.value = true
   recordError.value = ''
   try {
-    if (biz.invest || biz.recover) {
-      await api.post('/fund-moves', {
-        moveDate: quick.value.date,
-        kind: biz.invest ? 'invest' : 'recover',
-        assetCategoryId: quick.value.assetCategoryId,
+    if (biz.invest) {
+      // 投资给公司：银行减少，记支出到「长期投资 / 公司」
+      await api.post('/transactions', {
+        txnDate: quick.value.date,
+        direction: 'expense',
         amountCents: amount,
-        note: biz.label,
+        categoryId: quick.value.companyId,
+        note: '投资给公司',
+      })
+    } else if (biz.key === 'recover') {
+      // 收回投资：银行增加，记收入到「上级补助」
+      const cat = findEquityCat('上级补助')
+      if (!cat) throw new Error('缺少科目：上级补助')
+      await api.post('/transactions', {
+        txnDate: quick.value.date,
+        direction: 'income',
+        amountCents: amount,
+        categoryId: cat.id,
+        note: '收回投资',
       })
     } else if (biz.key === 'rent' && quick.value.partyId) {
       // 优先冲该单位未收流转费欠款；无欠款则直记收入
@@ -276,10 +387,13 @@ async function saveQuick() {
       const best = (list.data.items || []).filter(r => r.outstandingCents > 0)
         .sort((a, b) => b.outstandingCents - a.outstandingCents)[0]
       if (best && amount <= best.outstandingCents) {
+        const cat = findEquityCat('土地流转费收入')
+        if (!cat) throw new Error('缺少科目：土地流转费收入')
         await api.post(`/receivables/${best.id}/receipts`, {
           amountCents: amount,
           receiptDate: quick.value.date,
           method: 'cash',
+          categoryId: cat.id,
         })
       } else if (best && amount > best.outstandingCents) {
         throw new Error(`该单位待收 ${formatFen(best.outstandingCents)}，不能超过`)
@@ -315,6 +429,30 @@ onMounted(loadAll)
 
 async function loadAll() {
   await Promise.all([loadSummary(), loadOwed(), loadCats()])
+  await loadLatest()
+}
+
+async function loadLatest() {
+  try {
+    const res = await api.get<ApiResponse<{ items: Transaction[]; total: number }>>('/transactions', { pageSize: 1 })
+    const t = res.data.items?.[0] || null
+    latestTxn.value = t
+    latestCatName.value = ''
+    if (t) {
+      for (const l1 of fullCats.value) {
+        if (l1.children) {
+          const l2 = l1.children.find(c => c.id === t.categoryId)
+          if (l2) {
+            latestCatName.value = `${l1.name} / ${l2.name}`
+            break
+          }
+        }
+      }
+    }
+  } catch {
+    latestTxn.value = null
+    latestCatName.value = ''
+  }
 }
 
 async function loadSummary() {
@@ -354,25 +492,33 @@ async function loadCats() {
     const cats = res.data
     fullCats.value = cats
     const options: { text: string; value: number }[] = []
-    const assets: { text: string; value: number }[] = []
+    const companies: { text: string; value: number }[] = []
     for (const l1 of cats) {
+      const isInvest = INVEST_L1_NAMES.includes(l1.name)
       if (l1.children) {
         for (const l2 of l1.children) {
           if (l2.status !== 'active') continue
           if (l2.kind === 'equity') {
-            options.push({ text: `${l1.name} / ${l2.name}`, value: l2.id })
-          } else if (l2.kind === 'asset') {
-            assets.push({ text: `${l1.name} / ${l2.name}`, value: l2.id })
+            if (isInvest) {
+              // 长期投资组下的权益二级视为公司：显示累计投出（余额为负时取正）
+              const invested = (l2.balanceCents ?? 0) < 0 ? -l2.balanceCents! : 0
+              companies.push({
+                text: invested > 0 ? `${l2.name}（已投 ${formatFen(invested)}）` : l2.name,
+                value: l2.id,
+              })
+            } else {
+              options.push({ text: `${l1.name} / ${l2.name}`, value: l2.id })
+            }
           }
         }
       }
     }
     catColumns.value = options
-    assetOptions.value = assets
-    noCategory.value = options.length === 0 && assets.length === 0
+    investCompanyOptions.value = companies
+    noCategory.value = options.length === 0 && companies.length === 0
   } catch {
     catColumns.value = []
-    assetOptions.value = []
+    investCompanyOptions.value = []
     noCategory.value = true
   }
 }
@@ -380,12 +526,22 @@ async function loadCats() {
 function openRecord() {
   recordMode.value = 'normal'
   record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
-  quick.value = { date: todayStr(), biz: '', assetCategoryId: null, partyId: null, amount: '' }
+  quick.value = { date: todayStr(), biz: '', companyId: null, partyId: null, amount: '' }
+  showNewCompany.value = false
+  newCompanyName.value = ''
   recordError.value = ''
   showRecord.value = true
   void loadPartiesQuick()
   void loadCats()
 }
+
+// 桌面左侧导航「记账」：带 ?record=open 进入本页时自动打开记一笔
+watch(() => route.query.record, (v) => {
+  if (v) {
+    openRecord()
+    void router.replace({ query: {} })
+  }
+})
 
 function onCatConfirm({ selectedOptions }: any) {
   const opt = selectedOptions[0]
@@ -437,6 +593,10 @@ async function saveRecord() {
 
 function goContacts() {
   router.push('/contacts')
+}
+
+function goTransactions() {
+  router.push('/transactions')
 }
 
 function goCategories() {
@@ -554,6 +714,55 @@ function goCategories() {
   background: #fff;
   border-radius: 12px;
   overflow: hidden;
+}
+
+.latest-txn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.latest-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.latest-date {
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.latest-cat {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.latest-note {
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.latest-amount {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.latest-amount.income {
+  color: #185fa5;
+}
+
+.latest-amount.expense {
+  color: #a32d2d;
 }
 
 .owe-empty {
@@ -695,6 +904,26 @@ function goCategories() {
   padding: 0 10px;
   background: #fff;
   color: #323233;
+}
+
+.new-company-link {
+  padding: 6px 16px 2px;
+  font-size: 13px;
+  color: #0f6e56;
+  cursor: pointer;
+}
+
+.new-company-hint {
+  padding: 0 16px;
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.new-company-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 8px 16px;
 }
 
 .desktop-field {

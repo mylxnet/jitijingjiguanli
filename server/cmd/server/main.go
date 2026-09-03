@@ -90,7 +90,12 @@ func buildRouter(a *app) *gin.Engine {
 	authed := r.Group("", auth.RequireAuth(a.authSvc))
 	authed.GET("/api/me", func(c *gin.Context) {
 		id, _ := auth.CurrentUserID(c)
-		platform.OK(c, gin.H{"userID": id})
+		orgID, ok := auth.CurrentOrgID(c)
+		var orgName string
+		if ok {
+			_ = a.db.QueryRow(`SELECT name FROM org WHERE id = ?`, orgID).Scan(&orgName)
+		}
+		platform.OK(c, gin.H{"userID": id, "orgID": orgID, "orgName": orgName})
 	})
 	auth.NewHandler(a.authSvc).RegisterAuthed(authed)
 	category.NewHandler(a.db).Register(authed)

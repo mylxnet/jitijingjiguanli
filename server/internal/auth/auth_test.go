@@ -59,14 +59,14 @@ func TestRegisterOrg(t *testing.T) {
 		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", userID, orgID)
 	}
 
-	// 预置科目（5 一级 + 6 二级，preset=1）
+	// 预置科目（4 一级 + 10 二级，preset=1）
 	var presetCount int
 	if err := svc.repo.db.QueryRow(
 		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
 		t.Fatalf("统计预置科目失败: %v", err)
 	}
-	if presetCount != 13 {
-		t.Errorf("预置科目应为 13 个（4 一级 + 9 二级），实际 %d", presetCount)
+	if presetCount != 14 {
+		t.Errorf("预置科目应为 14 个（4 一级 + 10 二级），实际 %d", presetCount)
 	}
 
 	// 重复账号名 → 友好错误

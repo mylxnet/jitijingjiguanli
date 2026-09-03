@@ -28,8 +28,8 @@ func NewRepo(db *sql.DB) *Repo {
 func (r *Repo) CreateParty(p *Party) (*Party, error) {
 	now := platform.Now()
 	res, err := r.db.Exec(
-		`INSERT INTO party(org_id, name, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?)`,
-		p.OrgID, p.Name, p.Note, now, now,
+		`INSERT INTO party(org_id, name, type, contact_phone, area_mu, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.OrgID, p.Name, p.Type, p.ContactPhone, p.AreaMu, p.Note, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("新建往来单位失败: %w", err)
@@ -45,8 +45,8 @@ func (r *Repo) CreateParty(p *Party) (*Party, error) {
 func (r *Repo) FindPartyByID(id int64) (*Party, error) {
 	p := &Party{}
 	err := r.db.QueryRow(
-		`SELECT id, org_id, name, note, created_at, updated_at FROM party WHERE id = ?`, id,
-	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Note, &p.CreatedAt, &p.UpdatedAt)
+		`SELECT id, org_id, name, type, contact_phone, area_mu, note, created_at, updated_at FROM party WHERE id = ?`, id,
+	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -57,7 +57,7 @@ func (r *Repo) FindPartyByID(id int64) (*Party, error) {
 }
 
 // ListParties 查询某组织往来单位（含欠款合计 = Σ未核销应收余额）。
-// keyword 非空时按名称模糊过滤。
+// keyword 非空时按名称模糊过滤。投资公司附带长期投资同名科目累计投出。
 func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	where := "WHERE p.org_id = ?"
 	var args []any
@@ -68,7 +68,7 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	}
 
 	rows, err := r.db.Query(
-		`SELECT p.id, p.org_id, p.name, p.note, p.created_at, p.updated_at,
+		`SELECT p.id, p.org_id, p.name, p.type, p.contact_phone, p.area_mu, p.note, p.created_at, p.updated_at,
 		        COALESCE((SELECT SUM(rec.amount_cents - COALESCE((
 		            SELECT SUM(re2.amount_cents) FROM receipt re2
 		            WHERE re2.org_id = p.org_id AND re2.receivable_id = rec.id AND re2.status = 'normal'
@@ -84,12 +84,42 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	var items []Party
 	for rows.Next() {
 		p := Party{}
-		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Note, &p.CreatedAt, &p.UpdatedAt, &p.OutstandingCents); err != nil {
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt, &p.OutstandingCents); err != nil {
 			return nil, fmt.Errorf("扫描往来单位行失败: %w", err)
 		}
 		items = append(items, p)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if items[i].Type == "invest" {
+			items[i].InvestAmountCents = r.partyInvestAmount(orgID, items[i].Name)
+		}
+	}
+	return items, nil
+}
+
+// partyInvestAmount 计算某投资公司的累计投出 = 「长期投资/对外投资」组下同名普通二级科目收到的支出流水合计。
+func (r *Repo) partyInvestAmount(orgID int64, name string) int64 {
+	var invested int64
+	err := r.db.QueryRow(
+		`SELECT COALESCE(SUM(CASE WHEN t.direction = 'expense' THEN t.amount_cents
+		                          WHEN t.direction = 'income' THEN -t.amount_cents ELSE 0 END), 0)
+		 FROM txn t
+		 JOIN category c ON t.category_id = c.id
+		 JOIN category l1 ON c.parent_id = l1.id
+		 WHERE t.org_id = ? AND t.status = 'normal' AND c.level = 2
+		   AND c.kind = 'equity' AND c.name = ?
+		   AND l1.name IN ('长期投资', '对外投资')`, orgID, name,
+	).Scan(&invested)
+	if err != nil {
+		return 0
+	}
+	if invested < 0 {
+		return 0
+	}
+	return invested
 }
 
 // UpdateParty 更新往来单位（限定本组织）。
@@ -252,6 +282,18 @@ func (r *Repo) GetReceivableDetail(orgID, id int64) (*ReceivableDetail, error) {
 func (r *Repo) UpdateReceivableStatus(id, orgID int64, status string) error {
 	_, err := r.db.Exec(`UPDATE receivable SET status = ? WHERE id = ? AND org_id = ?`, status, id, orgID)
 	return err
+}
+
+// DeleteOpenReceivable 作废未收款应收单（仅 open 且无任何正常核销时允许删除，供年度结转重录）。
+func (r *Repo) DeleteOpenReceivable(orgID, id int64) error {
+	res, err := r.db.Exec(`DELETE FROM receivable WHERE id = ? AND org_id = ? AND status = 'open'`, id, orgID)
+	if err != nil {
+		return fmt.Errorf("作废应收单失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("应收单不存在或已结清，无法作废")
+	}
+	return nil
 }
 
 // ---------- receipt ----------
@@ -591,23 +633,75 @@ func (r *Repo) SetStandardActive(id, orgID int64, active bool) error {
 	return nil
 }
 
-// AccrueFromStandards 按标准一键结转年度应收（存在则跳过）。
+// AccrueFromStandards 按启用标准一键结转年度应收（存在则跳过）。
+// 只有单位类型与标准类别匹配的才结转：rent→流转企业 flow；dividend→投资公司 invest。
 func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*BatchAccrueResult, error) {
-	standards, err := r.ListStandards(orgID, kind)
-	if err != nil {
-		return nil, err
+	partyType := map[string]string{"rent": "flow", "dividend": "invest", "other": "other"}[kind]
+	if partyType == "" {
+		return &BatchAccrueResult{}, nil
 	}
+	rows, err := r.db.Query(
+		`SELECT s.party_id, s.recv_kind, s.amount_cents
+		 FROM recv_standard s JOIN party p ON p.id = s.party_id AND p.org_id = s.org_id
+		 WHERE s.org_id = ? AND s.recv_kind = ? AND p.type = ? AND s.active = 1
+		 ORDER BY p.name`, orgID, kind, partyType,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询可结转标准失败: %w", err)
+	}
+	defer rows.Close()
 	var items []BatchAccrueItem
-	for _, s := range standards {
-		if !s.Active {
-			continue
+	for rows.Next() {
+		it := BatchAccrueItem{}
+		if err := rows.Scan(&it.PartyID, &it.RecvKind, &it.AmountCents); err != nil {
+			return nil, fmt.Errorf("扫描可结转标准失败: %w", err)
 		}
-		items = append(items, BatchAccrueItem{PartyID: s.PartyID, RecvKind: s.RecvKind, AmountCents: s.AmountCents})
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if len(items) == 0 {
 		return &BatchAccrueResult{}, nil
 	}
 	return r.BatchCreateReceivables(orgID, year, title, items)
+}
+
+// PreviewAccrueFromStandards 生成年度结转预览：启用标准中类型匹配的行，并标注同年同类应收单是否已存在。
+func (r *Repo) PreviewAccrueFromStandards(orgID int64, year int) (*PreviewAccrueResult, error) {
+	rows, err := r.db.Query(
+		`SELECT s.recv_kind, s.party_id, p.name, s.amount_cents,
+		        EXISTS(SELECT 1 FROM receivable rec
+		               WHERE rec.org_id = s.org_id AND rec.party_id = s.party_id
+		                 AND rec.recv_year = ? AND rec.recv_kind = s.recv_kind) AS already
+		 FROM recv_standard s JOIN party p ON p.id = s.party_id AND p.org_id = s.org_id
+		 WHERE s.org_id = ? AND s.active = 1
+		   AND ((s.recv_kind = 'rent' AND p.type = 'flow') OR (s.recv_kind = 'dividend' AND p.type = 'invest'))
+		 ORDER BY s.recv_kind, p.name`, year, orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询年度结转预览失败: %w", err)
+	}
+	defer rows.Close()
+	result := &PreviewAccrueResult{Year: year, Items: []PreviewAccrueItem{}}
+	for rows.Next() {
+		it := PreviewAccrueItem{}
+		var already int
+		if err := rows.Scan(&it.Kind, &it.PartyID, &it.PartyName, &it.AmountCents, &already); err != nil {
+			return nil, fmt.Errorf("扫描年度结转预览失败: %w", err)
+		}
+		it.Exists = already == 1
+		if it.Kind == "rent" {
+			it.Title = fmt.Sprintf("%d年度土地流转费", year)
+		} else {
+			it.Title = fmt.Sprintf("%d年度投资收益", year)
+		}
+		result.Items = append(result.Items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func sumPaidTx(tx *sql.Tx, orgID, receivableID int64) (int64, error) {

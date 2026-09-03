@@ -1,6 +1,6 @@
 // 文件下载工具：导出走后端 /api/export（xlsx 带免加工格式，见后端 export 包）。
 
-export type ExportContent = 'transactions' | 'summary' | 'balance_sheet'
+export type ExportContent = 'transactions' | 'summary' | 'balance_sheet' | 'parties' | 'receivables'
 export type ExportFormat = 'csv' | 'xlsx'
 
 /**

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"jititaizhang/server/internal/category"
+	"jititaizhang/server/internal/receivable"
 	"jititaizhang/server/internal/summary"
 	"jititaizhang/server/internal/transaction"
 )
@@ -18,6 +19,8 @@ const (
 	ContentTransactions Content = "transactions"  // 收支流水明细
 	ContentSummary      Content = "summary"       // 区间收支汇总（分级小计 + 资金构成）
 	ContentBalanceSheet Content = "balance_sheet" // 科目余额表（D8）
+	ContentParties      Content = "parties"       // 往来单位基本情况
+	ContentReceivables  Content = "receivables"   // 往来欠款明细
 )
 
 // Format 导出格式。
@@ -69,6 +72,19 @@ type renderer struct {
 	sum *summary.Repo
 	txn *transaction.Repo
 	cat *category.Repo
+	rec *receivable.Repo
+}
+
+func partyTypeLabel(t string) string {
+	switch t {
+	case "flow":
+		return "流转企业"
+	case "invest":
+		return "投资公司"
+	case "other":
+		return "其它单位"
+	}
+	return t
 }
 
 // catNames 科目全名解析：id -> "一级/二级"（二级科目挂在父下）。
@@ -245,6 +261,86 @@ func (r *renderer) balanceSheet(orgID int64, q ExportQuery) (*xlSheet, error) {
 		)
 	}
 	s.Title = "科目余额表"
+	return s, nil
+}
+
+// partySheet 往来单位基本情况导出。
+func (r *renderer) partySheet(orgID int64) (*xlSheet, error) {
+	parties, err := r.rec.ListParties(orgID, "")
+	if err != nil {
+		return nil, fmt.Errorf("查询往来单位失败: %w", err)
+	}
+	standards, err := r.rec.ListStandards(orgID, "")
+	if err != nil {
+		return nil, fmt.Errorf("查询年度标准失败: %w", err)
+	}
+	stdByParty := map[int64]int64{} // party_id -> amount_cents（按类型取 rent/dividend）
+	for _, s := range standards {
+		if !s.Active {
+			continue
+		}
+		if _, ok := stdByParty[s.PartyID]; !ok {
+			stdByParty[s.PartyID] = s.AmountCents
+		}
+	}
+
+	s := &xlSheet{
+		Name:    "单位基本情况",
+		Widths:  []float64{34, 12, 16, 12, 14, 14, 14, 24},
+		NumCols: []int{3, 4, 5, 6},
+		Header:  []string{"单位名称", "类型", "联系电话", "流转面积(亩)", "累计投出(元)", "欠款合计(元)", "年度标准(元)", "备注"},
+	}
+	for _, p := range parties {
+		note := ""
+		if p.Note != nil {
+			note = *p.Note
+		}
+		s.Rows = append(s.Rows, xlRow{Cells: []xlCell{
+			p.Name, partyTypeLabel(p.Type), p.ContactPhone, p.AreaMu,
+			money(p.InvestAmountCents), money(p.OutstandingCents), money(stdByParty[p.ID]), note,
+		}})
+	}
+	s.Title = "往来单位基本情况"
+	return s, nil
+}
+
+// receivableSheet 往来欠款明细导出。
+func (r *renderer) receivableSheet(orgID int64) (*xlSheet, error) {
+	items, _, err := r.rec.ListReceivables(orgID, nil, 0, "", "", 1, 1000000)
+	if err != nil {
+		return nil, fmt.Errorf("查询欠款明细失败: %w", err)
+	}
+	parties, err := r.rec.ListParties(orgID, "")
+	if err != nil {
+		return nil, fmt.Errorf("查询往来单位失败: %w", err)
+	}
+	typeByName := map[string]string{}
+	for _, p := range parties {
+		typeByName[p.Name] = partyTypeLabel(p.Type)
+	}
+
+	s := &xlSheet{
+		Name:    "欠款明细",
+		Widths:  []float64{30, 10, 10, 12, 30, 14, 14, 14, 10},
+		NumCols: []int{5, 6, 7},
+		Header:  []string{"单位名称", "类型", "年度", "类别", "事由", "应收(元)", "已收(元)", "未收(元)", "状态"},
+	}
+	kindLabel := map[string]string{"rent": "流转费", "dividend": "投资收益", "other": "其他"}
+	for _, it := range items {
+		status := "未结清"
+		if it.Status == "closed" {
+			status = "已结清"
+		}
+		kind := kindLabel[it.RecvKind]
+		if kind == "" {
+			kind = it.RecvKind
+		}
+		s.Rows = append(s.Rows, xlRow{Cells: []xlCell{
+			it.PartyName, typeByName[it.PartyName], it.RecvYear, kind, it.Title,
+			money(it.AmountCents), money(it.PaidCents), money(it.OutstandingCents), status,
+		}})
+	}
+	s.Title = "往来欠款明细"
 	return s, nil
 }
 

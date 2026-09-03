@@ -4,7 +4,6 @@
       <h3>科目管理</h3>
       <div class="header-actions">
         <van-button type="primary" size="small" @click="showTransferDialog = true">转账</van-button>
-        <van-button type="primary" plain size="small" icon="exchange" @click="openFundMovePopup">资金划转</van-button>
         <van-button type="primary" size="small" @click="openAddL1">+ 新增一级</van-button>
       </div>
     </div>
@@ -71,7 +70,7 @@
 
     <!-- 新增一级科目对话框（一级是分组容器，只填名称） -->
     <van-dialog v-model:show="showAddDialog" title="新增一级科目" show-cancel-button @confirm="handleAddL1">
-      <div class="dialog-tip">一级科目用于分组，二级科目才选择「资产/权益」类型</div>
+      <div class="dialog-tip">一级科目用于分组，二级科目记录收支去向</div>
       <van-field v-model="addForm.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
     </van-dialog>
 
@@ -93,19 +92,8 @@
       <div v-if="!editL2Mode && unitList.length === 0" class="field-hint">
         暂无往来单位；可手动输入科目名，或先到「往来」页新增单位
       </div>
-      <van-field v-if="!editL2Mode" label="科目类型">
-        <template #input>
-          <van-radio-group v-model="addL2Form.kind" direction="horizontal">
-            <van-radio name="equity">权益</van-radio>
-            <van-radio name="asset">资产</van-radio>
-          </van-radio-group>
-        </template>
-      </van-field>
-      <div v-if="!editL2Mode && addL2Form.kind === 'asset'" class="field-hint">
-        资产科目代表投到银行外的钱（如对外投资某公司）：期初填建账时已在外的金额；之后进出走「资金划转」
-      </div>
-      <div v-else-if="!editL2Mode" class="field-hint">
-        权益科目记录收入/支出的去向与来源；期初填建账时该科目已有的存量
+      <div v-if="!editL2Mode" class="field-hint">
+        普通收支科目：收入/支出都记在此；对外投资给公司的，把公司建在「长期投资」分组下
       </div>
       <van-field
         v-model="addL2Form.openingBalance"
@@ -246,98 +234,6 @@
       @cancel="showLegPicker = false"
     />
 
-    <!-- 资金划转弹层（D10：投资=银行→资产；收回=资产→银行） -->
-    <van-popup v-model:show="showFundMovePopup" position="bottom" round closeable style="max-height: 90vh">
-      <div class="fundmove-popup">
-        <div class="popup-title">资金划转</div>
-
-        <van-field label="方向">
-          <template #input>
-            <van-radio-group v-model="fundMoveForm.kind" direction="horizontal">
-              <van-radio name="invest">投资（银行→资产）</van-radio>
-              <van-radio name="recover">收回（资产→银行）</van-radio>
-            </van-radio-group>
-          </template>
-        </van-field>
-        <van-field v-model="fundMoveForm.date" label="日期" placeholder="YYYY-MM-DD" :rules="[{ required: true }]" />
-        <van-field
-          v-model="fundMoveAssetName"
-          is-link
-          readonly
-          label="资产科目"
-          placeholder="请选择资产科目"
-          @click="showAssetPicker = true"
-          class="only-mobile"
-        />
-        <NativeSelect
-          label="资产科目"
-          placeholder="请选择资产科目"
-          v-model="fundMoveAssetId"
-          :options="assetCategoryOptions"
-        />
-        <div v-if="selectedAssetOutstanding !== null" class="transfer-hint">
-          该资产目前在外 {{ formatFen(selectedAssetOutstanding) }}
-        </div>
-        <van-field
-          v-model="fundMoveForm.amount"
-          label="金额"
-          type="number"
-          placeholder="0.00"
-          inputmode="decimal"
-        />
-        <van-field v-model="fundMoveForm.note" label="摘要" placeholder="项目/事由（可选）" />
-
-        <div class="fundmove-save">
-          <van-button
-            round
-            block
-            type="primary"
-            :disabled="!canSubmitFundMove"
-            :loading="savingFundMove"
-            @click="handleFundMove"
-          >保存{{ fundMoveForm.kind === 'invest' ? '投资' : '收回' }}</van-button>
-        </div>
-
-        <!-- 划转记录 -->
-        <div class="fundmove-records">
-          <div class="legs-header">
-            <span class="legs-title">划转记录</span>
-            <van-button size="mini" plain @click="loadFundMoves">刷新</van-button>
-          </div>
-          <div v-if="fundMoves.length === 0" class="records-empty">暂无记录</div>
-          <div v-for="mv in fundMoves" :key="mv.id" class="record-row" :class="{ voided: mv.status === 'voided' }">
-            <div class="record-info">
-              <span class="record-kind" :class="mv.kind">{{ mv.kind === 'invest' ? '投资' : '收回' }}</span>
-              <span class="record-cat">{{ fundMoveAssetNameOf(mv.assetCategoryId) }}</span>
-              <span class="record-amount" :class="mv.kind">{{ mv.kind === 'invest' ? '-' : '+' }}{{ formatFen(mv.amountCents) }}</span>
-              <span class="record-date">{{ mv.moveDate }}</span>
-              <span v-if="mv.status === 'voided'" class="l2-chip stopped">已作废</span>
-            </div>
-            <van-button
-              v-if="mv.status === 'normal'"
-              size="mini"
-              plain
-              type="warning"
-              @click="voidFundMove(mv)"
-            >作废</van-button>
-            <van-button size="mini" plain @click="openMoveChangelog(mv)">留痕</van-button>
-          </div>
-        </div>
-      </div>
-    </van-popup>
-
-    <!-- 资产科目选择器 -->
-    <van-action-sheet
-      v-model:show="showAssetPicker"
-      title="选择资产科目"
-      :actions="assetCategoryOptions"
-      @select="onAssetCategorySelect"
-      @cancel="showAssetPicker = false"
-    />
-
-    <!-- 划转留痕查看 -->
-    <ChangeLogDialog v-model:show="chgShow" entity-type="fund_move" :entity-id="chgId" />
-
     <!-- 往来单位选择（填入科目名称） -->
     <van-action-sheet
       v-model:show="showUnitPicker"
@@ -353,10 +249,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { showToast, showDialog } from 'vant'
-import ChangeLogDialog from '../../components/ChangeLogDialog.vue'
 import NativeSelect from '../../components/NativeSelect.vue'
-import type { Category, Party, FundMove, FundMoveListResponse, ApiResponse } from '../../types/api'
-import { formatFen, todayStr } from '../../types/api'
+import type { Category, Party, ApiResponse } from '../../types/api'
+import { formatFen } from '../../types/api'
 
 const loading = ref(true)
 const categories = ref<Category[]>([])
@@ -464,28 +359,13 @@ interface TransferLeg {
 
 const transferLegs = ref<TransferLeg[]>([{ categoryId: null, categoryName: '', amountYuan: '' }])
 
-// 所有启用中的普通二级科目（用于科目间转账；资产科目走资金划转，不在此列）
+// 所有启用中的普通二级科目（用于科目间转账）
 const activeL2Categories = computed(() => {
   const result: Category[] = []
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
         if (l2.status === 'active' && l2.kind === 'equity') {
-          result.push(l2)
-        }
-      }
-    }
-  }
-  return result
-})
-
-// 启用中的资产二级科目（资金划转可挂，D10）
-const assetL2Categories = computed(() => {
-  const result: Category[] = []
-  for (const l1 of categories.value) {
-    if (l1.children) {
-      for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'asset') {
           result.push(l2)
         }
       }
@@ -601,147 +481,6 @@ async function handleTransfer() {
   } finally {
     savingTransfer.value = false
   }
-}
-
-// ---- 资金划转（D10：投资 = 银行→资产；收回 = 资产→银行） ----
-const showFundMovePopup = ref(false)
-const showAssetPicker = ref(false)
-const savingFundMove = ref(false)
-const fundMoves = ref<FundMove[]>([])
-
-const fundMoveForm = ref({
-  kind: 'invest' as 'invest' | 'recover',
-  date: todayStr(),
-  amount: '',
-  note: '',
-})
-const fundMoveAssetId = ref<number | null>(null)
-const fundMoveAssetName = ref('')
-
-const defaultFundMoveForm = () => ({
-  kind: 'invest' as 'invest' | 'recover',
-  date: todayStr(),
-  amount: '',
-  note: '',
-})
-
-// 资产科目选择器选项（带一级前缀与在外余额）
-const assetCategoryOptions = computed(() => {
-  const options: { name: string; value: number }[] = []
-  for (const l1 of categories.value) {
-    if (l1.children) {
-      for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'asset') {
-          options.push({
-            name: `${l1.name} / ${l2.name}（在外 ${formatFen(l2.balanceCents ?? 0)}）`,
-            value: l2.id,
-          })
-        }
-      }
-    }
-  }
-  return options
-})
-
-// 当前选中资产科目的在外余额（用于提示）
-const selectedAssetOutstanding = computed(() => {
-  if (!fundMoveAssetId.value) return null
-  const cat = assetL2Categories.value.find(c => c.id === fundMoveAssetId.value)
-  return cat?.balanceCents ?? null
-})
-
-const fundMoveAmountCents = computed(() => {
-  return Math.round(parseFloat(fundMoveForm.value.amount || '0') * 100)
-})
-
-const canSubmitFundMove = computed(() => {
-  return (
-    fundMoveAssetId.value !== null &&
-    fundMoveAmountCents.value > 0 &&
-    fundMoveForm.value.date !== ''
-  )
-})
-
-function openFundMovePopup() {
-  fundMoveForm.value = defaultFundMoveForm()
-  fundMoveAssetId.value = null
-  fundMoveAssetName.value = ''
-  showFundMovePopup.value = true
-  void loadFundMoves()
-}
-
-function onAssetCategorySelect(action: { name: string; value: number }) {
-  fundMoveAssetId.value = action.value
-  fundMoveAssetName.value = action.name
-  showAssetPicker.value = false
-}
-
-function fundMoveAssetNameOf(categoryId: number): string {
-  const cat = assetL2Categories.value.find(c => c.id === categoryId)
-  if (cat) return cat.name
-  // 停用/删除后兜底显示 id
-  return `科目 #${categoryId}`
-}
-
-async function loadFundMoves() {
-  try {
-    const res = await api.get<ApiResponse<FundMoveListResponse>>('/fund-moves', { pageSize: 50 })
-    fundMoves.value = res.data.items || []
-  } catch {
-    fundMoves.value = []
-  }
-}
-
-async function handleFundMove() {
-  if (!canSubmitFundMove.value) return
-  savingFundMove.value = true
-  try {
-    await api.post('/fund-moves', {
-      moveDate: fundMoveForm.value.date,
-      kind: fundMoveForm.value.kind,
-      assetCategoryId: fundMoveAssetId.value,
-      amountCents: fundMoveAmountCents.value,
-      note: fundMoveForm.value.note || '',
-    })
-    showToast('保存成功')
-    await loadCategories()
-    await loadFundMoves()
-    fundMoveForm.value.amount = ''
-    fundMoveForm.value.note = ''
-  } catch (e: any) {
-    showToast(e.message || '保存失败')
-  } finally {
-    savingFundMove.value = false
-  }
-}
-
-async function voidFundMove(mv: FundMove) {
-  try {
-    await showDialog({
-      title: '确认作废',
-      message: `作废这笔${mv.kind === 'invest' ? '投资' : '收回'}（${formatFen(mv.amountCents)}）？银行与资产余额将回滚。`,
-      showCancelButton: true,
-    })
-  } catch {
-    return // 用户取消
-  }
-  try {
-    await api.put(`/fund-moves/${mv.id}`, { status: 'voided' })
-    showToast('已作废')
-    await loadCategories()
-    await loadFundMoves()
-  } catch (e: any) {
-    showToast(e.message || '操作失败')
-  }
-}
-
-// ---- 划转留痕（F6） ----
-const chgShow = ref(false)
-const chgId = ref(0)
-
-function openMoveChangelog(mv: FundMove) {
-  chgId.value = mv.id
-  chgShow.value = true
 }
 
 // ---- 生命周期 ----
@@ -1130,77 +869,5 @@ async function deleteCat(cat: Category) {
 .header-actions {
   display: flex;
   gap: 4px;
-}
-
-/* 资金划转弹层 */
-.fundmove-popup {
-  padding: 16px 0 24px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.fundmove-save {
-  margin: 8px 16px 0;
-}
-
-.fundmove-records {
-  margin-top: 16px;
-  border-top: 1px solid #f0f0eb;
-  padding-top: 4px;
-}
-
-.records-empty {
-  text-align: center;
-  color: #8f8e88;
-  font-size: 12px;
-  padding: 16px 0;
-}
-
-.record-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-bottom: 1px solid #f0f0eb;
-}
-
-.record-row.voided {
-  opacity: 0.6;
-}
-
-.record-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.record-kind {
-  font-size: 11px;
-  border-radius: 99px;
-  padding: 1px 8px;
-  border: 1px solid #e3e2dd;
-}
-
-.record-kind.invest { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
-.record-kind.recover { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
-
-.record-cat {
-  font-size: 13px;
-  color: #2c2c2a;
-}
-
-.record-amount {
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.record-amount.invest { color: #7a4f0f; }
-.record-amount.recover { color: #0f6e56; }
-
-.record-date {
-  font-size: 11px;
-  color: #8f8e88;
 }
 </style>

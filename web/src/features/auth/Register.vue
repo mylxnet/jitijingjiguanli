@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from './store'
+import { useAuthStore, ORG_NAME_KEY } from './store'
 import { api } from '../../lib/http'
 import { showToast } from 'vant'
 import type { ApiResponse } from '../../types/api'
@@ -84,6 +84,7 @@ async function handleRegister() {
       password: password.value,
     })
     if (res.data.user) {
+      localStorage.setItem(ORG_NAME_KEY, orgName.value.trim())
       auth.markLoggedIn()
       showToast('注册成功，已自动登录')
       router.push('/')

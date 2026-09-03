@@ -2,8 +2,8 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-title">集体台账</div>
-        <div class="login-subtitle">内部收支管理</div>
+        <div class="login-title">{{ displayTitle }}</div>
+        <div v-if="orgName" class="login-subtitle">集体经济管理系统</div>
       </div>
 
       <van-form @submit="handleLogin">
@@ -43,9 +43,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from './store'
+import { useAuthStore, ORG_NAME_KEY } from './store'
+import { api } from '../../lib/http'
 import { showToast } from 'vant'
 
 const router = useRouter()
@@ -56,11 +57,24 @@ const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
+// 记住上次登录的组织名：大字显示组织名，小字显示系统名
+const orgName = ref(localStorage.getItem(ORG_NAME_KEY) || '')
+const displayTitle = computed(() => orgName.value || '集体经济管理系统')
+
 async function handleLogin() {
   loading.value = true
   error.value = ''
   try {
     await auth.login(username.value, password.value)
+    try {
+      const me = await api.get<{ data?: { orgName?: string } }>('/me')
+      if (me.data?.orgName) {
+        orgName.value = me.data.orgName
+        localStorage.setItem(ORG_NAME_KEY, me.data.orgName)
+      }
+    } catch {
+      // 记不住组织名也不影响登录
+    }
     router.push('/')
   } catch (e: any) {
     error.value = e.message || '账号或密码错误'
