@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.0（对齐代码 **v0.3.6**，2026-09-03 核对） |
+| 文档版本 | v1.1（对齐代码 **v0.4.1**，2026-09-03 核对） |
 | 项目代号 | 集体台账（jititaizhang） |
 | 定位 | 集体经济组织内部收支台账：多组织自注册、移动优先、局域网自托管 |
 | 关联文档 | [需求澄清 01](./01-requirements.md) · [PRD 02](./02-prd.md) · [设计 03](./03-design.md) · [CHANGELOG](../CHANGELOG.md) |
@@ -41,6 +41,9 @@
 | v0.3.4 | 应收/往来后端（D11，party/receivable/receipt，迁移 004） | ✅ |
 | v0.3.5 | 前端 5 tab、注册页、往来页、预置科目徽标 | ✅ |
 | v0.3.6 | 备份/恢复（F7）、修改密码、变更历史查看（F6） | ✅ |
+| v0.3.7 | 往来只单位、新增二级科目单位下拉、汇总点科目看当月流水 | ✅ |
+| v0.4 | 模型重构（资产/权益、到账算收益、破坏性迁移 006）、看板、批量计提+标准一键结转、双端壳 | ✅ |
+| v0.4.1 | 桌面去手机感、底部弹层居中、原生下拉（NativeSelect）、快速记账（10 业务模板自动入账） | ✅ |
 | — | Docker/embed 一体化部署、PWA 收尾 | ⬜ 待办骨架（见 §9.5） |
 
 ---
@@ -48,6 +51,8 @@
 ## 2. 需求功能（正式整理）
 
 > 完整逐条需求见 `02-prd.md`；本节为**已实现功能**的正式口径，供验收与二次开发对照。
+> ⚠️ **v0.4 覆盖声明**：余额类型（余粮/花费）、参与勾稽、科目期初、“专项资金/未分配”口径已在迁移 006 移除；
+> 本节 2.2–2.5 保留 v0.3 描述供追溯，**以 §2.8 v0.4 模型总则为准**。
 
 ### 2.1 组织与账号
 
@@ -125,6 +130,17 @@
 | 变更留痕 | 实体的 create/update/void/unvoid 写入 change_log；前端「留痕」弹窗查看 |
 
 > ⚠️ 恢复是**整库**一致性快照（含全部组织），非单组织粒度。
+
+### 2.8 v0.4 模型总则（以本节为准）
+
+- **科目**：二级类型只有 `asset 资产` / `equity 权益`；一级为分组容器。无期初、无勾稽、无余额类型。
+- **银行存款** = 期初（设置页） + Σ到账收入 − Σ支出 ± 资金划转。
+- **到账才算收益**：收入=银行 +、权益科目 +；支出=银行 −、权益科目 −；资金划转=银行 ↔ 资产科目。
+- **往来应收欠款**单列“待收”，不计收益/资产；收到款自动冲欠款并计收入。
+- **532**：仅按比例记对应账（再投资走资金划转、成员/公益走支出），无方案台账。
+- **预置科目**（注册生成，4 一级 + 9 权益二级）：本金-上级补助；对外投资(空，自建资产二级)；经营收入-投资收益/土地流转费收入/流转服务费收入/其他收入；分配与支出-转付农户/成员分红/福利发放/公益支出。
+- **快速记账**：10 个业务模板自动入账（见 §7.7）。
+- **看板**：首页=银行/资产/待收/净资产 + 本年收益到账 + 欠款明细。
 
 ---
 
@@ -211,6 +227,8 @@ Go 后端（Gin）
 | `002_balance_and_transfer.sql` | D6 字段、transfer/transfer_leg/change_log/app_setting |
 | `003_multi_org.sql` | v0.3 全表重建带 org_id；category.kind/preset；org/fund_move/party/receivable/receipt |
 | `004_receipt_status.sql` | 补 `receipt.status`（003 建表遗漏，历史行默认 normal） |
+| `005_party_unit_only.sql` | 往来只单位：移除 party.kind（农户类型删除） |
+| `006_v04_asset_equity.sql` | v0.4 破坏性重置：科目 kind=asset/equity，删余额类型/勾稽/期初；receivable 增 recv_year；新增 recv_standard |
 
 ### 5.1 表清单与关键字段
 
@@ -219,13 +237,14 @@ Go 后端（Gin）
 | `org` | name | 组织 |
 | `user` | org_id, username UNIQUE, password_hash | 1 组织 1 管理员账号 |
 | `session` | id, user_id, expires_at | 服务端会话 |
-| `category` | org_id, name, level(1/2), parent_id, status, balance_type, kind(normal/asset), opening_balance_cents, include_in_reconciliation, preset, sort_order | 表级 CHECK：花费型不可勾稽；资产型不可勾稽/不可花费；同级重名唯一索引 |
-| `txn` | org_id, txn_date, direction(income/expense), amount_cents>0, category_id, note, status(normal/voided) | 流水 |
-| `transfer` | org_id, txn_date, source_category_id, source_amount_cents, note, status | 转账 |
+| `category` | org_id, name, level(1/2), parent_id, status, kind(asset/equity), preset, sort_order | v0.4：仅 资产/权益；无期初/勾稽/余额类型；同级重名唯一 |
+| `txn` | org_id, txn_date, direction(income/expense), amount_cents>0, category_id, note, status(normal/voided) | 流水（只挂 equity 二级） |
+| `transfer` | org_id, txn_date, source_category_id, source_amount_cents, note, status | 转账（equity 之间） |
 | `transfer_leg` | org_id, transfer_id, category_id, amount_cents | 转入明细 |
-| `fund_move` | org_id, move_date, kind(invest/recover), asset_category_id, amount_cents, note, status | 资金划转 |
-| `party` | org_id, name, kind(household/unit), note | 往来对象 |
-| `receivable` | org_id, party_id, recv_kind(rent/dividend/other), title, amount_cents, income_category_id, status(open/closed), note | 应收单 |
+| `fund_move` | org_id, move_date, kind(invest/recover), asset_category_id, amount_cents, note, status | 资金划转（asset） |
+| `party` | org_id, name, note | 往来单位（无类型） |
+| `receivable` | org_id, party_id, recv_year, recv_kind(rent/dividend/other), title, amount_cents, income_category_id, status(open/closed), note | 应收单（recv_year 供批量计提防重） |
+| `recv_standard` | org_id, party_id, recv_kind, amount_cents, active | 年度计提标准（单位+类别唯一） |
 | `receipt` | org_id, receivable_id, amount_cents, receipt_date, method(cash/offset), txn_id, note, status(normal/voided) | 核销记录 |
 | `change_log` | org_id, entity_type, entity_id, action(create/update/void/unvoid), field, old_value, new_value, changed_at | 留痕（无外键，实体删除仍保留） |
 | `app_setting` | (org_id,key) PK, value | 如 `bank_opening_balance_cents` |
@@ -253,6 +272,10 @@ Go 后端（Gin）
 | GET/POST/PUT | `/api/transactions` `/api/transactions/:id` | 流水列表/记一笔/编辑作废 |
 | GET/POST/PUT | `/api/transfers` `/api/transfers/:id` | 转账列表/创建/作废撤销 |
 | GET/POST/PUT | `/api/fund-moves` `/api/fund-moves/:id` | 资金划转 |
+| POST | `/api/receivables/batch` | 批量计提应收（多单位/年度防重，返回 created/skipped） |
+| GET/POST | `/api/recv-standards` | 计提标准列表/保存（单位+类别唯一） |
+| PUT | `/api/recv-standards/:id` | 启停计提标准 |
+| POST | `/api/recv-standards/accrue` | 按启用标准一键结转年度应收 |
 | GET | `/api/summary?from=&to=` | 汇总（收支/资金构成/科目余额树） |
 | GET/POST/PUT | `/api/parties` `/api/parties/:id` | 往来对象 |
 | GET/POST | `/api/receivables` | 应收单列表/登记 |
@@ -311,6 +334,24 @@ Go 后端（Gin）
 - 自动备份：每日 03:00（服务器本机时区）自动执行，保留最近 30 份。
 - 恢复 = 整库回到快照时刻（所有组织都会回退），完成后强制重新登录；恢复前请先「立即备份」以免丢失新数据。
 - **修改密码**：填原密码 + 两次新密码。
+
+### 7.7 快速记账（看板 → 记一笔 → 快速记账）
+
+按业务模板自动入账，减少选科目：
+
+| 业务 | 操作提示 |
+|---|---|
+| 收上级财政补助 / 投资收益 / 服务费 / 利息 | 只填金额 → 自动记对应收入科目 |
+| 拨付农户流转费 / 532成员分配 / 532公益 | 只填金额 → 自动记对应支出科目 |
+| 收到某单位土地流转费 | 选往来单位 → 自动冲该单位欠款；无欠款则直记收入 |
+| 投资给公司 / 收回投资 | 选公司（资产科目）→ 自动走资金划转 |
+
+> 依赖预置科目名定位；若科目被改名会提示“缺少科目：XX”。
+
+### 7.8 桌面端说明
+
+- ≥992px：左侧导航 + 主内容铺满；表单/弹层居中；下拉为原生选择（鼠标友好）
+- <992px：底部 5 tab + 底部弹层；科目/单位选择仍为移动端弹层
 
 ---
 
@@ -396,7 +437,7 @@ cd web && npx vue-tsc -b && npx vite build
 | 生产静态资源托管（单二进制） | 未实现（开发态 = Vite + Go 双进程） |
 | PWA 收尾、启动自检（网络盘检测） | 设计有、未实现 |
 | 变更历史查看覆盖范围 | 流水/转账（流水页编辑弹层）、资金划转（科目页留痕）已可用；应收核销/科目自身留痕存于库中，暂未全部做成界面 |
-| 本机测试数据 | `data/` 含冒烟组织（甲村/丙村/新庄，口令 test1234），正式使用建议删除重建 |
+| 本机测试数据 | `data/` 含冒烟组织（迁移 006 后仅 demo/test1234），正式使用建议删除重建 |
 
 ---
 
@@ -405,3 +446,4 @@ cd web && npx vue-tsc -b && npx vite build
 | 日期 | 说明 |
 |---|---|
 | 2026-09-03 | v1.0：按 v0.3.6 代码实况撰写（需求/架构/数据/接口/操作/部署/开发指南），待办显式标注 |
+| 2026-09-03 | v1.1：同步 v0.3.7 / v0.4 / v0.4.1 —— 迁移 005/006、资产权益模型与看板/批量计提/标准结转、双端适配与快速记账、接口与操作补充 |
