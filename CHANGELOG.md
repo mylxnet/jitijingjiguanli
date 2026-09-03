@@ -34,6 +34,11 @@
   （GET /api/changelog）与 NewHandler(db) 统一构造
 - 冒烟修复：空科目树返回 [] 而非 null（buildTree 归一），补空态回归测试
 - 端到端冒烟通过：health → 401 → 登录 → 建科目 → summary（临时实例 18080）
+- 导出（export，F5/D5/D8 落点）：GET /api/export?content=transactions|summary|balance_sheet&format=csv|xlsx，
+  复用 summary.GetSummary 与 transaction.List 口径；CSV 带 UTF-8 BOM；
+  xlsx 免加工格式（标题合并、表头冻结、列宽、金额右对齐 + #,##0.00、一级行加粗、合计上边框）、表尾资金构成三行
+- 导出单元测试（6 组：流水 CSV/含作废/汇总 CSV/科目余额表 CSV（D8）/xlsx 重开+格式与右对齐/参数校验）
+- summary 修复：一级科目行补汇总子项期初余额（此前恒 0，致 D8 余额表一级合计错）
 
 ### 前端（web，Vue 3 + TS + Vite）
 - 页面 6 个（设计 P1-P6 对齐）：Login / Home 记账 / List 流水 / Summary 汇总 /

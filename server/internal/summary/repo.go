@@ -205,6 +205,7 @@ func (r *Repo) calcCategoryTree(from, to string) ([]*CategorySummary, error) {
 	for _, root := range summaries {
 		for _, child := range root.Children {
 			root.CurrentBalanceCents += child.CurrentBalanceCents
+			root.OpeningBalanceCents += child.OpeningBalanceCents
 			root.IncomeCents += child.IncomeCents
 			root.ExpenseCents += child.ExpenseCents
 			root.TxnCount += child.TxnCount

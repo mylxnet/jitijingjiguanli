@@ -12,6 +12,7 @@ import (
 	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/changelog"
+	"jititaizhang/server/internal/export"
 	"jititaizhang/server/internal/platform"
 	"jititaizhang/server/internal/settings"
 	"jititaizhang/server/internal/summary"
@@ -60,6 +61,7 @@ func main() {
 	transfer.NewHandler(db).Register(authed)
 	settings.NewHandler(db).Register(authed)
 	changelog.NewHandler(db).Register(authed)
+	export.NewHandler(db).Register(authed)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
