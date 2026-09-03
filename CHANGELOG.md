@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0]
 
 ### 新增
 - 后端基础设施：配置加载（env）、SQLite 连接（modernc 纯 Go 驱动）、版本化迁移机制

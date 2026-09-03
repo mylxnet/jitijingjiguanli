@@ -67,7 +67,7 @@
       <van-button round block type="danger" @click="handleLogout">登出</van-button>
     </div>
 
-    <div class="version">v0.2.0</div>
+    <div class="version">v0.5.0</div>
 
     <!-- 修改密码 -->
     <van-popup v-model:show="showPwd" position="bottom" round closeable style="max-height: 90vh">
