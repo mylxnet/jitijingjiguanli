@@ -79,6 +79,9 @@ func (h *Handler) ListCategories(c *gin.Context) {
 	}
 
 	tree := h.buildTree(cats)
+	if tree == nil {
+		tree = []*Category{}
+	}
 	platform.SuccessResponse(c, tree)
 }
 

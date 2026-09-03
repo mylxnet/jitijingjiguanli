@@ -87,6 +87,23 @@ func createCat(t *testing.T, r *gin.Engine, name string, level int, parent *int6
 
 func int64p(v int64) *int64 { return &v }
 
+func TestEmptyListReturnsArray(t *testing.T) {
+	_, r := newEnv(t)
+	w := doJSON(t, r, http.MethodGet, "/api/categories", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("空库列表应 200，实际 %d", w.Code)
+	}
+	var out struct {
+		Data []*Category `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析响应失败: %v body=%s", err, w.Body.String())
+	}
+	if out.Data == nil {
+		t.Errorf("空库应返回 [] 而非 null（前端直接遍历 data），实际 body=%s", w.Body.String())
+	}
+}
+
 func TestCreateAndListTree(t *testing.T) {
 	_, r := newEnv(t)
 

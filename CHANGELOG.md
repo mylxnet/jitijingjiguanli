@@ -29,6 +29,11 @@
   列表两段式加载 legs（消除 N+1 与静默吞错）；余额口径复用 category.CalcBalance；
   NewHandler(db) + Register
 - 转账单元测试（4 组：D7 五步验算 / 创建校验矩阵 12 反例 / 作废撤销原子回滚+留痕 / 列表 legs+排序+过滤）
+- HTTP 全量接线（main.go）：category/transaction/summary/transfer/settings/changelog 六包
+  Register 挂入鉴权组（空 base group + RequireAuth，保留各包 /api 绝对路径）；changelog 补 Register
+  （GET /api/changelog）与 NewHandler(db) 统一构造
+- 冒烟修复：空科目树返回 [] 而非 null（buildTree 归一），补空态回归测试
+- 端到端冒烟通过：health → 401 → 登录 → 建科目 → summary（临时实例 18080）
 
 ### 骨架
 - 项目初始化（v0.1.0 起点）

@@ -1,6 +1,7 @@
 package changelog
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 
@@ -14,9 +15,14 @@ type Handler struct {
 	repo *Repo
 }
 
-// NewHandler 创建 Handler。
-func NewHandler(repo *Repo) *Handler {
-	return &Handler{repo: repo}
+// NewHandler 创建 Handler（与全库约定一致：只接 db，内部自建依赖 repo）。
+func NewHandler(db *sql.DB) *Handler {
+	return &Handler{repo: NewRepo(db)}
+}
+
+// Register 挂载路由。
+func (h *Handler) Register(r gin.IRouter) {
+	r.GET("/api/changelog", h.ListChangelog)
 }
 
 // ListChangelog 查询变更日志。

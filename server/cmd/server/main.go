@@ -10,7 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"jititaizhang/server/internal/auth"
+	"jititaizhang/server/internal/category"
+	"jititaizhang/server/internal/changelog"
 	"jititaizhang/server/internal/platform"
+	"jititaizhang/server/internal/settings"
+	"jititaizhang/server/internal/summary"
+	"jititaizhang/server/internal/transaction"
+	"jititaizhang/server/internal/transfer"
 )
 
 func main() {
@@ -42,12 +48,18 @@ func main() {
 	})
 	auth.NewHandler(authSvc).Register(r)
 
-	// 以下路由均需登录（v0.1.0 仅用于验证会话链路，业务接口在后续小节加入）
-	authed := r.Group("/api", auth.RequireAuth(authSvc))
-	authed.GET("/me", func(c *gin.Context) {
+	// 业务接口统一挂在此组：空 base，仅注入鉴权中间件（各包 Register 使用 /api 绝对路径）。
+	authed := r.Group("", auth.RequireAuth(authSvc))
+	authed.GET("/api/me", func(c *gin.Context) {
 		id, _ := auth.CurrentUserID(c)
 		platform.OK(c, gin.H{"userID": id})
 	})
+	category.NewHandler(db).Register(authed)
+	transaction.NewHandler(db).Register(authed)
+	summary.NewHandler(db).Register(authed)
+	transfer.NewHandler(db).Register(authed)
+	settings.NewHandler(db).Register(authed)
+	changelog.NewHandler(db).Register(authed)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
