@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, setOnUnauthorized } from '../../lib/http'
-import { useRouter } from 'vue-router'
+import type { ApiResponse } from '../../types/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
@@ -23,11 +23,12 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = ''
     try {
-      const res = await api.post<{ data: { ok: boolean } }>('/auth/login', {
+      // 后端成功响应为 { data: { user: { username }, expiresAt } }
+      const res = await api.post<ApiResponse<{ user: { username: string } }>>('/auth/login', {
         username,
         password,
       })
-      if (res.data.ok) {
+      if (res.data.user) {
         isLoggedIn.value = true
       }
     } catch (e: any) {

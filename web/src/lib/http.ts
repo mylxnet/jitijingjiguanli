@@ -1,9 +1,12 @@
 // HTTP 客户端封装
 // 统一处理 Cookie 认证、错误响应、401 跳转
+//
+// 统一使用同源相对路径 /api：
+// - 开发模式经 vite proxy 转发到后端（web/vite.config.ts 已配 /api → localhost:8080），
+//   避免跨端口直连触发 CORS；
+// - 生产模式由 Go 二进制同源托管静态资源与 API。
 
-const BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:8080/api'
-  : '/api'
+const BASE_URL = '/api'
 
 interface RequestOptions {
   method?: string

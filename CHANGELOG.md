@@ -52,6 +52,11 @@
   流水页导出改为后端生成（原前端组表逻辑移除，xlsx 库不再打进包——List chunk 301KB→16.9KB）；
   汇总页新增「导出」按钮（收支汇总×当前月 / 科目余额表，Excel+CSV）；转账视图下导出给提示
 - 前端验证：vue-tsc + vite build 通过；端到端 curl 导出的 xlsx 经 zip 校验结构完整
+- 登录链路两处修复（浏览器实测通过）：
+  ① http.ts：dev 模式 BASE_URL 原为绝对 http://localhost:8080/api（跨端口=跨源，后端无 CORS →
+     浏览器一律 Failed to fetch）；改统一同源相对 /api，dev 经 vite proxy 转发
+  ② auth store：login 检查响应 res.data.ok，但后端登录返回 {data:{user,expiresAt}} 无 ok 字段 →
+     登录实际成功但判定失败、路由守卫弹回登录页；改为判断 res.data.user
 
 ### 骨架
 - 项目初始化（v0.1.0 起点）
