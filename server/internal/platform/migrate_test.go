@@ -14,7 +14,7 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("首次迁移失败: %v", err)
 	}
 
-	for _, table := range []string{"user", "session", "category", "txn", "schema_migrations"} {
+	for _, table := range []string{"user", "session", "category", "txn", "app_setting", "transfer", "transfer_leg", "change_log", "schema_migrations"} {
 		if !tableExists(t, db, table) {
 			t.Errorf("表 %s 不存在", table)
 		}
@@ -29,8 +29,8 @@ func TestMigrate(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("查询迁移记录失败: %v", err)
 	}
-	if applied != 1 {
-		t.Errorf("schema_migrations 应有 1 条记录，实际 %d", applied)
+	if applied != 2 {
+		t.Errorf("schema_migrations 应有 2 条记录，实际 %d", applied)
 	}
 }
 

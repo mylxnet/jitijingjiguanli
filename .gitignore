@@ -1,6 +1,7 @@
 # 环境与密钥
 .env
 *.env
+cookies.txt
 
 # 数据与备份
 *.db
@@ -12,9 +13,19 @@ data/
 # 前端
 web/node_modules/
 web/dist/
+# tsc/vite 误产出物（源码只用 .ts/.vue）
+web/src/**/*.js
+web/src/**/*.js.map
+web/vite.config.js
+web/vite.config.d.ts
+*.tsbuildinfo
+# 打包到 server 的静态产物（由构建脚本生成，勿入库）
+server/web/
+server/cmd/server/web/
 
 # Go
 server/bin/
+*.exe
 
 # 系统
 .DS_Store
