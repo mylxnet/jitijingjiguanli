@@ -166,6 +166,20 @@ func (h *Handler) CreateCategory(c *gin.Context) {
 		}
 	}
 
+	// 期初校验：金额非负；一级（分组容器）不允许设期初
+	if req.OpeningBalanceCents < 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_OPENING", Message: "期初余额不能为负数",
+		})
+		return
+	}
+	if req.Level == 1 && req.OpeningBalanceCents != 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "LEVEL1_NO_OPENING", Message: "一级科目为分组容器，不支持设置期初余额（请设在二级上）",
+		})
+		return
+	}
+
 	// 重名
 	dup, err := h.repo.IsNameDup(orgID, req.Name, req.ParentID, 0)
 	if err != nil {
@@ -184,6 +198,7 @@ func (h *Handler) CreateCategory(c *gin.Context) {
 		ParentID:  req.ParentID,
 		Status:    "active",
 		Kind:      kind,
+		Opening:   req.OpeningBalanceCents,
 		SortOrder: req.SortOrder,
 	}
 
@@ -250,6 +265,22 @@ func (h *Handler) UpdateCategory(c *gin.Context) {
 		updates["status"] = *req.Status
 	}
 
+	if req.OpeningBalanceCents != nil {
+		if *req.OpeningBalanceCents < 0 {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_OPENING", Message: "期初余额不能为负数",
+			})
+			return
+		}
+		if cat.Level == 1 {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "LEVEL1_NO_OPENING", Message: "一级科目为分组容器，不支持设置期初余额",
+			})
+			return
+		}
+		updates["opening_balance_cents"] = *req.OpeningBalanceCents
+	}
+
 	if err := h.repo.Update(id, orgID, updates); err != nil {
 		h.internal(c, "更新科目失败")
 		return
@@ -260,6 +291,10 @@ func (h *Handler) UpdateCategory(c *gin.Context) {
 	}
 	if v, ok := updates["status"]; ok {
 		_ = h.clog.LogUpdateField(orgID, "category", id, "status", cat.Status, v.(string))
+	}
+	if v, ok := updates["opening_balance_cents"]; ok {
+		_ = h.clog.LogUpdateField(orgID, "category", id, "opening_balance_cents",
+			strconv.FormatInt(cat.Opening, 10), strconv.FormatInt(v.(int64), 10))
 	}
 
 	updated, _ := h.repo.FindByID(id)

@@ -12,6 +12,7 @@ type Category struct {
 	ParentID  *int64    `json:"parentId"`
 	Status    string    `json:"status"`
 	Kind      string    `json:"kind"` // asset 资产 / equity 权益（v0.4）
+	Opening   int64     `json:"openingBalanceCents"`
 	Preset    bool      `json:"preset"`
 	SortOrder int       `json:"sortOrder"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -29,12 +30,14 @@ type CreateCategoryRequest struct {
 	// ParentID 二级科目必填
 	ParentID *int64 `json:"parentId"`
 	// Kind 二级科目必填：asset / equity；一级为分组容器不填（默认 equity）
-	Kind      *string `json:"kind" binding:"omitempty,oneof=asset equity"`
-	SortOrder int     `json:"sortOrder"`
+	Kind                *string `json:"kind" binding:"omitempty,oneof=asset equity"`
+	OpeningBalanceCents int64   `json:"openingBalanceCents"`
+	SortOrder           int     `json:"sortOrder"`
 }
 
-// UpdateCategoryRequest 更新科目（kind 不可变；仅名称/状态）。
+// UpdateCategoryRequest 更新科目（kind 不可变；名称/状态/期初）。
 type UpdateCategoryRequest struct {
-	Name   *string `json:"name"`
-	Status *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Name                *string `json:"name"`
+	Status              *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	OpeningBalanceCents *int64  `json:"openingBalanceCents"`
 }

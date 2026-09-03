@@ -17,7 +17,7 @@ func NewRepo(db *sql.DB) *Repo {
 	return &Repo{db: db}
 }
 
-const catCols = `id, org_id, name, level, parent_id, status, kind, preset,
+const catCols = `id, org_id, name, level, parent_id, status, kind, opening_balance_cents, preset,
 	sort_order, created_at, updated_at`
 
 func scanCat(row interface{ Scan(...any) error }) (*Category, error) {
@@ -25,7 +25,7 @@ func scanCat(row interface{ Scan(...any) error }) (*Category, error) {
 	var preset int
 	err := row.Scan(
 		&c.ID, &c.OrgID, &c.Name, &c.Level, &c.ParentID, &c.Status,
-		&c.Kind, &preset, &c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
+		&c.Kind, &c.Opening, &preset, &c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -106,10 +106,10 @@ func (r *Repo) Create(c *Category) (*Category, error) {
 		preset = 1
 	}
 	res, err := r.db.Exec(
-		`INSERT INTO category(org_id, name, level, parent_id, status, kind, preset,
+		`INSERT INTO category(org_id, name, level, parent_id, status, kind, opening_balance_cents, preset,
 			sort_order, created_at, updated_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.OrgID, c.Name, c.Level, c.ParentID, c.Status, c.Kind, preset,
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.OrgID, c.Name, c.Level, c.ParentID, c.Status, c.Kind, c.Opening, preset,
 		c.SortOrder, now, now,
 	)
 	if err != nil {
@@ -193,10 +193,14 @@ func (r *Repo) IsNameDup(orgID int64, name string, parentID *int64, excludeID in
 	return n > 0, nil
 }
 
-// CalcBalance 计算权益科目余额（v0.4：收付实现、无期初）：
+// CalcBalance 计算权益科目余额（v0.5：含科目期初）：
 //
-//	余额 = Σ收入 − Σ支出 + Σ转入(转账) − Σ转出(转账)
+//	余额 = 期初 + Σ收入 − Σ支出 + Σ转入(转账) − Σ转出(转账)
 func (r *Repo) CalcBalance(catID int64) (int64, error) {
+	var opening int64
+	if err := r.db.QueryRow(`SELECT opening_balance_cents FROM category WHERE id = ?`, catID).Scan(&opening); err != nil {
+		return 0, err
+	}
 	var inc, exp int64
 	if err := r.db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN direction='income' THEN amount_cents ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN direction='expense' THEN amount_cents ELSE 0 END), 0)
@@ -216,11 +220,15 @@ func (r *Repo) CalcBalance(catID int64) (int64, error) {
 		return 0, fmt.Errorf("聚合转入失败: %w", err)
 	}
 
-	return inc - exp + in - out, nil
+	return opening + inc - exp + in - out, nil
 }
 
-// AssetBalance 计算资产科目余额 = Σ投资 − Σ收回（fund_move 聚合）。
+// AssetBalance 计算资产科目余额 = 期初 + Σ投资 − Σ收回（fund_move 聚合）。
 func (r *Repo) AssetBalance(catID int64) (int64, error) {
+	var opening int64
+	if err := r.db.QueryRow(`SELECT opening_balance_cents FROM category WHERE id = ?`, catID).Scan(&opening); err != nil {
+		return 0, err
+	}
 	var out, in int64
 	if err := r.db.QueryRow(
 		`SELECT COALESCE(SUM(CASE WHEN kind='invest' THEN amount_cents ELSE 0 END), 0),
@@ -229,7 +237,7 @@ func (r *Repo) AssetBalance(catID int64) (int64, error) {
 	).Scan(&out, &in); err != nil {
 		return 0, fmt.Errorf("聚合资产余额失败: %w", err)
 	}
-	return out - in, nil
+	return opening + out - in, nil
 }
 
 // BankDelta 资金划转对银行存款的净影响 = Σ收回 − Σ投资。

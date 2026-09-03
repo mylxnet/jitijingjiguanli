@@ -45,6 +45,7 @@
               <span class="l2-chip" :class="l2.kind">{{ l2.kind === 'asset' ? '资产' : '权益' }}</span>
               <span v-if="l2.status === 'inactive'" class="l2-chip stopped">已停用</span>
               <span class="l2-balance">{{ l2.kind === 'asset' ? '在外' : '余额' }} {{ formatFen(l2.balanceCents ?? 0) }}</span>
+              <span v-if="(l2.openingBalanceCents || 0) !== 0" class="l2-opening">期初 {{ formatFen(l2.openingBalanceCents || 0) }}</span>
               <span v-if="l2.kind !== 'asset' && l2.txnCount != null" class="l2-count">{{ l2.txnCount }}笔</span>
             </div>
             <div class="l2-actions">
@@ -101,11 +102,18 @@
         </template>
       </van-field>
       <div v-if="!editL2Mode && addL2Form.kind === 'asset'" class="field-hint">
-        资产科目代表投到银行外的钱（如对外投资某公司），进出只能走「资金划转」
+        资产科目代表投到银行外的钱（如对外投资某公司）：期初填建账时已在外的金额；之后进出走「资金划转」
       </div>
       <div v-else-if="!editL2Mode" class="field-hint">
-        权益科目记录收入/支出的去向与来源（补助、收益、分配、公益等），收增支减
+        权益科目记录收入/支出的去向与来源；期初填建账时该科目已有的存量
       </div>
+      <van-field
+        v-model="addL2Form.openingBalance"
+        label="期初余额"
+        type="number"
+        placeholder="0"
+        inputmode="decimal"
+      />
     </van-dialog>
 
     <!-- 重命名对话框 -->
@@ -383,6 +391,7 @@ const editL2Id = ref(0)
 const addL2Form = ref({
   name: '',
   kind: 'equity' as 'equity' | 'asset',
+  openingBalance: '0',
 })
 const addL2ParentId = ref<number | null>(null)
 const addL2ParentName = ref('')
@@ -390,6 +399,7 @@ const addL2ParentName = ref('')
 const defaultAddL2Form = () => ({
   name: '',
   kind: 'equity' as 'equity' | 'asset',
+  openingBalance: '0',
 })
 
 function openAddL2(l1: Category) {
@@ -409,6 +419,7 @@ function editL2(l2: Category) {
   addL2Form.value = {
     name: l2.name,
     kind: l2.kind,
+    openingBalance: String((l2.openingBalanceCents || 0) / 100),
   }
   showAddL2Dialog.value = true
 }
@@ -773,8 +784,10 @@ async function handleAddL2() {
   }
   try {
     if (editL2Mode.value) {
-      // 编辑：只允许改名/停用（kind 不可变，后端忽略其它字段）
-      await api.put(`/categories/${editL2Id.value}`, { name: addL2Form.value.name })
+      // 编辑：改名/停用/期初（kind 不可变）
+      const updPayload: Record<string, unknown> = { name: addL2Form.value.name }
+      updPayload.openingBalanceCents = Math.round(parseFloat(addL2Form.value.openingBalance || '0') * 100)
+      await api.put(`/categories/${editL2Id.value}`, updPayload)
       showToast('更新成功')
     } else {
       await api.post('/categories', {
@@ -782,6 +795,7 @@ async function handleAddL2() {
         level: 2,
         parentId: addL2ParentId.value,
         kind: addL2Form.value.kind,
+        openingBalanceCents: Math.round(parseFloat(addL2Form.value.openingBalance || '0') * 100),
       })
       showToast('创建成功')
     }

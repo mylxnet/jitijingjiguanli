@@ -33,8 +33,8 @@ func TestMigrate(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		t.Fatalf("查询迁移记录失败: %v", err)
 	}
-	if applied != 6 {
-		t.Errorf("schema_migrations 应有 6 条记录（001-006），实际 %d", applied)
+	if applied != 7 {
+		t.Errorf("schema_migrations 应有 7 条记录（001-007），实际 %d", applied)
 	}
 }
 

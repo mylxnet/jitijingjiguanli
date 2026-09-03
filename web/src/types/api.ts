@@ -8,6 +8,7 @@ export interface Category {
   parentId: number | null
   status: 'active' | 'inactive'
   kind: 'equity' | 'asset' // v0.4：权益 / 资产
+  openingBalanceCents: number // v0.5.1：科目期初
   preset?: boolean
   sortOrder: number
   createdAt: string

@@ -236,3 +236,59 @@ func orgCtx() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// TestOpeningBalance 二级科目期初：权益=期初+发生；资产=期初+投资−收回。
+func TestOpeningBalance(t *testing.T) {
+	db, r := newEnv(t)
+	l1 := seedCat(t, db, "对外投资", 1, nil, "active", "equity")
+	repo := NewRepo(db)
+
+	// 权益二级带期初 30000（API 建科目）
+	w := doJSON(t, r, "POST", "/api/categories", map[string]any{
+		"name": "本金-上级补助", "level": 2, "parentId": l1, "kind": "equity", "openingBalanceCents": 30000,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("建权益科目失败: %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Data *Category `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	eqID := created.Data.ID
+	eqBal, err := repo.CalcBalance(eqID)
+	if err != nil {
+		t.Fatalf("权益余额失败: %v", err)
+	}
+	if eqBal != 30000 {
+		t.Errorf("权益期初应 30000，实际 %d", eqBal)
+	}
+
+	// 资产二级带期初 60000（表示已在外的投资）
+	assetID := seedCat(t, db, "项目A", 2, l1, "active", "asset")
+	if _, err := db.Exec(`UPDATE category SET opening_balance_cents=60000 WHERE id=?`, assetID); err != nil {
+		t.Fatalf("设资产期初失败: %v", err)
+	}
+	asBal, err := repo.AssetBalance(assetID)
+	if err != nil {
+		t.Fatalf("资产余额失败: %v", err)
+	}
+	if asBal != 60000 {
+		t.Errorf("资产期初应 60000，实际 %d", asBal)
+	}
+
+	// 投资 10000 后资产=70000
+	now := time.Now().UTC()
+	if _, err := db.Exec(`INSERT INTO fund_move(org_id, move_date, kind, asset_category_id, amount_cents, note, status, created_at, updated_at)
+		VALUES(1,'2026-09-01','invest',?,10000,NULL,'normal',?,?)`, assetID, now, now); err != nil {
+		t.Fatalf("插划转失败: %v", err)
+	}
+	asBal, err = repo.AssetBalance(assetID)
+	if err != nil {
+		t.Fatalf("资产余额失败: %v", err)
+	}
+	if asBal != 70000 {
+		t.Errorf("投资后资产应 70000，实际 %d", asBal)
+	}
+}
