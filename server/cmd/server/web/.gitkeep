@@ -1,0 +1,2 @@
+# 本目录存放前端构建产物（由 scripts/build.sh 复制 web/dist 到此），编译时 go:embed 进二进制。
+# 产物不入库；本占位文件保证 embed 目录始终存在。

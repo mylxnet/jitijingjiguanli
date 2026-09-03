@@ -22,7 +22,8 @@ web/vite.config.d.ts
 *.tsbuildinfo
 # 打包到 server 的静态产物（由构建脚本生成，勿入库）
 server/web/
-server/cmd/server/web/
+server/cmd/server/web/*
+!server/cmd/server/web/.gitkeep
 
 # Go
 server/bin/

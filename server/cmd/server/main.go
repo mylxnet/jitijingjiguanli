@@ -3,10 +3,13 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +28,11 @@ import (
 	"jititaizhang/server/internal/transaction"
 	"jititaizhang/server/internal/transfer"
 )
+
+// webFS 内嵌前端构建产物（scripts/build.sh 先把 web/dist 复制到 ./web）。
+//
+//go:embed all:web
+var webFS embed.FS
 
 // app 持有随恢复热替换的可变状态（数据库、会话服务、路由）。
 type app struct {
@@ -96,7 +104,37 @@ func buildRouter(a *app) *gin.Engine {
 	export.NewHandler(a.db).Register(authed)
 
 	registerBackupRoutes(authed, a)
+	registerStatic(r)
 	return r
+}
+
+// registerStatic 托管内嵌前端：非 /api 请求返回静态文件，未命中回退 index.html（SPA hash 路由）。
+func registerStatic(r *gin.Engine) {
+	r.NoRoute(func(c *gin.Context) {
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "NOT_FOUND", "message": "接口不存在"}})
+			return
+		}
+		name := strings.TrimPrefix(p, "/")
+		if name == "" || name == "index.html" {
+			name = "index.html"
+		}
+		data, err := webFS.ReadFile("web/" + filepath.ToSlash(name))
+		if err != nil {
+			data, err = webFS.ReadFile("web/index.html")
+			if err != nil {
+				c.Status(http.StatusNotFound)
+				return
+			}
+			name = "index.html"
+		}
+		ct := mime.TypeByExtension(filepath.Ext(name))
+		if ct == "" {
+			ct = "text/plain; charset=utf-8"
+		}
+		c.Data(http.StatusOK, ct, data)
+	})
 }
 
 // registerBackupRoutes 挂载备份三接口：列表 / 手动备份 / 一键恢复。
