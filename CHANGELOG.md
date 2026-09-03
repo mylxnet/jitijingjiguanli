@@ -20,6 +20,10 @@
   方向/状态/科目活性）避免裸撞 DB CHECK；GetSummary 与列表 includeVoided 口径一致；
   void/unvoid 留痕动作区分；NewHandler(db) 统一构造 + Register
 - 流水单元测试（4 组：建单汇总搜索 / 创建校验 / 作废撤销与留痕 / 更新校验）
+- 汇总查询（summary）：D6 资金构成（含停用勾稽科目）、科目余额树（一级=子项之和、
+  区间发生额）、区间收支小计；余额口径统一复用 category.Repo.CalcBalance（消除重复实现）
+- 系统配置（settings）：银行存款期初余额读写；Get 清理为单次带转换查询
+- 汇总与配置单元测试（summary 3 组：D6 恒等式/负未分配警告/区间口径；settings 1 组：读写覆盖与负值拒绝）
 
 ### 骨架
 - 项目初始化（v0.1.0 起点）
