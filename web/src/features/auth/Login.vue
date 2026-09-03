@@ -33,6 +33,11 @@
           </van-button>
         </div>
       </van-form>
+
+      <div class="login-footer">
+        <span>还没有账号？</span>
+        <a class="register-link" @click="goRegister">注册组织</a>
+      </div>
     </div>
   </div>
 </template>
@@ -63,6 +68,10 @@ async function handleLogin() {
   } finally {
     loading.value = false
   }
+}
+
+function goRegister() {
+  router.push('/register')
 }
 </script>
 
@@ -106,5 +115,18 @@ async function handleLogin() {
   font-size: 13px;
   text-align: center;
   padding: 8px 16px 0;
+}
+
+.login-footer {
+  text-align: center;
+  padding: 0 16px 24px;
+  font-size: 13px;
+  color: #8f8e88;
+}
+
+.register-link {
+  color: #0f6e56;
+  margin-left: 4px;
+  cursor: pointer;
 }
 </style>

@@ -129,13 +129,13 @@ async function loadCategories() {
   try {
     const res = await api.get<ApiResponse<Category[]>>('/categories')
     const cats = res.data
-    // 展平为二级科目选择列表
+    // 展平为二级科目选择列表（仅普通科目；资产科目走资金划转，见 D10/R12）
     const options: { text: string; value: number }[] = []
     let hasActiveLevel2 = false
     for (const l1 of cats) {
       if (l1.children) {
         for (const l2 of l1.children) {
-          if (l2.status === 'active') {
+          if (l2.status === 'active' && l2.kind === 'normal') {
             options.push({
               text: `${l1.name} / ${l2.name}`,
               value: l2.id,

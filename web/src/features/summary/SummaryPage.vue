@@ -30,11 +30,15 @@
     </div>
 
     <template v-else>
-      <!-- 资金构成三卡 -->
+      <!-- 资金构成四卡（D10：可用资金 = 银行存款 + 投资资产） -->
       <div class="capital-cards">
         <div class="capital-card" :class="{ warning: capital?.warning }">
           <div class="card-label">银行存款</div>
           <div class="card-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
+        </div>
+        <div class="capital-card asset">
+          <div class="card-label">投资资产</div>
+          <div class="card-value">{{ formatFen(capital?.assetTotalCents ?? 0) }}</div>
         </div>
         <div class="capital-card earmarked">
           <div class="card-label">专项资金</div>
@@ -83,7 +87,8 @@
             <div v-for="l2 in l1.children" :key="l2.id" class="l2-row">
               <div class="l2-info">
                 <span class="l2-name">{{ l2.name }}</span>
-                <span class="l2-chip" :class="l2.balanceType">{{ l2.balanceType === 'residual' ? '余粮' : '花费' }}</span>
+                <span v-if="l2.kind === 'asset'" class="l2-chip asset">资产</span>
+                <span v-else class="l2-chip" :class="l2.balanceType">{{ l2.balanceType === 'residual' ? '余粮' : '花费' }}</span>
                 <span v-if="l2.includeInReconciliation" class="l2-chip reconcile">勾稽</span>
                 <span class="l2-count">{{ l2.txnCount }}笔</span>
               </div>
@@ -114,6 +119,7 @@ interface CategorySummary {
   level: number
   parentId?: number
   balanceType: 'residual' | 'spending'
+  kind?: 'normal' | 'asset'
   openingBalanceCents: number
   includeInReconciliation: boolean
   currentBalanceCents: number
@@ -125,6 +131,7 @@ interface CategorySummary {
 
 interface Capital {
   bankBalanceCents: number
+  assetTotalCents: number
   earmarkedCents: number
   unallocatedCents: number
   warning?: string
@@ -142,7 +149,7 @@ const router = useRouter()
 const loading = ref(true)
 const loadError = ref(false)
 const currentMonth = ref(currentMonthStr())
-const summary = ref<SummaryResponse>({ incomeTotal: 0, expenseTotal: 0, balance: 0, capital: { bankBalanceCents: 0, earmarkedCents: 0, unallocatedCents: 0 }, categories: [] })
+const summary = ref<SummaryResponse>({ incomeTotal: 0, expenseTotal: 0, balance: 0, capital: { bankBalanceCents: 0, assetTotalCents: 0, earmarkedCents: 0, unallocatedCents: 0 }, categories: [] })
 const capital = computed(() => summary.value.capital)
 const categories = computed(() => summary.value.categories)
 const expanded = ref<Record<number, boolean>>({})
@@ -292,6 +299,10 @@ async function handleExport(action: ExportAction) {
 
 .capital-card.warning {
   border: 1px solid #e88a3a;
+}
+
+.capital-card.asset {
+  background: #fdf3e3;
 }
 
 .capital-card.earmarked {
@@ -444,6 +455,7 @@ async function handleExport(action: ExportAction) {
 
 .l2-chip.residual { border-color: #0f6e56; color: #0f6e56; }
 .l2-chip.spending { border-color: #185fa5; color: #185fa5; }
+.l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
 .l2-chip.reconcile { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
 
 .l2-count {

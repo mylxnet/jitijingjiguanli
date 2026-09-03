@@ -28,6 +28,9 @@ server/cmd/server/web/
 server/bin/
 *.exe
 
+# 本机托管工具链（不入库）
+.tools/
+
 # 系统
 .DS_Store
 Thumbs.db

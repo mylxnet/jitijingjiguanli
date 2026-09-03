@@ -12,7 +12,7 @@ import BottomNav from './components/BottomNav.vue'
 
 const route = useRoute()
 const showNav = computed(() => {
-  return !['/login'].includes(route.path)
+  return !['/login', '/register'].includes(route.path)
 })
 </script>
 

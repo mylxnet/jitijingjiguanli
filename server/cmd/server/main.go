@@ -12,7 +12,9 @@ import (
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/changelog"
 	"jititaizhang/server/internal/export"
+	"jititaizhang/server/internal/fundmove"
 	"jititaizhang/server/internal/platform"
+	"jititaizhang/server/internal/receivable"
 	"jititaizhang/server/internal/settings"
 	"jititaizhang/server/internal/summary"
 	"jititaizhang/server/internal/transaction"
@@ -54,6 +56,8 @@ func main() {
 	transaction.NewHandler(db).Register(authed)
 	summary.NewHandler(db).Register(authed)
 	transfer.NewHandler(db).Register(authed)
+	fundmove.NewHandler(db).Register(authed)
+	receivable.NewHandler(db).Register(authed)
 	settings.NewHandler(db).Register(authed)
 	changelog.NewHandler(db).Register(authed)
 	export.NewHandler(db).Register(authed)

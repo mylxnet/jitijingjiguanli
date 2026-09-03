@@ -8,8 +8,10 @@ export interface Category {
   parentId: number | null
   status: 'active' | 'inactive'
   balanceType: 'residual' | 'spending'
+  kind: 'normal' | 'asset'
   openingBalanceCents: number
   includeInReconciliation: boolean
+  preset?: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -17,6 +19,83 @@ export interface Category {
   txnCount?: number
   children?: Category[]
 }
+
+export interface FundMove {
+  id: number
+  orgId: number
+  moveDate: string
+  kind: 'invest' | 'recover'
+  assetCategoryId: number
+  amountCents: number
+  note: string | null
+  status: 'normal' | 'voided'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FundMoveListResponse {
+  items: FundMove[]
+  total: number
+}
+
+export type PartyKind = 'household' | 'unit'
+export type RecvKind = 'rent' | 'dividend' | 'other'
+
+export interface Party {
+  id: number
+  orgId: number
+  name: string
+  kind: PartyKind
+  note: string | null
+  createdAt: string
+  updatedAt: string
+  outstandingCents: number
+}
+
+export interface Receivable {
+  id: number
+  orgId: number
+  partyId: number
+  partyName: string
+  recvKind: RecvKind
+  title: string
+  amountCents: number
+  incomeCategoryId: number | null
+  status: 'open' | 'closed'
+  note: string | null
+  createdAt: string
+  updatedAt: string
+  paidCents: number
+  outstandingCents: number
+}
+
+export interface ReceivableListResponse {
+  items: Receivable[]
+  total: number
+}
+
+export interface Receipt {
+  id: number
+  orgId: number
+  receivableId: number
+  amountCents: number
+  receiptDate: string
+  method: 'cash' | 'offset'
+  txnId: number | null
+  note: string | null
+  status: 'normal' | 'voided'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ReceivableDetail {
+  receivable: Receivable
+  receipts: Receipt[]
+}
+
+// 展示标签
+export const partyKindLabel: Record<PartyKind, string> = { household: '农户', unit: '单位' }
+export const recvKindLabel: Record<RecvKind, string> = { rent: '流转费', dividend: '投资收益', other: '其他' }
 
 export interface Transaction {
   id: number

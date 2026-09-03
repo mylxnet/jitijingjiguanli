@@ -454,7 +454,7 @@ const categoryFilterOptions = computed(() => {
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
-        if (l2.status === 'active') {
+        if (l2.status === 'active' && l2.kind === 'normal') {
           options.push({
             text: `${l1.name} / ${l2.name}`,
             value: l2.id,
@@ -645,7 +645,7 @@ const categoryOptions = computed(() => {
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
-        if (l2.status === 'active') {
+        if (l2.status === 'active' && l2.kind === 'normal') {
           options.push({
             text: `${l1.name} / ${l2.name}`,
             value: l2.id,

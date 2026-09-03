@@ -39,6 +39,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // 注册成功即已建立会话，无需重复调用登录
+  function markLoggedIn() {
+    isLoggedIn.value = true
+  }
+
   async function logout() {
     try {
       await api.post('/auth/logout')
@@ -48,5 +53,5 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = false
   }
 
-  return { isLoggedIn, loading, error, checkLogin, login, logout }
+  return { isLoggedIn, loading, error, checkLogin, login, markLoggedIn, logout }
 })

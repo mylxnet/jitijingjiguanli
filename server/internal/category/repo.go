@@ -186,6 +186,13 @@ func (r *Repo) CountTransactions(categoryID int64) (int, error) {
 	return n, err
 }
 
+// CountFundMoves 统计引用该科目的资金划转数（资产科目删除保护，D10/D0）。
+func (r *Repo) CountFundMoves(categoryID int64) (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM fund_move WHERE asset_category_id = ?`, categoryID).Scan(&n)
+	return n, err
+}
+
 // IsNameDup 检查同组织同级是否重名。
 func (r *Repo) IsNameDup(orgID int64, name string, parentID *int64, excludeID int64) (bool, error) {
 	var n int

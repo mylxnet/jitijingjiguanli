@@ -40,6 +40,61 @@
 - 导出单元测试（6 组：流水 CSV/含作废/汇总 CSV/科目余额表 CSV（D8）/xlsx 重开+格式与右对齐/参数校验）
 - summary 修复：一级科目行补汇总子项期初余额（此前恒 0，致 D8 余额表一级合计错）
 
+### v0.3.5 前端：5 tab 导航 + 注册页 + 往来页（D11/F8/F9 界面化）
+- **底部导航 4 → 5 tab**：记账 / 流水 / 汇总 / **往来** / 设置（BottomNav 新增 /contacts 高亮映射，科目管理仍归设置）
+- **注册页**（/register）：组织名 + 账号 + 密码 + 确认，注册成功即自动登录回首页（auth store 增 markLoggedIn）；
+  登录页底部加「注册组织」入口；App 导航对 /register 隐藏
+- **往来页**（/contacts，新 ContactsPage）：对象列表（名称/类别/欠款合计/全部·农户·单位筛选 + 新增/编辑对象）→
+  对象详情（合计欠款、应收单：类别标签、应收/已收/未收、未结清/已结清）；
+  操作：登记应收（事由/金额/类别/可选收款入账科目）、收款/抵销弹层
+  （现金入账自动记银行收入、预设科目自动带出；抵销需选一笔分红支出流水）、核销记录展开查看 + 作废
+- **预置科目展示**：科目管理一/二级行加「预置」徽标（注册即生成的五件套一目了然）
+- **修复**：往来详情页合计欠款未随应收/核销刷新（openDetail 未用最新对象数据回填）——浏览器冒烟发现并修复
+- 验证：vue-tsc + vite build 通过；真实浏览器全链路冒烟——
+  注册页注册「新庄」自动登录 → 5 tab 可见 → 往来新增张三(农户) → 登记应收 500（预设土地流转费收入科目）→
+  现金收款 300 → 未收 200/欠款 200 → 核销记录 +300 → 汇总页银行存款 300、经营收入 300（自动入账闭环）
+- ⚠️ data/ 现含三个冒烟组织（甲村/丙村/新庄），正式使用前建议删除该目录重建空库再注册
+
+### v0.3.4 应收/往来后端（D11 落地；迁移 004 补 receipt.status）
+- **迁移 004**：003 建表遗漏 receipt.status（设计 §9.1 有、建表 SQL 漏）→ ADD COLUMN status DEFAULT 'normal'（历史行视为正常）
+- **往来对象 party**（internal/receivable 新包）：GET/POST /api/parties、PUT /api/parties/:id；列表带**欠款合计**
+  （Σ 各 open 应收单未核销余额，SQL 相关子查询）；kind=household|unit + keyword 过滤；更新留痕
+- **应收单 receivable**：POST /api/receivables（对象/类别 rent|dividend|other/事由/金额/可选预设入账科目，入账科目须为启用中普通二级）、
+  GET /api/receivables（partyId/kind/status 过滤 + 已收/未收统计）、GET /api/receivables/:id 详情（含核销记录）
+- **核销 receipt**：POST /api/receivables/:id/receipts
+  - cash：单事务写 receipt + 自动生成银行**收入**流水（入账科目 = 本次指定优先 → 应收单预设 → 400 报错）；
+    txn 备注「核销应收 #id 事由」
+  - offset：单事务写 receipt 关联一条**发放支出**流水（须 expense+normal+本组织），不产生现金流水，支出流水保留
+  - 超收拒绝（事务内兜底）、结清自动置 closed、closed 后禁止再核销；创建留痕（receipt/txn/receivable 状态）
+- **作废核销**：PUT /api/receipts/:id → 状态 voided；cash 核销**连带作废**其收入流水（留痕 void）；
+  应收单若因此未结清自动退回 open；offset 核销作废不影响支出流水
+- **org 隔离**：所有查询/更新按会话组织过滤，跨组织 404/不可见
+- **测试**（5 组）：D11 验收（欠 500 → 收 300 → 收 200 结清 → 银行两笔收入流水 → 再收拒绝 → 对象欠款 0）、
+  抵销流程（分红支出保留、无现金流水、结清）、核销校验矩阵 9 反例、作废（cash 连带作废收入流水/offset 保留支出流水/应收单退回 open）、
+  列表与详情（欠款聚合、kind/status 过滤、已收未收、跨组织不可见）
+- 全量 go vet + go test 11 包绿
+
+### v0.3.3 资产科目 + 资金划转（D10 落地，迁移 003 表已就绪）
+- **资金划转后端**（internal/fundmove 新包）：POST /api/fund-moves（投资 invest=银行→资产 / 收回 recover=资产→银行，单行原子写 + 留痕 create）、
+  GET /api/fund-moves（from/to/kind 过滤 + 分页）、PUT /api/fund-moves/:id（作废/撤销 + void/unvoid 留痕）；已挂入 main.go 鉴权组
+- **校验**：金额>0、日期合法、资产科目须为本组织启用中的资产型二级（普通科目/一级/停用均拒）；
+  投资 ≤ 当前银行存款（银行期初 + Σ收支 ± 已生效划转）；收回 ≤ 该资产科目在外金额（防资产余额为负）
+- **口径对齐**：银行净额复用 category.Repo.BankDelta、资产余额 AssetBalance（迁移 003 已建聚合），summary 资金构成四卡恒等式自动吸收
+- **删除保护**：category.Repo 增 CountFundMoves，资产科目已有资金划转记录时 DELETE 拒绝 409（D0/D10）
+- **测试**（fundmove 包 5 组）：D10 场景验算（拨款→投资→收益→收回→作废回滚，资金构成逐项断言）、
+  创建校验矩阵 10 反例、作废/撤销原子回滚 + 留痕计数、列表（排序/类型/日期/跨组织不可见）、
+  科目删除保护；全量 go vet + go test 10 包绿
+- **前端**：类型契约补 kind/preset/FundMove；记账（Home）、流水筛选/编辑（List）、科目间转账（Category）
+  的科目下拉一律只列普通二级（R12 资产科目不进收支/转账）；科目页二级对话框新增「资产」类型开关
+  （资产固定余粮型、无期初、不勾稽，编辑时仅可改名）；二级行资产显示「资产」标签与「在外」余额
+- **科目页资金划转弹层**：投资/收回单选、日期、资产科目下拉（仅资产二级，带一级前缀与在外余额）、金额、摘要、
+  保存；下方「划转记录」列表（方向/科目/±金额/日期/状态）支持作废；保存/作废后科目树余额实时刷新
+- **汇总页**：资金构成由三卡改四卡（银行存款 / 投资资产 / 专项资金 / 未分配资金），科目余额树资产二级带「资产」标签
+- 验证：vue-tsc + vite build 通过；真实浏览器（Edge CDP）冒烟通过——
+  登录 → 科目页建资产二级 → 资金划转投资 500 → 树「在外」与记录即时更新 → 汇总四卡恒等式成立
+- ⚠️ 冒烟数据说明：git-bash curl 直接发中文会按 GBK 编码入库产生乱码（仅本机冒烟库，非产品缺陷；
+  浏览器/表单均以 UTF-8 提交，正常）。含乱码的旧冒烟库已移出工作区（见 v0.3.5 注，data/ 已重建为 UTF-8 测试库）
+
 ### v0.3 多组织改造（迁移 003 + 全业务 org 隔离）
 - **迁移 003**：全业务表重建带 org_id（user/category/txn/transfer/leg/change_log/app_setting），
   category 新增 kind(normal/asset) 与 preset，新建 org/fund_move/party/receivable/receipt；

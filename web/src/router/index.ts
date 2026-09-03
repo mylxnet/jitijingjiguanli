@@ -10,6 +10,17 @@ const router = createRouter({
       component: () => import('../features/auth/Login.vue'),
     },
     {
+      path: '/register',
+      name: 'Register',
+      component: () => import('../features/auth/Register.vue'),
+    },
+    {
+      path: '/contacts',
+      name: 'Contacts',
+      component: () => import('../features/contacts/ContactsPage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/',
       name: 'Home',
       component: () => import('../features/transaction/Home.vue'),

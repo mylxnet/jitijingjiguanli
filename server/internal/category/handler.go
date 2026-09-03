@@ -464,6 +464,23 @@ func (h *Handler) DeleteCategory(c *gin.Context) {
 		return
 	}
 
+	// 检查是否被资金划转引用（资产科目，D10）
+	moveCount, err := h.repo.CountFundMoves(id)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
+			Code: "INTERNAL_ERROR", Message: "服务暂时不可用",
+		})
+		return
+	}
+	if moveCount > 0 {
+		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+			Code:    "CATEGORY_IN_USE",
+			Message: "该科目已有 " + strconv.Itoa(moveCount) + " 笔资金划转记录，无法删除。你可以将其停用",
+			Details: map[string]int{"count": moveCount},
+		})
+		return
+	}
+
 	if err := h.repo.Delete(id, orgID); err != nil {
 		h.internal(c, "删除科目失败")
 		return
