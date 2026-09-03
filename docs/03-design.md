@@ -747,6 +747,111 @@ change_log.entity_id                    逻辑关联，无外键约束
 
 ---
 
+## 9. v0.3 设计（2026-09-03，多组织 + 资产 + 应收）
+
+> 冲突处覆盖旧文。旧文（§2/§4/§5）仍为 v0.2 基线，开发以本节为准。
+
+### 9.1 数据模型变更（迁移 003）
+
+所有业务表增加 `org_id INTEGER NOT NULL REFERENCES org(id)`；查询一律携带 org 过滤。
+
+**新表 `org`**：id / name（组织名）/ created_at / updated_at
+
+**`user` 表**：新增 `org_id`；注册时 org+user 同事务创建（admin 即组织管理员）。
+
+**`category` 表**：新增 `kind TEXT NOT NULL DEFAULT 'normal' CHECK(kind IN ('normal','asset'))`
+- asset 科目仅限二级；不允许被 txn / transfer 引用（校验：只收/支与科目间转账只走 normal）；
+- asset 科目 `include_in_reconciliation` 恒 false；`balance_type` 恒 'residual'（存量口径）。
+- 预置科目带 `preset INTEGER DEFAULT 0`（=1 系统预置，可改名/增删）。
+
+**新表 `fund_move`（资金划转）**：
+| 字段 | 说明 |
+|---|---|
+| id / org_id | 主键 / 组织 |
+| move_date | YYYY-MM-DD |
+| kind | 'invest'（投出：银行−、资产+）/ 'recover'（收回：银行+、资产−） |
+| asset_category_id | 资产科目（FK category） |
+| amount_cents | > 0 |
+| note | 摘要 |
+| status | 'normal' / 'voided' |
+| created_at / updated_at | 时间戳 |
+
+**新表 `party`（往来对象）**：id / org_id / name / kind('household' 农户 | 'unit' 单位) / note / created_at
+
+**新表 `receivable`（应收单）**：
+| 字段 | 说明 |
+|---|---|
+| id / org_id / party_id | FK party |
+| recv_kind | 'rent' 流转费 / 'dividend' 投资收益 / 'other' 其他 |
+| title | 事由（如「2026 年度土地流转费」） |
+| amount_cents | 应收金额 |
+| income_category_id | 收款自动入账科目（可选，FK category normal 二级） |
+| status | 'open' / 'closed'（closed = Σ核销 ≥ 金额，自动置） |
+| note / created_at / updated_at | — |
+
+**新表 `receipt`（核销记录）**：
+| 字段 | 说明 |
+|---|---|
+| id / org_id / receivable_id | FK receivable |
+| amount_cents | 本次核销额 |
+| receipt_date | 日期 |
+| method | 'cash'（现金：自动生成银行收入流水）/ 'offset'（抵销：关联一条支出流水） |
+| txn_id | 关联流水（cash=生成的收入流水的 id；offset=被抵销的发放支出流水 id） |
+| note / created_at / updated_at | — |
+
+### 9.2 余额口径（v0.3）
+
+- 银行存款余额 = bank_opening + Σ(txn income − expense, normal, 本组织) − Σ(fund_move invest) + Σ(fund_move recover)
+- 资产科目余额 = Σ(该科目 invest) − Σ(该科目 recover)（均 normal）
+- 专项资金合计 = Σ(勾稽科目余额)（不含 asset，asset 不勾稽）
+- 未分配 = 银行存款 + Σ资产科目余额 − 专项资金合计
+- 勾稽科目 / 普通科目余额公式不变（CalcBalance 仍只算 txn+transfer；fund_move 单独聚合）
+
+### 9.3 接口新增/变更（v0.3）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/auth/register` | 自助注册 `{orgName, username, password}` → 建 org+user+预置科目并登录 |
+| POST | `/api/auth/login` | 不变（会话含 org） |
+| — | 现有全部业务接口 | 自动限定会话组织；category/txn/transfer 等查询缺省已含 org_id |
+| POST/GET/PUT | `/api/fund-moves` `/api/fund-moves/:id` | 资金划转 CRUD + 作废/撤销 |
+| GET/POST | `/api/parties` `/api/parties/:id` | 往来对象（列表含欠款合计） |
+| GET/POST | `/api/receivables` | 应收单列表（筛选 kind/对象/状态）+ 登记 |
+| POST | `/api/receivables/:id/receipts` | 收款核销 `{amountCents, date, method:'cash'\|'offset', txnId?}` |
+| PUT | `/api/receipts/:id` | 作废核销（现金核销作废需同时作废其流水，留痕） |
+| GET | `/api/summary` | capital 增加 assetTotal；categories 含资产科目分组 |
+
+### 9.4 页面（v0.3）
+
+- 底部导航 5 tab：记账 / 流水 / 汇总 / **往来** / 设置。
+- **往来页**（新增，/contacts）：对象列表（名称、类别、欠款合计）→ 对象详情（应收单、已收、未收、操作：登记应收/收款/抵销）；顶部分类筛选。
+- **注册页**（/register）：组织名 + 账号 + 密码 + 确认。
+- 登录页加「注册组织」入口。
+- 科目管理页新增「资金划转」区（投资/收回，资产科目下拉仅 asset 二级；旁注资产余额）。
+- 记账页/流水列表：只允许 normal 科目；汇总页资金构成改四卡或三卡+资产合计说明。
+- 分类管理（category UI）：新建表单增加「资产科目」开关（二级时可见）；资产科目旁注明余额口径。
+
+### 9.5 关键技术方案
+
+- **org 隔离注入**：auth 中间件将 `orgID` 写入上下文（user→org 从 session 查）；repo 方法统一接收 orgID；用编译期/测试防漏（跨组织测试用例覆盖所有列表接口）。
+- **注册与预置科目事务**：POST /auth/register 单事务：INSERT org → INSERT user → 批量 INSERT 预置科目（五件套+二级）。
+- **资产划转聚合**：避免给 CalcBalance 掺复杂逻辑——新增专用 repo 方法（bankBalance / assetBalance）在 summary 层组合，单元测试覆盖 D10 验算。
+- **收款自动入账**：cash 核销在同一事务写 receipt + txn（income、amount、category=income_category_id 或入账时必选），txn_id 反写。
+
+### 9.6 迭代规划（v0.3）
+
+| 阶段 | 内容 | 验证 |
+|---|---|---|
+| v0.3.1 | 迁移 003（org/kind/fund_move/party/receivable/receipt + 全表 org_id）+ 注册接口与预置科目 | go test；跨组织隔离测试 |
+| v0.3.2 | 业务 org 化改造（category/txn/transfer/settings/summary/changelog 全链路带 org） | 全量测试；双组织冒烟互不可见 |
+| v0.3.3 | 资产科目 + 资金划转（后端+UI） | D10 验算测试；UI 冒烟 |
+| v0.3.4 | 应收/往来（后端+UI：对象/应收/收款/抵销/往来页） | 核销/抵销用例测试 |
+| v0.3.5 | 前端 5 tab、注册页、预置科目展示、导出按组织 | vue-tsc + vite build + 端到端 |
+
+
+
+---
+
 ## 变更记录
 
 | 版本 | 日期 | 变更内容 | 变更原因 |
@@ -754,3 +859,4 @@ change_log.entity_id                    逻辑关联，无外键约束
 | 0.1 | 2026-09-02 | 初稿 | 需求澄清与技术选型完成 |
 | 0.2 | 2026-09-02 | 并入 D6 余额模型（科目余额类型/期初余额/参与勾稽/资金构成）与 D7 转账（1 转出→N 转入、R1-R6、并入流水列表）、D8 科目余额表导出；接口 12→17；记账页收支/转账切换；目录、迭代规划与风险清单同步 | 用户评审期新增需求 |
 | 0.2.1 | 2026-09-02 | 转账发起入口移至**科目管理页**（P5 增转账表单区块）；记账页（P2）退回纯收支；转账记录仍在流水列表（P3）查看/作废 | 用户评审调整 |
+| 0.3 | 2026-09-03 | 多组织（org 表 + 全业务 org_id + 自助注册/隔离）、资产科目（kind）与资金划转（fund_move）、应收往来（party/receivable/receipt + 往来页 + 5 tab 导航）、预置科目；资金构成口径升级；新增 §9 | 用户确认多组织/投资本金/欠款/易用四大需求 |
