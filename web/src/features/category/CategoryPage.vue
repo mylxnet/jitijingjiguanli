@@ -65,18 +65,10 @@
       已被引用的科目不能删除，只能停用
     </div>
 
-    <!-- 新增一级科目对话框 -->
+    <!-- 新增一级科目对话框（一级是分组容器：余额=子级之和，不支持期初与勾稽，故只填名称） -->
     <van-dialog v-model:show="showAddDialog" title="新增一级科目" show-cancel-button @confirm="handleAddL1">
+      <div class="dialog-tip">一级科目用于分组，期初余额和余额类型请在其下的二级科目上设置</div>
       <van-field v-model="addForm.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
-      <van-field label="余额类型">
-        <template #input>
-          <van-radio-group v-model="addForm.balanceType" direction="horizontal">
-            <van-radio name="residual">余粮型</van-radio>
-            <van-radio name="spending">花费型</van-radio>
-          </van-radio-group>
-        </template>
-      </van-field>
-      <van-field v-model="addForm.openingBalance" label="期初余额" type="number" placeholder="0" />
     </van-dialog>
 
     <!-- 新增/编辑二级科目对话框 -->
@@ -453,14 +445,14 @@ async function handleAddL1() {
     await api.post('/categories', {
       name: addForm.value.name,
       level: 1,
-      balanceType: addForm.value.balanceType,
-      openingBalanceCents: Math.round(parseFloat(addForm.value.openingBalance || '0') * 100),
+      balanceType: 'residual', // 一级为分组容器，固定类型，余额在二级上设置
+      openingBalanceCents: 0,
     })
     showToast('创建成功')
     addForm.value = { name: '', balanceType: 'residual', openingBalance: '0' }
     await loadCategories()
   } catch (e: any) {
-    showToast(e.message || '创建失败')
+    showDialog({ title: '创建失败', message: e.message || '创建失败，请重试' })
   }
 }
 
@@ -497,7 +489,7 @@ async function handleAddL2() {
     showAddL2Dialog.value = false
     await loadCategories()
   } catch (e: any) {
-    showToast(e.message || (editL2Mode.value ? '更新失败' : '创建失败'))
+    showDialog({ title: editL2Mode.value ? '保存失败' : '创建失败', message: e.message || (editL2Mode.value ? '保存失败，请重试' : '创建失败，请重试') })
   }
 }
 
@@ -552,6 +544,13 @@ async function deleteCat(cat: Category) {
 </script>
 
 <style scoped>
+.dialog-tip {
+  margin: 12px 16px 0;
+  font-size: 12px;
+  color: #8f8e88;
+  line-height: 1.5;
+}
+
 .categories-page {
   padding: 16px;
   padding-bottom: 60px;
