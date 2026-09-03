@@ -35,5 +35,14 @@
 - 冒烟修复：空科目树返回 [] 而非 null（buildTree 归一），补空态回归测试
 - 端到端冒烟通过：health → 401 → 登录 → 建科目 → summary（临时实例 18080）
 
+### 前端（web，Vue 3 + TS + Vite）
+- 页面 6 个（设计 P1-P6 对齐）：Login / Home 记账 / List 流水 / Summary 汇总 /
+  Category 科目管理（含 D7 转账表单）/ Settings 设置；底部导航 4 tab + /categories 高亮归属设置
+- 基建：hash 路由 + 守卫、Pinia auth store、Vant 全量、http 封装（Cookie 认证/401 拦截/统一错误）
+- types/api.ts 前端契约（Category/Transaction/ApiResponse + 金额分↔元工具）
+- tsconfig 治理：根配置 noEmit + node 配置去 composite（消除 tsc 副产物污染 src）
+- 验证：vue-tsc 类型检查通过 + vite build 成功（5.4s，页面级分包）
+- ⚠️ 版本偏离记录：package.json 实装 vite ^6.3.0→6.4.3（设计定为 8.2.1，v0.1.0 首验未受阻即未升级，待用户拍板）
+
 ### 骨架
 - 项目初始化（v0.1.0 起点）

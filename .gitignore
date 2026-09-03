@@ -13,6 +13,7 @@ data/
 # 前端
 web/node_modules/
 web/dist/
+web/dist.old/
 # tsc/vite 误产出物（源码只用 .ts/.vue）
 web/src/**/*.js
 web/src/**/*.js.map

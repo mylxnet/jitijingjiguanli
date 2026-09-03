@@ -1,0 +1,807 @@
+<template>
+  <div class="categories-page">
+    <div class="page-header">
+      <h3>科目管理</h3>
+      <van-button type="primary" size="small" @click="showTransferDialog = true">转账</van-button>
+      <van-button type="primary" size="small" @click="openAddL1">+ 新增一级</van-button>
+    </div>
+
+    <!-- 加载中 -->
+    <div v-if="loading" class="loading-state">
+      <van-skeleton title :row="5" />
+    </div>
+
+    <!-- 空数据 -->
+    <div v-else-if="categories.length === 0" class="empty-state">
+      <p>还没有科目</p>
+      <van-button type="primary" size="small" @click="openAddL1">新增一级科目</van-button>
+    </div>
+
+    <!-- 科目树 -->
+    <div v-else class="category-tree">
+      <div v-for="l1 in categories" :key="l1.id" class="l1-group">
+        <div class="l1-row">
+          <div class="l1-info">
+            <span class="l1-name">{{ l1.name }}</span>
+            <span class="l1-badge">一级</span>
+            <span class="l1-chip" :class="l1.balanceType">{{ l1.balanceType === 'residual' ? '余粮型' : '花费型' }}</span>
+          </div>
+          <div class="l1-actions">
+            <van-button size="mini" plain @click="openAddL2(l1)">+二级</van-button>
+            <van-button size="mini" plain @click="renameCat(l1)">重命名</van-button>
+            <van-button v-if="!l1.children?.length" size="mini" plain type="danger" @click="deleteCat(l1)">删除</van-button>
+          </div>
+        </div>
+
+        <div class="l2-list" v-if="l1.children && l1.children.length > 0">
+          <div v-for="l2 in l1.children" :key="l2.id" class="l2-row" :class="{ inactive: l2.status === 'inactive' }">
+            <div class="l2-info">
+              <span class="l2-name">{{ l2.name }}</span>
+              <span class="l2-chip" :class="l2.balanceType">{{ l2.balanceType === 'residual' ? '余粮' : '花费' }}</span>
+              <span v-if="l2.includeInReconciliation" class="l2-chip reconcile">勾稽</span>
+              <span v-if="l2.status === 'inactive'" class="l2-chip stopped">已停用</span>
+              <span class="l2-balance">余额 {{ formatFen(l2.balanceCents ?? 0) }}</span>
+              <span class="l2-opening">期初 {{ formatFen(l2.openingBalanceCents) }}</span>
+              <span class="l2-count" v-if="l2.txnCount != null">{{ l2.txnCount }}笔</span>
+            </div>
+            <div class="l2-actions">
+              <van-button size="mini" plain @click="editL2(l2)">编辑</van-button>
+              <van-button size="mini" plain @click="renameCat(l2)">重命名</van-button>
+              <van-button
+                size="mini"
+                plain
+                :type="l2.status === 'active' ? 'warning' : 'primary'"
+                @click="toggleStatus(l2)"
+              >{{ l2.status === 'active' ? '停用' : '启用' }}</van-button>
+              <van-button size="mini" plain type="danger" @click="deleteCat(l2)">删除</van-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-footer-note">
+      <van-icon name="info-o" />
+      已被引用的科目不能删除，只能停用
+    </div>
+
+    <!-- 新增一级科目对话框 -->
+    <van-dialog v-model:show="showAddDialog" title="新增一级科目" show-cancel-button @confirm="handleAddL1">
+      <van-field v-model="addForm.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
+      <van-field label="余额类型">
+        <template #input>
+          <van-radio-group v-model="addForm.balanceType" direction="horizontal">
+            <van-radio name="residual">余粮型</van-radio>
+            <van-radio name="spending">花费型</van-radio>
+          </van-radio-group>
+        </template>
+      </van-field>
+      <van-field v-model="addForm.openingBalance" label="期初余额" type="number" placeholder="0" />
+    </van-dialog>
+
+    <!-- 新增/编辑二级科目对话框 -->
+    <van-dialog v-model:show="showAddL2Dialog" :title="editL2Mode ? '编辑二级科目' : '新增二级科目 - ' + addL2ParentName" show-cancel-button @confirm="handleAddL2">
+      <van-field v-model="addL2Form.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" />
+      <van-field label="余额类型">
+        <template #input>
+          <van-radio-group v-model="addL2Form.balanceType" direction="horizontal">
+            <van-radio name="residual">余粮型</van-radio>
+            <van-radio name="spending">花费型</van-radio>
+          </van-radio-group>
+        </template>
+      </van-field>
+      <van-field v-model="addL2Form.openingBalance" label="期初余额" type="number" placeholder="0" />
+      <van-field label="参与资金勾稽" v-if="addL2Form.balanceType === 'residual'">
+        <template #input>
+          <van-switch v-model="addL2Form.includeInReconciliation" size="20" />
+        </template>
+      </van-field>
+      <div v-else class="field-hint">
+        花费型科目不能参与资金勾稽
+      </div>
+    </van-dialog>
+
+    <!-- 重命名对话框 -->
+    <van-dialog v-model:show="showRenameDialog" title="重命名" show-cancel-button @confirm="handleRename">
+      <van-field v-model="renameForm.name" label="名称" placeholder="新名称" :rules="[{ required: true }]" />
+    </van-dialog>
+
+    <!-- 转账对话框 -->
+    <van-popup v-model:show="showTransferDialog" position="bottom" round closeable style="max-height: 90vh">
+      <div class="transfer-popup">
+        <div class="popup-title">科目间转账</div>
+
+        <!-- 转出科目 -->
+        <van-field
+          v-model="transferSourceName"
+          is-link
+          readonly
+          label="转出科目"
+          placeholder="请选择转出科目"
+          @click="showSourcePicker = true"
+        />
+        <div v-if="selectedSourceBalance !== null" class="transfer-hint">
+          可转出 {{ formatFen(selectedSourceBalance) }}
+        </div>
+
+        <!-- 转出金额 -->
+        <van-field
+          v-model="transferAmountYuan"
+          label="转出金额"
+          type="number"
+          placeholder="0.00"
+          inputmode="decimal"
+        />
+
+        <!-- 转入明细 -->
+        <div class="transfer-legs-section">
+          <div class="legs-header">
+            <span class="legs-title">转入明细</span>
+            <van-button size="mini" plain type="primary" @click="addLeg">+ 添加</van-button>
+          </div>
+          <div v-for="(leg, index) in transferLegs" :key="index" class="leg-row">
+            <div class="leg-row-header">
+              <span class="leg-label">转入 {{ index + 1 }}</span>
+              <van-button v-if="transferLegs.length > 1" size="mini" plain type="danger" @click="removeLeg(index)">删除</van-button>
+            </div>
+            <van-field
+              v-model="leg.categoryName"
+              is-link
+              readonly
+              placeholder="请选择转入科目"
+              @click="openLegPicker(index)"
+            />
+            <van-field
+              v-model="leg.amountYuan"
+              label="金额"
+              type="number"
+              placeholder="0.00"
+              inputmode="decimal"
+            />
+          </div>
+        </div>
+
+        <!-- 合计校验 -->
+        <div class="transfer-total-check">
+          <span>转出金额：{{ formatFen(transferAmountCents) }}</span>
+          <span>已分配：{{ formatFen(allocatedTotalCents) }}</span>
+          <span v-if="!isAmountValid" class="check-error">
+            差额 {{ formatFen(Math.abs(transferAmountCents - allocatedTotalCents)) }}
+          </span>
+        </div>
+
+        <!-- 摘要 -->
+        <van-field
+          v-model="transferNote"
+          label="摘要"
+          placeholder="转账说明"
+        />
+        <div class="transfer-tags">
+          <van-tag
+            v-for="tag in quickTags"
+            :key="tag"
+            :type="transferNote === tag ? 'primary' : 'default'"
+            plain
+            @click="transferNote = tag"
+          >{{ tag }}</van-tag>
+        </div>
+
+        <!-- 保存 -->
+        <div class="transfer-save">
+          <van-button
+            round
+            block
+            type="primary"
+            :disabled="!canSubmitTransfer"
+            :loading="savingTransfer"
+            @click="handleTransfer"
+          >保存转账</van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- 转出科目选择器 -->
+    <van-action-sheet
+      v-model:show="showSourcePicker"
+      title="选择转出科目"
+      :actions="sourceCategoryOptions"
+      @select="onSourceCategorySelect"
+      @cancel="showSourcePicker = false"
+    />
+
+    <!-- 转入科目选择器 -->
+    <van-action-sheet
+      v-model:show="showLegPicker"
+      title="选择转入科目"
+      :actions="destCategoryOptions"
+      @select="onLegCategorySelect"
+      @cancel="showLegPicker = false"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { api } from '../../lib/http'
+import { showToast, showDialog } from 'vant'
+import type { Category, ApiResponse } from '../../types/api'
+import { formatFen } from '../../types/api'
+
+const loading = ref(true)
+const categories = ref<Category[]>([])
+
+// ---- 新增一级 ----
+const showAddDialog = ref(false)
+const addForm = ref({ name: '', balanceType: 'residual' as 'residual' | 'spending', openingBalance: '0' })
+
+function openAddL1() {
+  addForm.value = { name: '', balanceType: 'residual', openingBalance: '0' }
+  showAddDialog.value = true
+}
+
+// ---- 新增/编辑二级 ----
+const showAddL2Dialog = ref(false)
+const editL2Mode = ref(false)
+const editL2Id = ref(0)
+const addL2Form = ref({
+  name: '',
+  balanceType: 'residual' as 'residual' | 'spending',
+  openingBalance: '0',
+  includeInReconciliation: false,
+})
+const addL2ParentId = ref<number | null>(null)
+const addL2ParentName = ref('')
+
+function openAddL2(l1: Category) {
+  editL2Mode.value = false
+  editL2Id.value = 0
+  addL2ParentId.value = l1.id
+  addL2ParentName.value = l1.name
+  addL2Form.value = { name: '', balanceType: 'residual', openingBalance: '0', includeInReconciliation: false }
+  showAddL2Dialog.value = true
+}
+
+function editL2(l2: Category) {
+  editL2Mode.value = true
+  editL2Id.value = l2.id
+  addL2ParentId.value = l2.parentId
+  addL2ParentName.value = ''
+  addL2Form.value = {
+    name: l2.name,
+    balanceType: l2.balanceType,
+    openingBalance: String(l2.openingBalanceCents / 100),
+    includeInReconciliation: l2.includeInReconciliation,
+  }
+  showAddL2Dialog.value = true
+}
+
+// ---- 重命名 ----
+const showRenameDialog = ref(false)
+const renameForm = ref({ id: 0, name: '' })
+
+// ---- 科目间转账 ----
+const showTransferDialog = ref(false)
+const showSourcePicker = ref(false)
+const showLegPicker = ref(false)
+const currentLegIndex = ref(0)
+const savingTransfer = ref(false)
+
+const transferSourceCategoryId = ref<number | null>(null)
+const transferSourceName = ref('')
+const transferAmountYuan = ref('')
+const transferNote = ref('')
+const quickTags = ['年末结转', '收益分配', '专款调剂']
+
+interface TransferLeg {
+  categoryId: number | null
+  categoryName: string
+  amountYuan: string
+}
+
+const transferLegs = ref<TransferLeg[]>([{ categoryId: null, categoryName: '', amountYuan: '' }])
+
+// 所有启用中的二级科目（用于转出选择）
+const activeL2Categories = computed(() => {
+  const result: Category[] = []
+  for (const l1 of categories.value) {
+    if (l1.children) {
+      for (const l2 of l1.children) {
+        if (l2.status === 'active') {
+          result.push(l2)
+        }
+      }
+    }
+  }
+  return result
+})
+
+// 启用中的二级余粮型科目（用于转入选择）
+const residualL2Categories = computed(() => {
+  return activeL2Categories.value.filter(c => c.balanceType === 'residual')
+})
+
+// 转出科目选择器选项
+const sourceCategoryOptions = computed(() => {
+  return activeL2Categories.value.map(c => ({
+    name: `${c.name} (余额 ${formatFen(c.balanceCents ?? 0)})`,
+    value: c.id,
+  }))
+})
+
+// 转入科目选择器选项
+const destCategoryOptions = computed(() => {
+  return residualL2Categories.value.map(c => ({
+    name: `${c.name} (${formatFen(c.balanceCents ?? 0)})`,
+    value: c.id,
+  }))
+})
+
+// 选中转出科目的余额
+const selectedSourceBalance = computed(() => {
+  if (!transferSourceCategoryId.value) return null
+  const cat = activeL2Categories.value.find(c => c.id === transferSourceCategoryId.value)
+  return cat?.balanceCents ?? null
+})
+
+// 转出金额（分）
+const transferAmountCents = computed(() => {
+  return Math.round(parseFloat(transferAmountYuan.value || '0') * 100)
+})
+
+// 已分配总额（分）
+const allocatedTotalCents = computed(() => {
+  return transferLegs.value.reduce((sum, leg) => {
+    return sum + Math.round(parseFloat(leg.amountYuan || '0') * 100)
+  }, 0)
+})
+
+// 金额是否匹配
+const isAmountValid = computed(() => {
+  return transferAmountCents.value > 0 && transferAmountCents.value === allocatedTotalCents.value
+})
+
+// 是否可以提交转账
+const canSubmitTransfer = computed(() => {
+  return (
+    transferSourceCategoryId.value !== null &&
+    transferAmountCents.value > 0 &&
+    isAmountValid.value &&
+    transferLegs.value.every(l => l.categoryId !== null && l.amountYuan !== '')
+  )
+})
+
+function onSourceCategorySelect(action: { name: string; value: number }) {
+  transferSourceCategoryId.value = action.value
+  transferSourceName.value = action.name
+  showSourcePicker.value = false
+}
+
+function openLegPicker(index: number) {
+  currentLegIndex.value = index
+  showLegPicker.value = true
+}
+
+function onLegCategorySelect(action: { name: string; value: number }) {
+  const index = currentLegIndex.value
+  transferLegs.value[index].categoryId = action.value
+  transferLegs.value[index].categoryName = action.name
+  showLegPicker.value = false
+}
+
+function addLeg() {
+  transferLegs.value.push({ categoryId: null, categoryName: '', amountYuan: '' })
+}
+
+function removeLeg(index: number) {
+  transferLegs.value.splice(index, 1)
+}
+
+function resetTransferForm() {
+  transferSourceCategoryId.value = null
+  transferSourceName.value = ''
+  transferAmountYuan.value = ''
+  transferNote.value = ''
+  transferLegs.value = [{ categoryId: null, categoryName: '', amountYuan: '' }]
+}
+
+async function handleTransfer() {
+  if (!canSubmitTransfer.value) return
+  savingTransfer.value = true
+  try {
+    const legs = transferLegs.value.map(l => ({
+      categoryId: l.categoryId!,
+      amountCents: Math.round(parseFloat(l.amountYuan || '0') * 100),
+    }))
+    await api.post('/transfers', {
+      txnDate: new Date().toISOString().slice(0, 10),
+      sourceCategoryId: transferSourceCategoryId.value,
+      sourceAmountCents: transferAmountCents.value,
+      note: transferNote.value || '',
+      legs,
+    })
+    showToast('转账成功')
+    showTransferDialog.value = false
+    resetTransferForm()
+  } catch (e: any) {
+    showToast(e.message || '转账失败')
+  } finally {
+    savingTransfer.value = false
+  }
+}
+
+// ---- 生命周期 ----
+onMounted(async () => {
+  await loadCategories()
+  loading.value = false
+})
+
+async function loadCategories() {
+  try {
+    const res = await api.get<ApiResponse<Category[]>>('/categories')
+    categories.value = res.data
+  } catch {
+    categories.value = []
+  }
+}
+
+async function handleAddL1() {
+  if (!addForm.value.name) {
+    showToast('请填写名称')
+    return
+  }
+  try {
+    await api.post('/categories', {
+      name: addForm.value.name,
+      level: 1,
+      balanceType: addForm.value.balanceType,
+      openingBalanceCents: Math.round(parseFloat(addForm.value.openingBalance || '0') * 100),
+    })
+    showToast('创建成功')
+    addForm.value = { name: '', balanceType: 'residual', openingBalance: '0' }
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e.message || '创建失败')
+  }
+}
+
+async function handleAddL2() {
+  if (!addL2Form.value.name || !addL2ParentId.value) {
+    showToast('请填写名称')
+    return
+  }
+  try {
+    const payload: Record<string, unknown> = {
+      name: addL2Form.value.name,
+      balanceType: addL2Form.value.balanceType,
+      openingBalanceCents: Math.round(parseFloat(addL2Form.value.openingBalance || '0') * 100),
+    }
+    if (editL2Mode.value) {
+      // 编辑模式：更新现有科目
+      if (addL2Form.value.balanceType === 'residual') {
+        payload.includeInReconciliation = addL2Form.value.includeInReconciliation
+      } else {
+        payload.includeInReconciliation = false
+      }
+      await api.put(`/categories/${editL2Id.value}`, payload)
+      showToast('更新成功')
+    } else {
+      // 新增模式
+      payload.level = 2
+      payload.parentId = addL2ParentId.value
+      if (addL2Form.value.balanceType === 'residual') {
+        payload.includeInReconciliation = addL2Form.value.includeInReconciliation
+      }
+      await api.post('/categories', payload)
+      showToast('创建成功')
+    }
+    showAddL2Dialog.value = false
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e.message || (editL2Mode.value ? '更新失败' : '创建失败'))
+  }
+}
+
+function renameCat(cat: Category) {
+  renameForm.value = { id: cat.id, name: cat.name }
+  showRenameDialog.value = true
+}
+
+async function handleRename() {
+  if (!renameForm.value.name) {
+    showToast('请填写名称')
+    return
+  }
+  try {
+    await api.put(`/categories/${renameForm.value.id}`, { name: renameForm.value.name })
+    showToast('重命名成功')
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e.message || '重命名失败')
+  }
+}
+
+async function toggleStatus(cat: Category) {
+  const newStatus = cat.status === 'active' ? 'inactive' : 'active'
+  try {
+    await api.put(`/categories/${cat.id}`, { status: newStatus })
+    showToast(newStatus === 'active' ? '已启用' : '已停用')
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e.message || '操作失败')
+  }
+}
+
+async function deleteCat(cat: Category) {
+  try {
+    await showDialog({
+      title: '确认删除',
+      message: `确定删除科目「${cat.name}」吗？此操作不可撤销。`,
+      showCancelButton: true,
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await api.del(`/categories/${cat.id}`)
+    showToast('删除成功')
+    await loadCategories()
+  } catch (e: any) {
+    showToast(e.message || '删除失败')
+  }
+}
+</script>
+
+<style scoped>
+.categories-page {
+  padding: 16px;
+  padding-bottom: 60px;
+  min-height: 100vh;
+  background: #f7f7f5;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.page-header h3 {
+  font-size: 16px;
+  font-weight: 500;
+  color: #2c2c2a;
+  margin: 0;
+}
+
+.loading-state {
+  padding: 16px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.empty-state p {
+  color: #8f8e88;
+  margin-bottom: 16px;
+}
+
+.category-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.l1-group {
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.l1-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0eb;
+}
+
+.l1-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.l1-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.l1-badge {
+  font-size: 11px;
+  color: #8f8e88;
+  border: 1px solid #e3e2dd;
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
+.l1-chip {
+  font-size: 11px;
+  border-radius: 99px;
+  padding: 1px 8px;
+  border: 1px solid #e3e2dd;
+  color: #8f8e88;
+}
+
+.l1-chip.residual { border-color: #0f6e56; color: #0f6e56; }
+.l1-chip.spending { border-color: #185fa5; color: #185fa5; }
+
+.l1-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.l2-list {
+  padding: 8px 16px;
+}
+
+.l2-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0eb;
+}
+
+.l2-row:last-child {
+  border-bottom: none;
+}
+
+.l2-row.inactive {
+  opacity: 0.6;
+}
+
+.l2-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.l2-name {
+  font-size: 14px;
+}
+
+.l2-chip {
+  font-size: 11px;
+  border-radius: 99px;
+  padding: 1px 8px;
+  border: 1px solid #e3e2dd;
+  color: #8f8e88;
+}
+
+.l2-chip.residual { border-color: #0f6e56; color: #0f6e56; }
+.l2-chip.spending { border-color: #185fa5; color: #185fa5; }
+.l2-chip.reconcile { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
+.l2-chip.stopped { background: #fcebeb; border-color: #a32d2d; color: #a32d2d; }
+
+.l2-balance {
+  font-size: 12px;
+  color: #2c2c2a;
+  font-weight: 500;
+}
+
+.l2-opening {
+  font-size: 11px;
+  color: #8f8e88;
+}
+
+.l2-count {
+  font-size: 11px;
+  color: #8f8e88;
+}
+
+.l2-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.page-footer-note {
+  text-align: center;
+  font-size: 12px;
+  color: #8f8e88;
+  padding: 16px;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: #8f8e88;
+  padding: 8px 16px;
+}
+
+/* 转账弹出表单 */
+.transfer-popup {
+  padding: 16px 0 24px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popup-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #2c2c2a;
+  padding: 0 16px 12px;
+}
+
+.transfer-hint {
+  font-size: 12px;
+  color: #0f6e56;
+  padding: 0 16px 8px;
+}
+
+.transfer-legs-section {
+  margin: 8px 0;
+}
+
+.legs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+}
+
+.legs-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2c2c2a;
+}
+
+.leg-row {
+  background: #f7f7f5;
+  margin: 0 12px 8px;
+  border-radius: 8px;
+  padding: 4px 0;
+}
+
+.leg-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 0;
+}
+
+.leg-label {
+  font-size: 12px;
+  color: #8f8e88;
+}
+
+.transfer-total-check {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #5f5e5a;
+}
+
+.check-error {
+  color: #a32d2d;
+  font-weight: 500;
+}
+
+.transfer-tags {
+  padding: 4px 16px 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transfer-save {
+  margin: 8px 16px 0;
+}
+</style>

@@ -1,0 +1,110 @@
+<template>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-title">集体台账</div>
+        <div class="login-subtitle">内部收支管理</div>
+      </div>
+
+      <van-form @submit="handleLogin">
+        <van-cell-group inset>
+          <van-field
+            v-model="username"
+            name="username"
+            label="账号"
+            placeholder="请输入账号"
+            :rules="[{ required: true, message: '请填写账号' }]"
+          />
+          <van-field
+            v-model="password"
+            type="password"
+            name="password"
+            label="密码"
+            placeholder="请输入密码"
+            :rules="[{ required: true, message: '请填写密码' }]"
+          />
+        </van-cell-group>
+
+        <div v-if="error" class="login-error">{{ error }}</div>
+
+        <div style="margin: 16px">
+          <van-button round block type="primary" native-type="submit" :loading="loading">
+            登录
+          </van-button>
+        </div>
+      </van-form>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from './store'
+import { showToast } from 'vant'
+
+const router = useRouter()
+const auth = useAuthStore()
+
+const username = ref('')
+const password = ref('')
+const loading = ref(false)
+const error = ref('')
+
+async function handleLogin() {
+  loading.value = true
+  error.value = ''
+  try {
+    await auth.login(username.value, password.value)
+    router.push('/')
+  } catch (e: any) {
+    error.value = e.message || '账号或密码错误'
+    password.value = ''
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<style scoped>
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f7f7f5;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.login-header {
+  text-align: center;
+  padding: 32px 16px 20px;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #2c2c2a;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: #8f8e88;
+  margin-top: 4px;
+}
+
+.login-error {
+  color: #a32d2d;
+  font-size: 13px;
+  text-align: center;
+  padding: 8px 16px 0;
+}
+</style>
