@@ -295,9 +295,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
+import { downloadExport } from '../../lib/download'
 import { formatFen, formatDate } from '../../types/api'
 import { showToast } from 'vant'
-import * as XLSX from 'xlsx'
 import type { Transaction, ApiResponse, Category } from '../../types/api'
 
 interface TransferLeg {
@@ -596,8 +596,13 @@ function onExportSelect(action: { value: string }) {
 }
 
 async function handleExport(format: 'csv' | 'xlsx') {
+  // 当前视图为转账记录时不支持（后端导出对象是收支流水）
+  if (filterType.value === 'transfer') {
+    showToast('转账记录暂不支持导出，请先切换到「收支」或「全部」')
+    return
+  }
   try {
-    const params: Record<string, string | number | boolean | undefined> = { page: 1, pageSize: 10000 }
+    const params: Record<string, string | number | boolean | undefined> = {}
     if (filters.value.dateFrom) params.from = filters.value.dateFrom
     if (filters.value.dateTo) params.to = filters.value.dateTo
     if (filters.value.keyword) params.keyword = filters.value.keyword
@@ -609,43 +614,7 @@ async function handleExport(format: 'csv' | 'xlsx') {
       params.maxAmount = Math.round(parseFloat(filters.value.maxAmount) * 100)
     }
 
-    const res = await api.get<ApiResponse<{ items: Transaction[]; total: number }>>('/transactions', params)
-    const items = res.data.items
-
-    if (items.length === 0) {
-      showToast('没有数据可导出')
-      return
-    }
-
-    const rows = items.map(t => ({
-      '日期': t.txnDate,
-      '方向': t.direction === 'income' ? '收入' : '支出',
-      '科目': categoryName(t.categoryId),
-      '金额(元)': (t.amountCents / 100).toFixed(2),
-      '摘要': t.note || '',
-      '状态': t.status === 'normal' ? '正常' : '已作废',
-    }))
-
-    if (format === 'csv') {
-      const header = '日期,方向,科目,金额(元),摘要,状态\n'
-      const csvRows = rows.map(r =>
-        `${r['日期']},${r['方向']},${r['科目']},${r['金额(元)']},"${r['摘要'].replace(/"/g, '""')}",${r['状态']}`
-      ).join('\n')
-
-      const blob = new Blob(['\ufeff' + header + csvRows], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `流水导出_${new Date().toISOString().slice(0, 10)}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    } else {
-      const ws = XLSX.utils.json_to_sheet(rows)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, '流水')
-      XLSX.writeFile(wb, `流水导出_${new Date().toISOString().slice(0, 10)}.xlsx`)
-    }
-
+    await downloadExport(params, 'transactions', format)
     showToast('导出成功')
   } catch (e: any) {
     showToast(e.message || '导出失败')

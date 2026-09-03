@@ -48,6 +48,10 @@
 - tsconfig 治理：根配置 noEmit + node 配置去 composite（消除 tsc 副产物污染 src）
 - 验证：vue-tsc 类型检查通过 + vite build 成功（5.4s，页面级分包）
 - ⚠️ 版本偏离记录：package.json 实装 vite ^6.3.0→6.4.3（设计定为 8.2.1，v0.1.0 首验未受阻即未升级，待用户拍板）
+- 导出入口接入后端 /api/export：新增 lib/download.ts（fetch blob + Content-Disposition 文件名 + 401 跳登录）；
+  流水页导出改为后端生成（原前端组表逻辑移除，xlsx 库不再打进包——List chunk 301KB→16.9KB）；
+  汇总页新增「导出」按钮（收支汇总×当前月 / 科目余额表，Excel+CSV）；转账视图下导出给提示
+- 前端验证：vue-tsc + vite build 通过；端到端 curl 导出的 xlsx 经 zip 校验结构完整
 
 ### 骨架
 - 项目初始化（v0.1.0 起点）

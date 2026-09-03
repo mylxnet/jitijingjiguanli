@@ -6,8 +6,17 @@
         <van-button size="small" plain @click="prevMonth">&lt;</van-button>
         <span class="current-month">{{ currentMonth }}</span>
         <van-button size="small" plain @click="nextMonth">&gt;</van-button>
+        <van-button size="small" type="primary" plain icon="export" @click="showExportSheet = true">导出</van-button>
       </div>
     </div>
+
+    <van-action-sheet
+      v-model:show="showExportSheet"
+      :actions="exportActions"
+      @select="onExportSelect"
+      cancel-text="取消"
+      description="收支汇总为所选月份；科目余额表为当前最新余额"
+    />
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">
@@ -94,7 +103,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
+import { downloadExport, type ExportContent, type ExportFormat } from '../../lib/download'
 import { formatFen, currentMonthStr, getMonthRange } from '../../types/api'
+import { showToast } from 'vant'
 import type { ApiResponse } from '../../types/api'
 
 interface CategorySummary {
@@ -178,6 +189,40 @@ function nextMonth() {
 
 function goHome() {
   router.push('/')
+}
+
+// ---- 导出（后端生成：收支汇总带当前月份区间；科目余额表为最新时点） ----
+const showExportSheet = ref(false)
+interface ExportAction {
+  name: string
+  content: ExportContent
+  format: ExportFormat
+}
+const exportActions: ExportAction[] = [
+  { name: '收支汇总 · Excel', content: 'summary', format: 'xlsx' },
+  { name: '收支汇总 · CSV', content: 'summary', format: 'csv' },
+  { name: '科目余额表 · Excel', content: 'balance_sheet', format: 'xlsx' },
+  { name: '科目余额表 · CSV', content: 'balance_sheet', format: 'csv' },
+]
+
+function onExportSelect(action: ExportAction) {
+  showExportSheet.value = false
+  void handleExport(action)
+}
+
+async function handleExport(action: ExportAction) {
+  try {
+    const params: Record<string, string> = {}
+    if (action.content === 'summary') {
+      const range = getMonthRange(currentMonth.value)
+      params.from = range.from
+      params.to = range.to
+    }
+    await downloadExport(params, action.content, action.format)
+    showToast('导出成功')
+  } catch (e: any) {
+    showToast(e.message || '导出失败')
+  }
 }
 </script>
 
