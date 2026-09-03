@@ -121,6 +121,13 @@
                     :model-value="row.partyName || '请选择单位'"
                     is-link readonly label="单位"
                     @click="openAccrueUnit('row', idx)"
+                    class="only-mobile"
+                  />
+                  <NativeSelect
+                    label="单位"
+                    placeholder="请选择单位"
+                    v-model="row.partyId"
+                    :options="accrueUnitActions"
                   />
                   <van-field label="类别">
                     <template #input>
@@ -157,6 +164,13 @@
                   :model-value="stdForm.partyName || '请选择单位'"
                   is-link readonly label="单位"
                   @click="openAccrueUnit('std', 0)"
+                  class="only-mobile"
+                />
+                <NativeSelect
+                  label="单位"
+                  placeholder="请选择单位"
+                  v-model="stdForm.partyId"
+                  :options="accrueUnitActions"
                 />
                 <van-field v-model="stdForm.amountYuan" type="number" label="年度流转费" placeholder="0.00" inputmode="decimal" />
                 <van-button size="small" round block type="primary" :loading="savingStd" @click="saveStandard">保存标准</van-button>
@@ -209,6 +223,14 @@
         readonly
         label="收款入账科目"
         @click="openIncomeCatPicker('recv')"
+        class="only-mobile"
+      />
+      <NativeSelect
+        label="收款入账科目"
+        placeholder="不预设（收款时再指定）"
+        :model-value="recvForm.incomeCategoryId"
+        :options="incomeCatOptions"
+        @update:model-value="(v:number|string|null) => recvForm.incomeCategoryId = (v == null ? null : Number(v))"
       />
       <van-field v-model="recvForm.note" label="备注" placeholder="备注（可选）" />
     </van-dialog>
@@ -234,13 +256,21 @@
         </van-field>
         <van-field v-model="receiptForm.amount" label="金额" type="number" placeholder="0.00" inputmode="decimal" />
         <van-field v-model="receiptForm.date" label="日期" placeholder="YYYY-MM-DD" />
-        <van-field v-if="receiptForm.method === 'offset'">
+        <van-field v-if="receiptForm.method === 'offset'" class="only-mobile">
           <template #label>抵销流水</template>
           <template #input>
             <div class="static-text" v-if="receiptForm.txnLabel">{{ receiptForm.txnLabel }}</div>
             <van-button v-else size="mini" type="primary" plain @click="loadOffsetTxns">选择分红支出流水</van-button>
           </template>
         </van-field>
+        <NativeSelect
+          v-if="receiptForm.method === 'offset'"
+          label="抵销流水"
+          placeholder="选择分红支出流水"
+          :model-value="receiptForm.txnId"
+          :options="offsetTxnOptions"
+          @update:model-value="(v:number|string|null) => { receiptForm.txnId = (v == null ? null : Number(v)); const o=offsetTxnOptions.find(x=>x.value===Number(v)); receiptForm.txnLabel = o ? o.name : ''; }"
+        />
         <div v-if="receiptForm.method === 'cash'" class="dialog-tip">
           现金收款将自动记一笔银行收入
           <span v-if="cashCategoryResolved">{{ cashCategoryResolved }}</span>
@@ -253,6 +283,15 @@
           readonly
           label="入账科目"
           @click="openIncomeCatPicker('receipt')"
+          class="only-mobile"
+        />
+        <NativeSelect
+          v-if="receiptForm.method === 'cash' && !cashCategoryPreset"
+          label="入账科目"
+          placeholder="请选择入账科目"
+          :model-value="receiptForm.categoryId"
+          :options="incomeCatOptions"
+          @update:model-value="(v:number|string|null) => { receiptForm.categoryId = (v == null ? null : Number(v)); const o=incomeCatOptions.find(x=>x.value===Number(v)); receiptForm.categoryName = o ? o.name : ''; }"
         />
         <van-field v-model="receiptForm.note" label="备注" placeholder="备注（可选）" />
         <div class="receipt-save">
@@ -291,6 +330,7 @@ import type {
   ReceivableListResponse, Transaction, ApiResponse, RecvKind, AccrualStandard, AccrueResult,
 } from '../../types/api'
 import { formatFen, todayStr, recvKindLabel } from '../../types/api'
+import NativeSelect from '../../components/NativeSelect.vue'
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -509,6 +549,7 @@ function openReceipt(r: Receivable) {
     note: '',
   }
   showReceipt.value = true
+  void fetchOffsetOptions()
 }
 
 const canSubmitReceipt = computed(() => {
@@ -550,9 +591,8 @@ async function saveReceipt() {
   }
 }
 
-// 抵销需要选择发放支出流水
-async function loadOffsetTxns() {
-  showTxnPicker.value = true
+// 预载发放支出流水选项（桌面下拉用；不主动弹层）
+async function fetchOffsetOptions() {
   offsetTxnOptions.value = []
   try {
     const res = await api.get<ApiResponse<{ items: Transaction[] }>>('/transactions', { pageSize: 50 })
@@ -565,10 +605,16 @@ async function loadOffsetTxns() {
       }
     }
     offsetTxnOptions.value = options
-    if (options.length === 0) showToast('近期没有可抵销的支出流水（如分红发放）')
   } catch {
     offsetTxnOptions.value = []
   }
+}
+
+// 抵销需要选择发放支出流水（移动端弹 action sheet）
+async function loadOffsetTxns() {
+  await fetchOffsetOptions()
+  showTxnPicker.value = true
+  if (offsetTxnOptions.value.length === 0) showToast('近期没有可抵销的支出流水（如分红发放）')
 }
 
 function onTxnSelect(action: { name: string; value: number }) {

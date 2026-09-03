@@ -114,6 +114,14 @@
             label="科目"
             placeholder="选择科目"
             @click="showCategoryFilterPicker = true"
+            class="only-mobile"
+          />
+          <NativeSelect
+            label="科目"
+            placeholder="选择科目"
+            :model-value="filters.categoryId ?? 0"
+            :options="categoryFilterOptions"
+            @update:model-value="onNativeCatFilterChange"
           />
           <van-popup v-model:show="showCategoryFilterPicker" position="bottom">
             <van-picker
@@ -219,7 +227,15 @@
               placeholder="请选择科目"
               :rules="[{ required: true, message: '请选择科目' }]"
               @click="showEditCategoryPicker = true"
+              class="mobile-field"
             />
+            <div class="desktop-field">
+              <span class="d-label">科目</span>
+              <select v-model="editForm.categoryId" class="d-select" @change="onEditCatNativeChange">
+                <option :value="0" disabled>请选择科目</option>
+                <option v-for="opt in categoryOptions" :key="opt.value" :value="opt.value">{{ opt.text }}</option>
+              </select>
+            </div>
             <van-popup v-model:show="showEditCategoryPicker" position="bottom">
               <van-picker
                 :columns="categoryOptions"
@@ -299,6 +315,7 @@ import { downloadExport } from '../../lib/download'
 import { formatFen, formatDate } from '../../types/api'
 import { showToast } from 'vant'
 import type { Transaction, ApiResponse, Category } from '../../types/api'
+import NativeSelect from '../../components/NativeSelect.vue'
 
 interface TransferLeg {
   id: number
@@ -523,6 +540,19 @@ function onCategoryFilterConfirm({ selectedOptions }: any) {
   showCategoryFilterPicker.value = false
 }
 
+// 桌面端筛选：科目原生下拉（0=全部）
+function onNativeCatFilterChange(v: number | string | null) {
+  const val = v == null ? 0 : Number(v)
+  if (val === 0) {
+    filters.value.categoryId = null
+    filters.value.categoryName = ''
+  } else {
+    filters.value.categoryId = val
+    const opt = categoryFilterOptions.value.find(o => o.value === val)
+    filters.value.categoryName = opt ? opt.text : ''
+  }
+}
+
 function resetFilters() {
   filters.value = {
     dateFrom: '',
@@ -719,6 +749,12 @@ function onEditCategoryConfirm({ selectedOptions }: any) {
     editForm.value.categoryId = opt.value
   }
   showEditCategoryPicker.value = false
+}
+
+// 桌面端：科目改为原生下拉后同步显示名
+function onEditCatNativeChange() {
+  const opt = categoryOptions.value.find(o => o.value === editForm.value.categoryId)
+  editForm.value.categoryName = opt ? opt.text : ''
 }
 
 function editValidateAmount(val: string): boolean {
@@ -1119,5 +1155,68 @@ function formatChangelogValue(field: string | null, value: string | null): strin
 .changelog-time {
   color: #8f8e88;
   margin-left: auto;
+}
+
+.desktop-field {
+  display: none;
+}
+
+/* 桌面端：头部/操作按钮与行内按钮加大 */
+@media (min-width: 992px) {
+  .list-header {
+    margin-bottom: 14px;
+  }
+
+  .list-header .header-actions {
+    gap: 8px;
+    align-items: center;
+  }
+
+  .list-header .type-filter {
+    display: flex;
+    gap: 8px;
+  }
+
+  .list-header .van-button--mini,
+  .filter-hint .van-button--mini,
+  .txn-actions .van-button--mini {
+    height: 40px;
+    padding: 0 18px;
+    font-size: 15px;
+  }
+
+  .txn-row {
+    padding: 14px 16px;
+  }
+
+  .desktop-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #ebedf0;
+  }
+
+  .mobile-field {
+    display: none !important;
+  }
+
+  .d-label {
+    width: 70px;
+    font-size: 15px;
+    color: #969799;
+  }
+
+  .d-select {
+    flex: 1;
+    height: 40px;
+    border: 1px solid #dcdee0;
+    border-radius: 8px;
+    font-size: 15px;
+    padding: 0 10px;
+    background: #fff;
+    color: #323233;
+    min-width: 0;
+  }
 }
 </style>

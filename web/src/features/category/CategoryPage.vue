@@ -76,11 +76,19 @@
 
     <!-- 新增/编辑二级科目对话框 -->
     <van-dialog v-model:show="showAddL2Dialog" :title="editL2Mode ? '编辑二级科目' : '新增二级科目 - ' + addL2ParentName" show-cancel-button @confirm="handleAddL2">
-      <van-field v-model="addL2Form.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]">
+      <van-field v-model="addL2Form.name" label="名称" placeholder="科目名称" :rules="[{ required: true }]" class="only-mobile">
         <template v-if="!editL2Mode" #button>
           <span class="unit-quick" @click="openUnitPicker">选择往来单位 ▾</span>
         </template>
       </van-field>
+      <NativeSelect
+        v-if="!editL2Mode"
+        label="选单位填名称"
+        placeholder="从往来单位中选择"
+        :model-value="null"
+        :options="unitActions"
+        @update:model-value="nativeUnitPick"
+      />
       <div v-if="!editL2Mode && unitList.length === 0" class="field-hint">
         暂无往来单位；可手动输入科目名，或先到「往来」页新增单位
       </div>
@@ -118,6 +126,13 @@
           label="转出科目"
           placeholder="请选择转出科目"
           @click="showSourcePicker = true"
+          class="only-mobile"
+        />
+        <NativeSelect
+          label="转出科目"
+          placeholder="请选择转出科目"
+          v-model="transferSourceCategoryId"
+          :options="sourceCategoryOptions"
         />
         <div v-if="selectedSourceBalance !== null" class="transfer-hint">
           可转出 {{ formatFen(selectedSourceBalance) }}
@@ -149,6 +164,12 @@
               readonly
               placeholder="请选择转入科目"
               @click="openLegPicker(index)"
+              class="only-mobile"
+            />
+            <NativeSelect
+              placeholder="请选择转入科目"
+              v-model="leg.categoryId"
+              :options="destCategoryOptions"
             />
             <van-field
               v-model="leg.amountYuan"
@@ -238,6 +259,13 @@
           label="资产科目"
           placeholder="请选择资产科目"
           @click="showAssetPicker = true"
+          class="only-mobile"
+        />
+        <NativeSelect
+          label="资产科目"
+          placeholder="请选择资产科目"
+          v-model="fundMoveAssetId"
+          :options="assetCategoryOptions"
         />
         <div v-if="selectedAssetOutstanding !== null" class="transfer-hint">
           该资产目前在外 {{ formatFen(selectedAssetOutstanding) }}
@@ -318,6 +346,7 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { showToast, showDialog } from 'vant'
 import ChangeLogDialog from '../../components/ChangeLogDialog.vue'
+import NativeSelect from '../../components/NativeSelect.vue'
 import type { Category, Party, FundMove, FundMoveListResponse, ApiResponse } from '../../types/api'
 import { formatFen, todayStr } from '../../types/api'
 
@@ -391,6 +420,12 @@ function openUnitPicker() {
 function onUnitSelect(action: { name: string; value: number }) {
   addL2Form.value.name = action.name
   showUnitPicker.value = false
+}
+
+function nativeUnitPick(v: number | string | null) {
+  const id = Number(v)
+  const p = unitList.value.find(x => x.id === id)
+  if (p) addL2Form.value.name = p.name
 }
 
 // ---- 重命名 ----
