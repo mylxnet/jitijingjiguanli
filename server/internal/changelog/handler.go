@@ -1,0 +1,56 @@
+package changelog
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+
+	"jititaizhang/server/internal/platform"
+)
+
+// Handler 处理变更日志相关 HTTP 请求。
+type Handler struct {
+	repo *Repo
+}
+
+// NewHandler 创建 Handler。
+func NewHandler(repo *Repo) *Handler {
+	return &Handler{repo: repo}
+}
+
+// ListChangelog 查询变更日志。
+// GET /api/changelog?entityType=transaction&entityId=1
+func (h *Handler) ListChangelog(c *gin.Context) {
+	entityType := c.Query("entityType")
+	entityIDStr := c.Query("entityId")
+
+	if entityType == "" || entityIDStr == "" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "缺少 entityType 或 entityId 参数",
+		})
+		return
+	}
+
+	entityID, err := strconv.ParseInt(entityIDStr, 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "entityId 不合法",
+		})
+		return
+	}
+
+	items, err := h.repo.ListByEntity(entityType, entityID)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
+			Code: "INTERNAL_ERROR", Message: "查询变更日志失败",
+		})
+		return
+	}
+
+	if items == nil {
+		items = []ChangeLog{}
+	}
+
+	platform.SuccessResponse(c, items)
+}
