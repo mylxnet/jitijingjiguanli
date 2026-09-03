@@ -162,10 +162,9 @@ export interface ApiError {
 
 // 金额格式化工具
 export function formatYuan(cents: number): string {
-  return (cents / 100).toLocaleString('zh-CN', {
-    style: 'currency',
-    currency: 'CNY',
+  return '¥ ' + (cents / 100).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
 }
 
@@ -178,7 +177,10 @@ export function parseFen(yuan: string): number {
 }
 
 export function formatFen(cents: number): string {
-  return (cents / 100).toFixed(2)
+  return '¥ ' + (cents / 100).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 export function formatDate(dateStr: string): string {
