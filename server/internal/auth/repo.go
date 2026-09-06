@@ -46,6 +46,16 @@ func (r *Repo) CreateUser(orgID int64, username, passwordHash string) (*User, er
 	return &User{ID: id, OrgID: orgID, Username: username, CreatedAt: now}, nil
 }
 
+// CountUsers 统计用户总数（用于单用户注册限制）。
+func (r *Repo) CountUsers() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM user`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("统计用户数失败: %w", err)
+	}
+	return n, nil
+}
+
 // FindByUsername 按用户名查找用户（含组织归属）。
 func (r *Repo) FindByUsername(username string) (*User, error) {
 	u := &User{}
@@ -68,6 +78,21 @@ func (r *Repo) FindUserByID(id int64) (*User, error) {
 	err := r.db.QueryRow(
 		`SELECT id, org_id, username, password_hash, created_at FROM user WHERE id = ?`,
 		id,
+	).Scan(&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查找用户失败: %w", err)
+	}
+	return u, nil
+}
+
+// FindAnyUser 返回系统中任意一个用户（用于重置密码）。
+func (r *Repo) FindAnyUser() (*User, error) {
+	u := &User{}
+	err := r.db.QueryRow(
+		`SELECT id, org_id, username, password_hash, created_at FROM user ORDER BY id ASC LIMIT 1`,
 	).Scan(&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil

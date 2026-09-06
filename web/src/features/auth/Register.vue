@@ -87,10 +87,16 @@ async function handleRegister() {
       localStorage.setItem(ORG_NAME_KEY, orgName.value.trim())
       auth.markLoggedIn()
       showToast('注册成功，已自动登录')
-      router.push('/')
+      router.push('/onboarding')
     }
   } catch (e: any) {
-    error.value = e.message || '注册失败'
+    if (e?.response?.code === 'USERNAME_TAKEN') {
+      error.value = '该账号已被注册，请换一个账号'
+    } else if (e?.response?.code === 'REGISTRATION_CLOSED') {
+      error.value = '系统已注册，禁止重复注册'
+    } else {
+      error.value = e.message || '注册失败'
+    }
   } finally {
     loading.value = false
   }

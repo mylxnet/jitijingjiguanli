@@ -35,7 +35,7 @@ import SideNav from './components/SideNav.vue'
 import RecordPopup from './features/transaction/RecordPopup.vue'
 
 const route = useRoute()
-const showNav = computed(() => !['/login', '/register'].includes(route.path))
+const showNav = computed(() => !['/login', '/register', '/onboarding'].includes(route.path))
 
 const recordPopupRef = ref<InstanceType<typeof RecordPopup> | null>(null)
 provide('openRecord', () => {

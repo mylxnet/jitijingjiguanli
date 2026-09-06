@@ -3,16 +3,6 @@
     <div class="list-header">
       <h3>流水</h3>
       <div class="header-actions">
-          <div class="type-filter">
-            <van-button
-              v-for="t in typeOptions"
-              :key="t.value"
-              :type="filterType === t.value ? 'primary' : 'default'"
-              size="mini"
-              plain
-              @click="filterType = t.value; loadData()"
-            >{{ t.label }}</van-button>
-          </div>
           <van-button icon="filter" size="mini" @click="showFilterDialog = true">筛选</van-button>
           <van-button icon="export" size="mini" type="primary" @click="showExportPicker = true">导出</van-button>
         </div>
@@ -38,35 +28,14 @@
     <!-- 列表 -->
     <div v-else class="list-content">
       <div v-for="item in mergedItems" :key="item._key" class="txn-row" :class="{ voided: item.status === 'voided' }" @click="openEdit(item)">
-        <!-- 收支行 -->
-        <template v-if="item._type === 'transaction'">
-          <div class="txn-main">
-            <div class="txn-date">{{ formatDate(item.txnDate) }}</div>
-            <div class="txn-category">{{ categoryName(item.categoryId) }}</div>
-            <div class="txn-note" v-if="item.note">{{ item.note }}</div>
-          </div>
-          <div class="txn-amount" :class="item.direction === 'income' ? 'income' : 'expense'">
-            {{ item.direction === 'income' ? '+' : '-' }}{{ formatFen(item.amountCents ?? 0) }}
-          </div>
-        </template>
-        <!-- 转账行 -->
-        <template v-else>
-          <div class="txn-main">
-            <div class="txn-date">{{ formatDate(item.txnDate) }}</div>
-            <div class="txn-category">
-              <span class="transfer-tag">转账</span>
-              转出 {{ categoryName(item.sourceCategoryId) }}
-              <span class="transfer-arrow">→</span>
-              <span v-for="(leg, i) in item.legs" :key="leg.id">
-                {{ i > 0 ? '、' : '' }}{{ categoryName(leg.categoryId) }}
-              </span>
-            </div>
-            <div class="txn-note" v-if="item.note">{{ item.note }}</div>
-          </div>
-          <div class="txn-amount transfer">
-            {{ formatFen(item.sourceAmountCents ?? 0) }}
-          </div>
-        </template>
+        <div class="txn-main">
+          <div class="txn-date">{{ formatDate(item.txnDate) }}</div>
+          <div class="txn-category">{{ categoryName(item.categoryId) }}</div>
+          <div class="txn-note" v-if="item.note">{{ item.note }}</div>
+        </div>
+        <div class="txn-amount" :class="item.direction === 'income' ? 'income' : 'expense'">
+          {{ item.direction === 'income' ? '+' : '-' }}{{ formatFen(item.amountCents ?? 0) }}
+        </div>
       </div>
     </div>
 
@@ -162,51 +131,10 @@
     <!-- 编辑/详情弹窗 -->
     <van-popup v-model:show="showEditDialog" :position="popupPos()" round closeable style="max-height: 90vh">
       <div class="edit-popup">
-        <div class="edit-title">{{ editTransfer ? '转账详情' : '流水详情' }}</div>
-
-        <!-- 转账详情（只读） -->
-        <template v-if="editTransfer">
-          <van-cell-group inset>
-            <van-cell title="日期" :value="editTransfer.txnDate" />
-            <van-cell title="类型" value="转账" />
-            <van-cell title="转出科目" :value="categoryName(editTransfer.sourceCategoryId)" />
-            <van-cell title="转出金额" :value="formatFen(editTransfer.sourceAmountCents ?? 0)" />
-            <van-cell v-for="leg in editTransfer.legs" :key="leg.id"
-              :title="'转入: ' + categoryName(leg.categoryId)"
-              :value="formatFen(leg.amountCents)" />
-            <van-cell title="摘要" :value="editTransfer.note || '-'" />
-            <van-cell title="状态" :value="editTransfer.status === 'normal' ? '正常' : '已作废'" />
-          </van-cell-group>
-          <div class="edit-actions">
-            <van-button
-              v-if="editTransfer.status === 'normal'"
-              type="danger"
-              plain
-              round
-              block
-              @click="handleVoidTransfer"
-            >作废此转账</van-button>
-            <van-button
-              v-else
-              type="primary"
-              plain
-              round
-              block
-              @click="handleUnvoidTransfer"
-            >撤销作废</van-button>
-          </div>
-          <!-- 变更历史 -->
-          <div class="changelog-section" v-if="editTransferChangelog.length > 0">
-            <div class="section-title">变更历史</div>
-            <div v-for="log in editTransferChangelog" :key="log.id" class="changelog-item">
-              <span class="changelog-action">{{ changelogActionText(log.action) }}</span>
-              <span class="changelog-time">{{ log.changedAt }}</span>
-            </div>
-          </div>
-        </template>
+        <div class="edit-title">流水详情</div>
 
         <!-- 流水详情（只读，仅可作废） -->
-        <template v-else-if="editTransaction">
+        <template v-if="editTransaction">
           <van-cell-group inset>
             <van-cell title="日期" :value="editTransaction.txnDate" />
             <van-cell title="类型" :value="editTransaction.direction === 'income' ? '收入' : '支出'" />
@@ -262,22 +190,6 @@ import type { Transaction, ApiResponse, Category } from '../../types/api'
 import NativeSelect from '../../components/NativeSelect.vue'
 
 import { popupPos } from '../../composables/useScreen';
-interface TransferLeg {
-  id: number
-  transferId: number
-  categoryId: number
-  amountCents: number
-}
-
-interface TransferItem {
-  id: number
-  txnDate: string
-  sourceCategoryId: number
-  sourceAmountCents: number
-  note: string | null
-  status: string
-  legs: TransferLeg[]
-}
 
 interface ChangeLogItem {
   id: number
@@ -293,69 +205,33 @@ interface ChangeLogItem {
 // 合并后的行
 interface MergedRow {
   _key: string
-  _type: 'transaction' | 'transfer'
   txnDate: string
   status: string
-  // 收支字段
   direction?: string
   amountCents?: number
   categoryId?: number
   note?: string | null
-  // 转账字段
-  sourceCategoryId?: number
-  sourceAmountCents?: number
-  legs?: TransferLeg[]
 }
 
 const router = useRouter()
 const route = useRoute()
 const loading = ref(true)
 const transactions = ref<Transaction[]>([])
-const transfers = ref<TransferItem[]>([])
 const categories = ref<Category[]>([])
-const filterType = ref<'all' | 'transaction' | 'transfer'>('all')
-
-const typeOptions = [
-  { label: '全部', value: 'all' as const },
-  { label: '收支', value: 'transaction' as const },
-  { label: '转账', value: 'transfer' as const },
-]
 
 const mergedItems = computed(() => {
-  let rows: MergedRow[] = []
-
-  if (filterType.value === 'all' || filterType.value === 'transaction') {
-    rows.push(...transactions.value.map(t => ({
-      _key: `txn-${t.id}`,
-      _type: 'transaction' as const,
-      txnDate: t.txnDate,
-      status: t.status,
-      direction: t.direction,
-      amountCents: t.amountCents,
-      categoryId: t.categoryId,
-      note: t.note,
-    })))
-  }
-
-  if (filterType.value === 'all' || filterType.value === 'transfer') {
-    rows.push(...transfers.value.map(t => ({
-      _key: `trf-${t.id}`,
-      _type: 'transfer' as const,
-      txnDate: t.txnDate,
-      status: t.status,
-      sourceCategoryId: t.sourceCategoryId,
-      sourceAmountCents: t.sourceAmountCents,
-      note: t.note,
-      legs: t.legs,
-    })))
-  }
-
-  rows.sort((a, b) => {
+  return transactions.value.map(t => ({
+    _key: `txn-${t.id}`,
+    txnDate: t.txnDate,
+    status: t.status,
+    direction: t.direction,
+    amountCents: t.amountCents,
+    categoryId: t.categoryId,
+    note: t.note,
+  })).sort((a, b) => {
     if (a.txnDate !== b.txnDate) return b.txnDate.localeCompare(a.txnDate)
     return a._key.localeCompare(b._key)
   })
-
-  return rows
 })
 
 const summary = computed(() => {
@@ -524,7 +400,7 @@ function applyFilters() {
 
 async function loadData() {
   loading.value = true
-  await Promise.all([loadTransactions(), loadTransfers(), loadCategories()])
+  await Promise.all([loadTransactions(), loadCategories()])
   loading.value = false
 }
 
@@ -545,19 +421,6 @@ async function loadTransactions() {
     transactions.value = res.data.items
   } catch {
     transactions.value = []
-  }
-}
-
-async function loadTransfers() {
-  try {
-    const params: Record<string, string | number | boolean | undefined> = { page: 1, pageSize: 200 }
-    if (filters.value.dateFrom) params.from = filters.value.dateFrom
-    if (filters.value.dateTo) params.to = filters.value.dateTo
-    if (filters.value.categoryId) params.categoryId = filters.value.categoryId
-    const res = await api.get<ApiResponse<{ items: TransferItem[]; total: number }>>('/transfers', params)
-    transfers.value = res.data.items
-  } catch {
-    transfers.value = []
   }
 }
 
@@ -584,11 +447,6 @@ function onExportSelect(action: { value: string }) {
 }
 
 async function handleExport(format: 'csv' | 'xlsx') {
-  // 当前视图为转账记录时不支持（后端导出对象是收支流水）
-  if (filterType.value === 'transfer') {
-    showToast('转账记录暂不支持导出，请先切换到「收支」或「全部」')
-    return
-  }
   try {
     const params: Record<string, string | number | boolean | undefined> = {}
     if (filters.value.dateFrom) params.from = filters.value.dateFrom
@@ -613,42 +471,22 @@ async function handleExport(format: 'csv' | 'xlsx') {
 const showEditDialog = ref(false)
 
 const editTransaction = ref<Transaction | null>(null)
-const editTransfer = ref<TransferItem | null>(null)
 const editChangelog = ref<ChangeLogItem[]>([])
-const editTransferChangelog = ref<ChangeLogItem[]>([])
 
 async function openEdit(item: MergedRow) {
-  if (item._type === 'transaction') {
-    const txn = transactions.value.find(t => `txn-${t.id}` === item._key)
-    if (!txn) return
-    editTransaction.value = txn
-    editTransfer.value = null
-    await loadChangelog('transaction', txn.id)
-  } else {
-    const trf = transfers.value.find(t => `trf-${t.id}` === item._key)
-    if (!trf) return
-    editTransaction.value = null
-    editTransfer.value = trf
-    editChangelog.value = []
-    await loadChangelog('transfer', trf.id)
-  }
+  const txn = transactions.value.find(t => `txn-${t.id}` === item._key)
+  if (!txn) return
+  editTransaction.value = txn
+  await loadChangelog('transaction', txn.id)
   showEditDialog.value = true
 }
 
 async function loadChangelog(entityType: string, entityId: number) {
   try {
     const res = await api.get<ApiResponse<ChangeLogItem[]>>('/changelog', { entityType, entityId })
-    if (entityType === 'transaction') {
-      editChangelog.value = res.data
-    } else {
-      editTransferChangelog.value = res.data
-    }
+    editChangelog.value = res.data
   } catch {
-    if (entityType === 'transaction') {
-      editChangelog.value = []
-    } else {
-      editTransferChangelog.value = []
-    }
+    editChangelog.value = []
   }
 }
 
@@ -668,30 +506,6 @@ async function handleUnvoidTransaction() {
   if (!editTransaction.value) return
   try {
     await api.put(`/transactions/${editTransaction.value.id}`, { status: 'normal' })
-    showToast('已撤销作废')
-    showEditDialog.value = false
-    await loadData()
-  } catch (e: any) {
-    showToast(e.message || '撤销作废失败')
-  }
-}
-
-async function handleVoidTransfer() {
-  if (!editTransfer.value) return
-  try {
-    await api.put(`/transfers/${editTransfer.value.id}`, { status: 'voided' })
-    showToast('已作废')
-    showEditDialog.value = false
-    await loadData()
-  } catch (e: any) {
-    showToast(e.message || '作废失败')
-  }
-}
-
-async function handleUnvoidTransfer() {
-  if (!editTransfer.value) return
-  try {
-    await api.put(`/transfers/${editTransfer.value.id}`, { status: 'normal' })
     showToast('已撤销作废')
     showEditDialog.value = false
     await loadData()

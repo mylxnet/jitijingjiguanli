@@ -79,11 +79,28 @@
       </div>
     </van-cell-group>
 
+    <!-- 系统重置 -->
+    <van-cell-group inset style="margin-top: 16px">
+      <div class="section-label danger">危险操作</div>
+      <div style="margin: 4px 16px 8px">
+        <van-button
+          round
+          block
+          size="small"
+          :loading="resetting"
+          @click="handleReset"
+        >系统重置</van-button>
+      </div>
+      <div class="reset-tip">
+        清空所有业务数据，保留预置科目结构。重置后需重新注册。
+      </div>
+    </van-cell-group>
+
     <div style="margin: 16px; padding: 0 16px">
       <van-button round block type="danger" @click="handleLogout">登出</van-button>
     </div>
 
-    <div class="version">v0.8.0</div>
+    <div class="version">v0.10.0</div>
 
     <!-- 修改密码 -->
     <van-popup v-model:show="showPwd" :position="popupPos()" round closeable style="max-height: 90vh">
@@ -150,6 +167,7 @@ const showPwd = ref(false)
 const savingPwd = ref(false)
 const pwdError = ref('')
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
+const resetting = ref(false)
 
 onMounted(async () => {
   await Promise.all([loadSettings(), loadBackups()])
@@ -288,6 +306,42 @@ async function handleLogout() {
   await auth.logout()
   router.push('/login')
 }
+
+async function handleReset() {
+  // 第一次确认：警告
+  try {
+    await showDialog({
+      title: '警告：系统重置',
+      message: '此操作将清空所有业务数据（往来单位、流水、应收、合同、操作日志等），\n仅保留预置科目结构。\n\n重置后需重新注册，数据不可恢复！',
+      showCancelButton: true,
+      confirmButtonText: '我已了解，继续',
+    })
+  } catch {
+    return // 取消
+  }
+  // 第二次确认：输入文字
+  const confirmText = '确认重置'
+  const input = prompt(`请输入"${confirmText}"确认重置：`)
+  if (input !== confirmText) {
+    if (input !== null) showToast('输入不正确，已取消')
+    return
+  }
+  resetting.value = true
+  try {
+    await api.post('/system/reset')
+	    // 清除本地引导标记，确保重置后重新注册时再次显示引导页
+	    for (const key of Object.keys(localStorage)) {
+	      if (key.startsWith('jt_onboarding_done_')) localStorage.removeItem(key)
+	    }
+	    showToast('系统已重置，即将跳转到注册页')
+	    await auth.logout()
+	    router.push('/register')
+  } catch (e: any) {
+    showToast(e.message || '重置失败')
+  } finally {
+    resetting.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -314,6 +368,10 @@ padding-bottom: 60px;
   font-size: 12px;
   color: var(--ink-muted);
   padding: 12px 16px 0;
+}
+.section-label.danger {
+  color: var(--expense, #e74c3c);
+  font-weight: 600;
 }
 
 .current-balance {
@@ -346,6 +404,13 @@ padding-bottom: 60px;
 .backup-size {
   font-size: 11px;
   color: var(--ink-muted);
+}
+
+.reset-tip {
+  font-size: 11px;
+  color: var(--expense, #e74c3c);
+  padding: 0 16px 12px;
+  line-height: 1.5;
 }
 
 .pwd-popup {

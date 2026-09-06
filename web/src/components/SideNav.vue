@@ -1,9 +1,9 @@
 <template>
   <nav class="side-nav">
-    <div class="side-top">
-      <div class="side-org">新庄村</div>
-      <div class="side-org-sub">集体经济管理系统</div>
-    </div>
+	    <div class="side-top">
+	      <div class="side-org">{{ orgName }}</div>
+	      <div class="side-org-sub">集体经济管理系统</div>
+	    </div>
     <div class="side-nav-wrap">
       <a
         v-for="item in items"
@@ -25,13 +25,13 @@
         <span class="side-nav-icon">🚪</span>
         <span>退出</span>
       </a>
-      <div class="side-version">v0.8.0</div>
+      <div class="side-version">v0.10.0</div>
     </div>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
+import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../features/auth/store'
 
@@ -41,12 +41,13 @@ const auth = useAuthStore()
 
 const openRecord = inject<() => void>('openRecord', () => {})
 
+const orgName = computed(() => localStorage.getItem('jt_org_name') || '组织')
+
 const items = [
   { label: '收支总览', path: '/', iconChar: '◆' },
   { label: '往来单位', path: '/contacts', iconChar: '◉' },
   { label: '投资管理', path: '/investment', iconChar: '📈' },
   { label: '流转管理', path: '/flow', iconChar: '🏠' },
-  { label: '引导页面', path: '/onboarding', iconChar: '→' },
   { label: '快速记账', path: '', iconChar: '＋', action: 'record' },
 ]
 

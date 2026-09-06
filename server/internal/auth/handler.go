@@ -25,6 +25,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/auth/login", h.Login)
 	r.POST("/api/auth/register", h.RegisterOrg)
 	r.POST("/api/auth/logout", h.Logout)
+	r.POST("/api/auth/reset-password", h.ResetPassword)
 }
 
 // RegisterAuthed 挂载需要登录的路由（由 main 在鉴权组内调用）。
@@ -79,13 +80,15 @@ func (h *Handler) RegisterOrg(c *gin.Context) {
 		code := "REGISTER_FAILED"
 		msg := "注册失败，请重试"
 		switch err {
-		case ErrInvalidOrgName:
-			code, msg = "INVALID_ORG_NAME", "请填写组织名称"
-		case ErrInvalidPassword:
-			code, msg = "INVALID_PASSWORD", "密码至少 6 位"
-		case ErrUsernameTaken:
-			code, msg = "USERNAME_TAKEN", "该账号已存在，请更换"
-		}
+			case ErrInvalidOrgName:
+				code, msg = "INVALID_ORG_NAME", "请填写组织名称"
+			case ErrInvalidPassword:
+				code, msg = "INVALID_PASSWORD", "密码至少 6 位"
+			case ErrUsernameTaken:
+				code, msg = "USERNAME_TAKEN", "该账号已存在，请更换"
+			case ErrRegistrationClosed:
+				code, msg = "REGISTRATION_CLOSED", "系统已注册，禁止重复注册"
+			}
 		platform.Fail(c, http.StatusBadRequest, code, msg)
 		return
 	}
@@ -132,6 +135,16 @@ func (h *Handler) Logout(c *gin.Context) {
 	}
 	clearSessionCookie(c)
 	platform.OK(c, gin.H{"ok": true})
+}
+
+// ResetPassword POST /api/auth/reset-password —— 重置密码为 admin888（忘记密码）。
+func (h *Handler) ResetPassword(c *gin.Context) {
+	username, err := h.svc.ResetPassword()
+	if err != nil {
+		platform.Fail(c, http.StatusNotFound, "NO_USER", "系统中没有注册用户")
+		return
+	}
+	platform.OK(c, gin.H{"ok": true, "message": "密码已重置为 admin888，请登录后修改", "username": username})
 }
 
 // setSessionCookie 写入会话 Cookie。

@@ -40,6 +40,9 @@
         <span>还没有账号？</span>
         <a class="register-link" @click="goRegister">注册组织</a>
       </div>
+      <div class="login-footer" style="margin-top: 4px">
+        <a class="register-link" @click="goResetPwd">忘记密码？</a>
+      </div>
     </div>
   </div>
 </template>
@@ -88,6 +91,10 @@ async function handleLogin() {
 
 function goRegister() {
   router.push('/register')
+}
+
+function goResetPwd() {
+  router.push('/reset-password')
 }
 </script>
 

@@ -6,9 +6,22 @@
  * 启动:  node server/mock.js
  */
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const url = require('url');
 
 const TEST_ACCOUNT = { username: 'admin', password: 'admin888' };
+
+// 数据持久化文件路径
+const DATA_FILE = path.join(__dirname, 'data', 'mock-saved.json');
+
+// 注册用户存储（mock 多组织注册）
+const REGISTERED_USERS = [
+  { orgName: '默认组织', username: 'admin', password: 'admin888' },
+];
+
+// 当前登录会话（mock 模拟，实际 Go 后端用 session 持久化）
+let currentSessionUser = 'admin';
 
 // ========== 模拟数据 ==========
 // 预置科目与 Go seedPresetCategoriesTx 保持一致：8 个 L1
@@ -69,8 +82,116 @@ const BACKUPS = [];
 const OPERATION_LOGS = [];
 let nextOpLogId = 1;
 
-// 资金划转记录
-const FUND_MOVES = [];
+// 保存初始数据快照，用于新组织注册时重置
+const DATA_SEED = {
+  categories: JSON.parse(JSON.stringify(CATEGORIES)),
+  settings: { bankOpeningBalanceCents: 0, reinvestRatioBps: 0 },
+};
+
+function resetMockData() {
+  // 清空所有可变数据
+  PARTIES.length = 0;
+  REINVEST_ALLOCATIONS.length = 0;
+  DISTRIBUTIONS_532.length = 0;
+  CONTRACTS.length = 0;
+  TRANSACTIONS.length = 0;
+  RECEIVABLES.length = 0;
+  BACKUPS.length = 0;
+  OPERATION_LOGS.length = 0;
+  nextOpLogId = 1;
+  nextId = 1;
+
+  // 恢复科目到初始状态
+  const catCopy = JSON.parse(JSON.stringify(DATA_SEED.categories));
+  CATEGORIES.length = 0;
+  CATEGORIES.push(...catCopy);
+
+  // 重置设置
+  SETTINGS.bankOpeningBalanceCents = DATA_SEED.settings.bankOpeningBalanceCents;
+  SETTINGS.reinvestRatioBps = DATA_SEED.settings.reinvestRatioBps;
+
+  // 重建摘要
+  SUMMARY.capital.bankBalanceCents = 0;
+  SUMMARY.capital.assetTotalCents = 0;
+  SUMMARY.capital.equityTotalCents = 0;
+  SUMMARY.incomeTotal = 0;
+  SUMMARY.expenseTotal = 0;
+  SUMMARY.balance = 0;
+  SUMMARY.categories = buildCategorySummary();
+  saveData();
+}
+
+// ========== 数据持久化 ==========
+
+// 收集当前所有可变数据为可序列化对象
+function collectData() {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    registeredUsers: REGISTERED_USERS,
+    currentSessionUser,
+    categories: CATEGORIES,
+    parties: PARTIES,
+    transactions: TRANSACTIONS,
+    receivables: RECEIVABLES,
+    distributions532: DISTRIBUTIONS_532,
+    reinvestAllocations: REINVEST_ALLOCATIONS,
+    contracts: CONTRACTS,
+    backups: BACKUPS,
+    operationLogs: OPERATION_LOGS,
+    nextOpLogId,
+    nextId,
+    settings: { ...SETTINGS },
+  };
+}
+
+// 将收集的数据恢复到内存变量
+function restoreData(saved) {
+  // 清空并恢复各数组
+  const setArray = (arr, items) => { arr.length = 0; arr.push(...items); };
+  setArray(REGISTERED_USERS, saved.registeredUsers);
+  setArray(CATEGORIES, saved.categories);
+  setArray(PARTIES, saved.parties || []);
+  setArray(TRANSACTIONS, saved.transactions || []);
+  setArray(RECEIVABLES, saved.receivables || []);
+  setArray(DISTRIBUTIONS_532, saved.distributions532 || []);
+  setArray(REINVEST_ALLOCATIONS, saved.reinvestAllocations || []);
+  setArray(CONTRACTS, saved.contracts || []);
+  setArray(BACKUPS, saved.backups || []);
+  setArray(OPERATION_LOGS, saved.operationLogs || []);
+  nextOpLogId = saved.nextOpLogId || 1;
+  nextId = saved.nextId || 1;
+  currentSessionUser = saved.currentSessionUser || 'admin';
+  if (saved.settings) {
+    Object.assign(SETTINGS, saved.settings);
+  }
+}
+
+// 保存数据到磁盘文件
+function saveData() {
+  try {
+    const dir = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(collectData(), null, 2), 'utf8');
+  } catch (e) {
+    console.error('保存数据失败:', e.message);
+  }
+}
+
+// 从磁盘文件加载数据，返回 true 表示成功加载
+function loadSavedData() {
+  try {
+    if (!fs.existsSync(DATA_FILE)) return false;
+    const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.categories) return false;
+    restoreData(saved);
+    return true;
+  } catch (e) {
+    console.error('加载持久化数据失败，将使用种子数据:', e.message);
+    return false;
+  }
+}
 
 // 单位类型 → L1 科目映射
 const PARTY_TYPE_L1_MAP = {
@@ -161,8 +282,8 @@ function recordOp(operation, summary, effects) {
 }
 
 // ========== 流转管理种子数据 ==========
-// 流转类型往来单位（土地流转费 + 管理费）
-(function initFlowData() {
+// 当没有持久化数据时，创建测试种子数据
+function initFlowData() {
   // 3 个 flow 类型单位
   const flowParties = [
     { id: 101, name: '绿野种植合作社', types: ['flow'], landMu: 120, landFeePerMuCents: 60000, expectedLandFeeCents: 7200000, mgmtFeePerMuCents: 6000, expectedMgmtFeeCents: 720000 },
@@ -267,10 +388,16 @@ function recordOp(operation, summary, effects) {
       createdAt: t.txnDate + 'T00:00:00Z', updatedAt: t.txnDate + 'T00:00:00Z',
     });
   }
-})();
+}
 
 // 把 CATEGORIES 加工成 SummaryPage 期望的 CategorySummary（带 currentBalanceCents / txnCount / incomeCents / expenseCents）
 function buildCategorySummary() {
+  // 按 categoryId 统计有效流水笔数
+  const txnCountMap = {};
+  for (const t of TRANSACTIONS) {
+    if (t.status === 'voided') continue;
+    txnCountMap[t.categoryId] = (txnCountMap[t.categoryId] || 0) + 1;
+  }
   return CATEGORIES.map(l1 => {
     const l1Children = (l1.children || []).map(l2 => ({
       id: l2.id,
@@ -279,7 +406,7 @@ function buildCategorySummary() {
       parentId: l2.parentId,
       kind: l2.kind,
       currentBalanceCents: l2.balanceCents || 0,
-      txnCount: Math.floor(Math.random() * 15) + 1,
+      txnCount: txnCountMap[l2.id] || 0,
       incomeCents: Math.max(0, l2.balanceCents || 0),
       expenseCents: Math.max(0, -(l2.balanceCents || 0)),
     }));
@@ -313,13 +440,12 @@ const SETTINGS = {
 // ========== 工具 ==========
 function sendJSON(res, status, data) {
   // 对齐 Go platform.OK: { "data": payload }
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': 'http://localhost:5173',
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.writeHead(status);
   res.end(JSON.stringify({ data }));
 }
 
@@ -353,6 +479,13 @@ function parseCookie(req) {
 
 // ========== 路由 ==========
 const server = http.createServer(async (req, res) => {
+  // 非 GET/OPTIONS 请求成功后自动保存数据到磁盘
+  res.on('finish', () => {
+    if (req.method !== 'GET' && req.method !== 'OPTIONS' && res.statusCode >= 200 && res.statusCode < 300) {
+      saveData();
+    }
+  });
+
   // CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -376,35 +509,66 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/health') return sendJSON(res, 200, { status: 'ok' });
 
     // 登录
-	    if (pathname === '/api/auth/login' && req.method === 'POST') {
-	      const body = await readBody(req);
-	      const u = body.username || '';
-	      const p = body.password || '';
-	      if (u !== TEST_ACCOUNT.username || p !== TEST_ACCOUNT.password) {
-	        return sendFail(res, 401, 'BAD_CREDENTIALS', '用户名或密码错误');
-	      }
-	      res.setHeader('Set-Cookie', 'session=mock_session; Path=/; HttpOnly; SameSite=Lax');
-	      recordOp('登录', '用户 ' + u + ' 登录系统', []);
-	      return sendJSON(res, 200, { user: { username: TEST_ACCOUNT.username } });
-	    }
+		    if (pathname === '/api/auth/login' && req.method === 'POST') {
+		      const body = await readBody(req);
+		      const u = body.username || '';
+		      const p = body.password || '';
+		      const user = REGISTERED_USERS.find(x => x.username === u && x.password === p);
+		      if (!user) {
+		        return sendFail(res, 401, 'BAD_CREDENTIALS', '用户名或密码错误');
+		      }
+		      currentSessionUser = user.username;
+		      res.setHeader('Set-Cookie', 'session=mock_session; Path=/; HttpOnly; SameSite=Lax');
+		      recordOp('登录', '用户 ' + u + ' 登录系统', []);
+		      return sendJSON(res, 200, { user: { username: u } });
+		    }
 	    if (pathname === '/api/auth/register' && req.method === 'POST') {
-	      const body = await readBody(req);
-	      const u = body.username || '';
-	      const p = body.password || '';
-	      if (u !== TEST_ACCOUNT.username || p !== TEST_ACCOUNT.password) {
-	        return sendFail(res, 401, 'BAD_CREDENTIALS', '测试账号固定为 admin / admin888');
-	      }
-	      res.setHeader('Set-Cookie', 'session=mock_session; Path=/; HttpOnly; SameSite=Lax');
-	      recordOp('注册组织', '注册组织 ' + body.orgName, [{ entity: '组织', desc: '创建组织「' + (body.orgName || '') + '」' }]);
-	      return sendJSON(res, 200, { user: { username: TEST_ACCOUNT.username } });
-	    }
+		      const body = await readBody(req);
+		      const u = body.username || '';
+		      const p = body.password || '';
+		      const org = body.orgName || '';
+		      if (!u || !p || !org) {
+		        return sendFail(res, 400, 'BAD_REQUEST', '组织名、账号、密码不能为空');
+		      }
+		      if (p.length < 6) {
+		        return sendFail(res, 400, 'PASSWORD_TOO_SHORT', '密码至少 6 位');
+		      }
+		      // 检查是否已有用户（单用户限制）
+		      if (REGISTERED_USERS.length > 0) {
+		        return sendFail(res, 403, 'REGISTRATION_CLOSED', '系统已注册，禁止重复注册');
+		      }
+		      // 检查账号是否已存在
+		      if (REGISTERED_USERS.some(x => x.username === u)) {
+		        return sendFail(res, 409, 'USERNAME_TAKEN', '该账号已被注册');
+		      }
+		      REGISTERED_USERS.push({ orgName: org, username: u, password: p });
+		      currentSessionUser = u;
+		      // 新组织注册，重置所有数据到初始状态（多组织隔离）
+		      resetMockData();
+		      res.setHeader('Set-Cookie', 'session=mock_session; Path=/; HttpOnly; SameSite=Lax');
+		      recordOp('注册组织', '注册组织 ' + org, [{ entity: '组织', desc: '创建组织「' + org + '」' }]);
+		      return sendJSON(res, 200, { user: { username: u } });
+		    }
 	    if (pathname === '/api/auth/logout' && req.method === 'POST') {
 	            res.setHeader('Set-Cookie', 'session=; Path=/; Max-Age=0');
 	      recordOp('登出', '用户登出', []);
 	      return sendJSON(res, 200, { ok: true });
 	    }
 
-    // 测试用：清空所有应收记录（放在鉴权之前，方便测试）
+	    // 重置密码（放在鉴权之前，无需登录）
+	    if (pathname === '/api/auth/reset-password' && req.method === 'POST') {
+	      const cur = REGISTERED_USERS.length > 0
+	        ? REGISTERED_USERS[REGISTERED_USERS.length - 1]
+	        : null;
+	      if (!cur) {
+	        return sendFail(res, 404, 'NO_USER', '系统中没有注册用户');
+	      }
+	      cur.password = 'admin888';
+	      recordOp('重置密码', '重置用户 ' + cur.username + ' 的密码为 admin888', [{ entity: '用户', entityId: cur.username, field: '密码', desc: '重置为默认密码' }]);
+	      return sendJSON(res, 200, { ok: true, message: '密码已重置为 admin888' });
+	    }
+
+	    // 测试用：清空所有应收记录（放在鉴权之前，方便测试）
 	    if (pathname === '/api/test/clear-receivables' && req.method === 'POST') {
 	      const oldCount = RECEIVABLES.length;
 	      RECEIVABLES.length = 0;
@@ -416,15 +580,47 @@ const server = http.createServer(async (req, res) => {
     // 鉴权检查
     const cookies = parseCookie(req); if (cookies.session !== 'mock_session') {
       // GET /categories 和 GET /me 在登录前也会被前端调用触发 checkLogin
-      if (pathname === '/api/categories' || pathname === '/api/me') {
+	      if (pathname === '/api/categories' || pathname === '/api/me' || pathname === '/api/auth/me') {
         return sendFail(res, 401, 'UNAUTHORIZED', '请先登录');
       }
       // 其他直接 fail
       return sendFail(res, 401, 'UNAUTHORIZED', '请先登录');
     }
 
-    // /api/me
-    if (pathname === '/api/me') return sendJSON(res, 200, { userID: 1, orgID: 1, orgName: '新庄村' });
+    // 修改密码（需登录后操作）
+	    if (pathname === '/api/auth/password' && req.method === 'PUT') {
+	      const body = await readBody(req);
+	      const cur = REGISTERED_USERS.find(x => x.username === currentSessionUser);
+	      if (!cur) {
+	        return sendFail(res, 404, 'NO_USER', '未找到当前用户');
+	      }
+	      if (body.oldPassword !== cur.password) {
+	        return sendFail(res, 400, 'BAD_CREDENTIALS', '原密码错误');
+	      }
+	      if (!body.newPassword || body.newPassword.length < 6) {
+	        return sendFail(res, 400, 'PASSWORD_TOO_SHORT', '新密码至少 6 位');
+	      }
+	      cur.password = body.newPassword;
+	      recordOp('修改密码', '用户 ' + cur.username + ' 修改密码', []);
+	      return sendJSON(res, 200, { ok: true });
+	    }
+
+	    // /api/me 和 /api/auth/me（引导页用 /auth/me）
+	    if (pathname === '/api/me' || pathname === '/api/auth/me') {
+	      const cur = REGISTERED_USERS.find(x => x.username === currentSessionUser);
+	      return sendJSON(res, 200, { userID: 1, orgID: 1, orgName: cur ? cur.orgName : '默认组织' });
+	    }
+
+	    // 系统重置：清空所有业务数据，保留预置科目，退出到登录页
+	    if (pathname === '/api/system/reset' && req.method === 'POST') {
+	      resetMockData();
+	      // 清空所有用户（包括默认 admin），强制重新注册
+	      REGISTERED_USERS.length = 0;
+	      currentSessionUser = '';
+	      // 清除会话
+	      res.setHeader('Set-Cookie', 'session=; Path=/; Max-Age=0');
+	      return sendJSON(res, 200, { ok: true, message: '系统已重置，请重新注册' });
+	    }
 
     // categories
 	    if (pathname === '/api/categories') {
@@ -607,14 +803,6 @@ const server = http.createServer(async (req, res) => {
 		        return sendJSON(res, 200, { ok: true });
 		      }
 		    }
-
-    // transfers
-    if (pathname === '/api/transfers') {
-      if (req.method === 'GET') return sendJSON(res, 200, { items: TRANSFERS, total: TRANSFERS.length });
-    }
-    if (pathname.startsWith('/api/transfers/')) {
-      if (req.method === 'PUT') return sendJSON(res, 200, { ok: true });
-    }
 
     // summary
     if (pathname === '/api/summary') {
@@ -1070,57 +1258,9 @@ const server = http.createServer(async (req, res) => {
 	      recordOp('年度结转', year + '年度结转: 创建 ' + created + ' 条, 跳过 ' + skipped + ' 条', createdDetails);
 	      return sendJSON(res, 200, { created, skipped });
 	    }
-    // fund-moves
-		    if (pathname === '/api/fund-moves') {
-		      if (req.method === 'GET') return sendJSON(res, 200, FUND_MOVES);
-		      if (req.method === 'POST') {
-		        const body = await readBody(req);
-		        const dir = body.direction; // 'invest' 投资(银行→资产), 'recover' 收回(资产→银行)
-		        const amt = body.amountCents || 0;
-		        if (amt <= 0) return sendFail(res, 400, 'BAD_REQUEST', '金额必须大于 0');
-		        const newId = FUND_MOVES.length ? Math.max(...FUND_MOVES.map(f => f.id)) + 1 : 1;
-		        const fm = {
-		          id: newId,
-		          direction: dir,
-		          amountCents: amt,
-		          partyId: body.partyId || null,
-		          note: body.note || '',
-		          status: 'normal',
-		          createdAt: new Date().toISOString(),
-		          updatedAt: new Date().toISOString(),
-		        };
-		        FUND_MOVES.push(fm);
-		        const dirLabel = dir === 'invest' ? '投资' : '收回';
-		        recordOp('资金划转', dirLabel + ' ¥' + (amt/100).toFixed(2), [
-		          { entity: '资金划转', entityId: fm.id, field: '方向', newValue: dirLabel, desc: dirLabel + ' ¥' + (amt/100).toFixed(2) },
-		          { entity: '银行存款', field: '余额', desc: '银行存款' + (dir === 'invest' ? ' -' : ' +') + '¥' + (amt/100).toFixed(2) },
-		          { entity: '资产科目', field: '余额', desc: '资产科目余额' + (dir === 'invest' ? ' +' : ' -') + '¥' + (amt/100).toFixed(2) },
-		        ]);
-		        return sendJSON(res, 200, fm);
-		      }
-		    }
-		    if (pathname.startsWith('/api/fund-moves/')) {
-		      const id = parseInt(pathname.split('/').pop(), 10);
-		      const fm = FUND_MOVES.find(f => f.id === id);
-		      if (!fm) return sendFail(res, 404, 'NOT_FOUND', '资金划转记录不存在');
-		      if (req.method === 'PUT') {
-		        const body = await readBody(req);
-		        if (body.status === 'voided') {
-		          const oldStatus = fm.status;
-		          fm.status = 'voided';
-		          fm.updatedAt = new Date().toISOString();
-		          recordOp('作废资金划转', '作废资金划转#' + fm.id, [
-		            { entity: '资金划转', entityId: fm.id, field: '状态', oldValue: oldStatus, newValue: 'voided', desc: '状态: ' + oldStatus + ' → voided' },
-		            { entity: '银行存款', field: '余额', desc: '回滚银行存款' + (fm.direction === 'invest' ? ' +' : ' -') + '¥' + (fm.amountCents/100).toFixed(2) },
-		            { entity: '资产科目', field: '余额', desc: '回滚资产科目余额' + (fm.direction === 'invest' ? ' -' : ' +') + '¥' + (fm.amountCents/100).toFixed(2) },
-		          ]);
-		        }
-		        return sendJSON(res, 200, fm);
-		      }
-		    }
 
-    // GET /api/reinvest-allocations
-    if (pathname === '/api/reinvest-allocations' && req.method === 'GET') {
+	    // GET /api/reinvest-allocations
+		    if (pathname === '/api/reinvest-allocations' && req.method === 'GET') {
       return sendJSON(res, 200, REINVEST_ALLOCATIONS);
     }
 
@@ -1186,6 +1326,13 @@ const server = http.createServer(async (req, res) => {
 // 被 require 时导出数据，直接运行时启 server
 if (require.main === module) {
   const PORT = parseInt(process.env.PORT, 10) || 8080;
+  // 尝试加载持久化数据，没有则用种子数据初始化
+  if (!loadSavedData()) {
+    initFlowData();
+    console.log('未找到持久化数据，使用种子数据初始化');
+  } else {
+    console.log('已加载持久化数据');
+  }
   server.listen(PORT, () => {
     console.log(`🟢 Mock API Server 运行中: http://localhost:${PORT}`);
     console.log(`   测试账号: ${TEST_ACCOUNT.username} / ${TEST_ACCOUNT.password}`);

@@ -101,7 +101,29 @@ func buildRouter(a *app) *gin.Engine {
 	category.NewHandler(a.db).Register(authed)
 	transaction.NewHandler(a.db).Register(authed)
 	summary.NewHandler(a.db).Register(authed)
-	transfer.NewHandler(a.db).Register(authed)
+	// 系统重置：清空所有业务数据，保留预置科目，退出到登录页
+		authed.POST("/api/system/reset", func(c *gin.Context) {
+			var tables = []string{
+				"transaction", "receivable", "receivable_detail",
+				"distribution_532", "reinvest_allocation", "contract",
+				"operation_log", "changelog",
+			}
+			for _, t := range tables {
+				_, _ = a.db.Exec("DELETE FROM " + t)
+			}
+			// 重置科目余额
+			_, _ = a.db.Exec("UPDATE category SET balance_cents = 0, opening_balance_cents = 0 WHERE level = 2")
+			// 重置设置
+			_, _ = a.db.Exec("UPDATE settings SET bank_opening_balance_cents = 0, reinvest_ratio_bps = 0")
+			// 删除所有非预置单位（自动创建的 L2 科目由单位删除联动清除）
+			_, _ = a.db.Exec("DELETE FROM party WHERE preset = 0")
+			// 清除会话
+			_, _ = a.db.Exec("DELETE FROM session")
+			// 删除所有用户（包括默认 admin），强制重新注册
+			_, _ = a.db.Exec("DELETE FROM user")
+			_, _ = a.db.Exec("DELETE FROM org")
+			platform.OK(c, gin.H{"ok": true, "message": "系统已重置，请重新注册"})
+		})
 	fundmove.NewHandler(a.db).Register(authed)
 	receivable.NewHandler(a.db).Register(authed)
 	settings.NewHandler(a.db).Register(authed)

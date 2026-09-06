@@ -26,6 +26,7 @@ var (
 	ErrInvalidOrgName     = errors.New("请填写组织名称")
 	ErrInvalidPassword    = errors.New("密码至少 6 位")
 	ErrOldPasswordWrong   = errors.New("原密码错误")
+	ErrRegistrationClosed = errors.New("系统已注册，禁止重复注册")
 )
 
 const (
@@ -60,6 +61,15 @@ func (s *Service) RegisterOrg(orgName, username, password string) (string, time.
 	}
 	if len(password) < MinPasswordLen {
 		return "", time.Time{}, ErrInvalidPassword
+	}
+
+	// 单用户限制：已有用户则禁止重复注册
+	n, err := s.repo.CountUsers()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if n > 0 {
+		return "", time.Time{}, ErrRegistrationClosed
 	}
 
 	// 用户名预检，给出友好错误（唯一索引兜底）
@@ -153,6 +163,25 @@ func (s *Service) Logout(token string) error {
 		return nil
 	}
 	return s.repo.DeleteSession(token)
+}
+
+// ResetPassword 将系统中任意用户的密码重置为 admin888（忘记密码）。
+func (s *Service) ResetPassword() (string, error) {
+	u, err := s.repo.FindAnyUser()
+	if err != nil {
+		return "", err
+	}
+	if u == nil {
+		return "", errors.New("系统中没有注册用户")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin888"), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.UpdatePassword(u.ID, string(hash)); err != nil {
+		return "", err
+	}
+	return u.Username, nil
 }
 
 // ChangePassword 校验原口令后更新新口令哈希（修改密码）。
