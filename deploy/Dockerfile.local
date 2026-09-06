@@ -1,0 +1,35 @@
+# 本地构建用 Dockerfile（COPY 本地源码，适用于本地 build && push 到 Docker Hub）
+# 用法：
+#   docker build -f deploy/Dockerfile.local -t jititaizhang:latest .
+#   docker tag jititaizhang:latest 你的用户名/jititaizhang:latest
+#   docker push 你的用户名/jititaizhang:latest
+
+# ===== Stage 1: 前端构建 =====
+FROM node:20-alpine AS frontend
+WORKDIR /build/web
+COPY web/package.json web/package-lock.json ./
+RUN npm install --no-audit --no-fund
+COPY web/ .
+RUN npm run build
+
+# ===== Stage 2: Go 静态编译 =====
+FROM golang:alpine AS builder
+WORKDIR /build
+COPY server/go.mod server/go.sum ./server/
+RUN cd server && go mod download
+COPY --from=frontend /build/web/dist ./server/cmd/server/web/
+COPY server/ ./server/
+RUN cd server && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /jititaizhang ./cmd/server
+
+# ===== Stage 3: 运行 =====
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /jititaizhang /jititaizhang
+EXPOSE 8080
+VOLUME ["/data", "/backups"]
+ENV APP_PORT=8080 \
+    DATA_DIR=/data \
+    APP_BACKUP_DIR=/backups \
+    APP_KEEP_BACKUP=30 \
+    APP_AUTO_BACKUP=1
+ENTRYPOINT ["/jititaizhang"]
