@@ -25,7 +25,7 @@
         <span class="side-nav-icon">🚪</span>
         <span>退出</span>
       </a>
-      <div class="side-version">v0.7.0</div>
+      <div class="side-version">v0.8.0</div>
     </div>
   </nav>
 </template>
