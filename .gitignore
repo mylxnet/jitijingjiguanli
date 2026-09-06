@@ -1,6 +1,7 @@
 # 环境与密钥
 .env
 *.env
+gitee_token.txt
 cookies.txt
 
 # 数据与备份

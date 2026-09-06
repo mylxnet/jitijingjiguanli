@@ -1,8 +1,11 @@
 services:
   jititaizhang:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
+      # 通过 BuildKit 密钥传递 Gitee 私人令牌
+      secrets:
+        - gitee_token
     image: jititaizhang:latest
     restart: unless-stopped
     ports:
@@ -16,9 +19,13 @@ services:
       - APP_BACKUP_DIR=/backups
       - APP_KEEP_BACKUP=${APP_KEEP_BACKUP:-30}
       - APP_AUTO_BACKUP=${APP_AUTO_BACKUP:-1}
-    # 健康检查
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+# 定义构建密钥（不会留在镜像中）
+secrets:
+  gitee_token:
+    file: ./gitee_token.txt
