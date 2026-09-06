@@ -1,0 +1,28 @@
+name: 构建并推送到 Docker Hub
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+
+      - name: 登录 Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: 构建 Docker 镜像
+        run: |
+          docker build -f deploy/Dockerfile.local \
+            -t mylxnet/jititaizhang:latest \
+            -t mylxnet/jititaizhang:${{ GITEE_BRANCH }}-${{ GITEE_COMMIT_SHORT_ID }} \
+            -t mylxnet/jititaizhang:${{ GITEE_TIMESTAMP }} \
+            .
+
+      - name: 推送到 Docker Hub
+        run: |
+          docker push mylxnet/jititaizhang:latest
+          docker push mylxnet/jititaizhang:${{ GITEE_BRANCH }}-${{ GITEE_COMMIT_SHORT_ID }}
+          docker push mylxnet/jititaizhang:${{ GITEE_TIMESTAMP }}
