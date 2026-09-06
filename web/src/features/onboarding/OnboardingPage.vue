@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   引导页（Onboarding）— 新版按类型分步
   7 步：①流转企业 → ②流转企业余额 → ③投资公司 → ④投资公司余额 → ⑤再投资 → ⑥再投资余额 → ⑦其他设置+预览
   完成后写 localStorage: jt_onboarding_done_{orgId}
@@ -46,7 +46,6 @@ const bankOpening = ref('')
 const skipThisStep = ref(false)
 
 // 本地表单
-const editingParty = ref<Party | null>(null)
 const showPartyForm = ref(false)
 const partyForm = ref({ name: '' })
 
@@ -79,26 +78,20 @@ function getPartiesByType(t: string): Party[] {
     return (types as string[]).includes(t)
   })
 }
-function findOrCreateL2(l1Name: string, l2Name: string): Category | null {
+async function findOrCreateL2(l1Name: string, l2Name: string): Promise<Category | null> {
   const l1 = findL1(l1Name)
   if (!l1) return null
   const exist = l1.children?.find(c => c.name === l2Name)
   if (exist) return exist
   // 通过 HTTP POST 新建
-  api.post('/categories', { name: l2Name, level: 2, parentId: l1.id, kind: 'equity' })
-    .then(() => loadCats())
+  await api.post('/categories', { name: l2Name, level: 2, parentId: l1.id, kind: 'equity' })
+  await loadCats()
   return null
 }
 
 // ========== Step: add-party ==========
 function openNewParty() {
-  editingParty.value = null
   partyForm.value = { name: '' }
-  showPartyForm.value = true
-}
-function editParty(p: Party) {
-  editingParty.value = p
-  partyForm.value = { name: p.name }
   showPartyForm.value = true
 }
 async function saveParty() {
@@ -106,28 +99,20 @@ async function saveParty() {
   if (!name) return
   const t = currentStep.value.partyType!
   try {
-    if (editingParty.value) {
-      await api.put(`/parties/${editingParty.value.id}`, { name })
-    } else {
-      await api.post('/parties', { name, types: [t] })
-      // 自动在所有关联 L1 下建同名 L2
-      for (const l1Name of TYPE_TO_L1S[t]) {
-        findOrCreateL2(l1Name, name)
-      }
-    }
+    await api.post('/parties', { name, types: [t] })
+    // 服务器端自动在关联 L1 下建同名 L2，无需前端重复创建
     showPartyForm.value = false
     await loadParties()
     await loadCats()
   } catch (e: any) {
-    alert('保存失败：' + (e.message || e))
+    if (e?.status === 409 && e?.response?.code === 'DUPLICATE_NAME') {
+      const dupes = e.response.dupes || []
+      const names = dupes.map((d: any) => d.name).join('、')
+      alert('存在重名单位：' + names + '\n\n请修改单位名称后重试。')
+    } else {
+      alert('保存失败：' + (e.message || e))
+    }
   }
-}
-async function deleteParty(p: Party) {
-  if (!confirm('确认删除？')) return
-  try {
-    await api.del(`/parties/${p.id}`)
-    await loadParties()
-  } catch (e: any) { alert('删除失败：' + (e.message || e)) }
 }
 
 // ========== Step: fill-balance ==========
@@ -178,7 +163,7 @@ const previewBalances = computed(() => {
 async function onConfirm() {
   // 1. 更新银行期初
   if (previewBank.value > 0) {
-    await api.put('/settings', { bankBalanceCents: Math.round(previewBank.value * 100) })
+    await api.put('/settings', { bankOpeningBalanceCents: Math.round(previewBank.value * 100) })
   }
   // 2. 更新所有填了余额的 L2
   for (const [idStr, yuanStr] of Object.entries(openingInputs.value)) {
@@ -248,8 +233,6 @@ async function skipToHome() {
               <span v-for="t in (p.types || [(p as any).type].filter(Boolean))" :key="t" class="ob-type-tag">{{ t === 'flow' ? '流转企业' : t === 'invest' ? '投资公司' : '再投资' }}</span>
             </div>
             <div class="ob-pactions">
-              <button class="btn-mini" @click="editParty(p)">编辑</button>
-              <button class="btn-mini danger" @click="deleteParty(p)">删除</button>
             </div>
           </div>
         </div>
@@ -342,7 +325,7 @@ async function skipToHome() {
   <!-- ========== 新增/编辑往来单位弹窗（简化：只有名称，类型由当前步骤决定） ========== -->
   <div v-if="showPartyForm" class="ob-modal-mask" @click.self="showPartyForm = false">
     <div class="ob-modal">
-      <div class="ob-modal-title">{{ editingParty ? '编辑' : '新增' }}{{ currentStep.partyType === 'flow' ? '流转企业' : currentStep.partyType === 'invest' ? '投资公司' : '再投资' }}</div>
+      <div class="ob-modal-title">新增{{ currentStep.partyType === 'flow' ? '流转企业' : currentStep.partyType === 'invest' ? '投资公司' : '再投资' }}</div>
       <div class="ob-modal-field">
         <label>名称</label>
         <input v-model="partyForm.name" class="ob-form-input" placeholder="公司/合作社/农户全称" />

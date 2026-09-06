@@ -162,7 +162,7 @@
     <!-- 编辑/详情弹窗 -->
     <van-popup v-model:show="showEditDialog" :position="popupPos()" round closeable style="max-height: 90vh">
       <div class="edit-popup">
-        <div class="edit-title">{{ editTransfer ? '转账详情' : '编辑流水' }}</div>
+        <div class="edit-title">{{ editTransfer ? '转账详情' : '流水详情' }}</div>
 
         <!-- 转账详情（只读） -->
         <template v-if="editTransfer">
@@ -205,75 +205,19 @@
           </div>
         </template>
 
-        <!-- 编辑流水 -->
-        <template v-else>
-          <van-form @submit="handleSaveEdit">
-            <van-field
-              v-model="editForm.date"
-              label="日期"
-              placeholder="YYYY-MM-DD"
-              :rules="[{ required: true, message: '请填写日期' }]"
-            />
-            <van-field
-              v-model="editForm.note"
-              label="摘要"
-              placeholder="买了什么、给了谁（可选）"
-            />
-            <van-field
-              v-model="editForm.categoryName"
-              is-link
-              readonly
-              label="科目"
-              placeholder="请选择科目"
-              :rules="[{ required: true, message: '请选择科目' }]"
-              @click="showEditCategoryPicker = true"
-              class="mobile-field"
-            />
-            <div class="desktop-field">
-              <span class="d-label">科目</span>
-              <select v-model="editForm.categoryId" class="d-select" @change="onEditCatNativeChange">
-                <option :value="0" disabled>请选择科目</option>
-                <option v-for="opt in categoryOptions" :key="opt.value" :value="opt.value">{{ opt.text }}</option>
-              </select>
-            </div>
-            <van-popup v-model:show="showEditCategoryPicker" :position="popupPos()">
-              <van-picker
-                :columns="categoryOptions"
-                @confirm="onEditCategoryConfirm"
-                @cancel="showEditCategoryPicker = false"
-              />
-            </van-popup>
-            <van-field
-              v-model="editForm.amount"
-              label="金额"
-              type="number"
-              placeholder="0.00"
-              :rules="[
-                { required: true, message: '请填写金额' },
-                { validator: editValidateAmount, message: '金额必须大于 0' }
-              ]"
-            />
-            <div class="edit-direction-toggle">
-              <van-button
-                :type="editForm.direction === 'income' ? 'primary' : 'default'"
-                size="small"
-                @click="editForm.direction = 'income'"
-              >收入</van-button>
-              <van-button
-                :type="editForm.direction === 'expense' ? 'primary' : 'default'"
-                size="small"
-                @click="editForm.direction = 'expense'"
-              >支出</van-button>
-            </div>
-            <div style="margin: 16px">
-              <van-button round block type="primary" native-type="submit" :loading="savingEdit">
-                保存修改
-              </van-button>
-            </div>
-          </van-form>
+        <!-- 流水详情（只读，仅可作废） -->
+        <template v-else-if="editTransaction">
+          <van-cell-group inset>
+            <van-cell title="日期" :value="editTransaction.txnDate" />
+            <van-cell title="类型" :value="editTransaction.direction === 'income' ? '收入' : '支出'" />
+            <van-cell title="科目" :value="categoryName(editTransaction.categoryId)" />
+            <van-cell title="金额" :value="formatFen(editTransaction.amountCents ?? 0)" />
+            <van-cell title="摘要" :value="editTransaction.note || '-'" />
+            <van-cell title="状态" :value="editTransaction.status === 'normal' ? '正常' : '已作废'" />
+          </van-cell-group>
           <div class="edit-actions">
             <van-button
-              v-if="editTransaction && editTransaction.status === 'normal'"
+              v-if="editTransaction.status === 'normal'"
               type="danger"
               plain
               round
@@ -281,7 +225,7 @@
               @click="handleVoidTransaction"
             >作废此流水</van-button>
             <van-button
-              v-else-if="editTransaction && editTransaction.status === 'voided'"
+              v-else-if="editTransaction.status === 'voided'"
               type="primary"
               plain
               round
@@ -667,39 +611,11 @@ async function handleExport(format: 'csv' | 'xlsx') {
 
 // ---- 编辑弹窗 ----
 const showEditDialog = ref(false)
-const savingEdit = ref(false)
-const showEditCategoryPicker = ref(false)
 
 const editTransaction = ref<Transaction | null>(null)
 const editTransfer = ref<TransferItem | null>(null)
 const editChangelog = ref<ChangeLogItem[]>([])
 const editTransferChangelog = ref<ChangeLogItem[]>([])
-
-const editForm = ref({
-  date: '',
-  note: '',
-  categoryName: '',
-  categoryId: 0,
-  amount: '',
-  direction: 'expense' as 'income' | 'expense',
-})
-
-const categoryOptions = computed(() => {
-  const options: { text: string; value: number }[] = []
-  for (const l1 of categories.value) {
-    if (l1.children) {
-      for (const l2 of l1.children) {
-        if (l2.status === 'active' && l2.kind === 'equity') {
-          options.push({
-            text: `${l1.name} / ${l2.name}`,
-            value: l2.id,
-          })
-        }
-      }
-    }
-  }
-  return options
-})
 
 async function openEdit(item: MergedRow) {
   if (item._type === 'transaction') {
@@ -707,14 +623,6 @@ async function openEdit(item: MergedRow) {
     if (!txn) return
     editTransaction.value = txn
     editTransfer.value = null
-    editForm.value = {
-      date: txn.txnDate,
-      note: txn.note || '',
-      categoryName: categoryName(txn.categoryId),
-      categoryId: txn.categoryId,
-      amount: (txn.amountCents / 100).toFixed(2),
-      direction: txn.direction,
-    }
     await loadChangelog('transaction', txn.id)
   } else {
     const trf = transfers.value.find(t => `trf-${t.id}` === item._key)
@@ -741,60 +649,6 @@ async function loadChangelog(entityType: string, entityId: number) {
     } else {
       editTransferChangelog.value = []
     }
-  }
-}
-
-function onEditCategoryConfirm({ selectedOptions }: any) {
-  const opt = selectedOptions[0]
-  if (opt) {
-    editForm.value.categoryName = opt.text
-    editForm.value.categoryId = opt.value
-  }
-  showEditCategoryPicker.value = false
-}
-
-// 桌面端：科目改为原生下拉后同步显示名
-function onEditCatNativeChange() {
-  const opt = categoryOptions.value.find(o => o.value === editForm.value.categoryId)
-  editForm.value.categoryName = opt ? opt.text : ''
-}
-
-function editValidateAmount(val: string): boolean {
-  const num = parseFloat(val)
-  return !isNaN(num) && num > 0
-}
-
-async function handleSaveEdit() {
-  if (!editTransaction.value) return
-  const txn = editTransaction.value
-  const amountFen = Math.round(parseFloat(editForm.value.amount) * 100)
-  if (amountFen <= 0) {
-    showToast('金额必须大于 0')
-    return
-  }
-
-  savingEdit.value = true
-  try {
-    const body: Record<string, any> = {}
-    if (editForm.value.date !== txn.txnDate) body.date = editForm.value.date
-    if (editForm.value.direction !== txn.direction) body.direction = editForm.value.direction
-    if (amountFen !== txn.amountCents) body.amountCents = amountFen
-    if (editForm.value.categoryId !== txn.categoryId) body.categoryId = editForm.value.categoryId
-    if (editForm.value.note !== (txn.note || '')) body.note = editForm.value.note
-
-    if (Object.keys(body).length === 0) {
-      showToast('没有修改')
-      return
-    }
-
-    await api.put(`/transactions/${txn.id}`, body)
-    showToast('修改成功')
-    showEditDialog.value = false
-    await loadData()
-  } catch (e: any) {
-    showToast(e.message || '修改失败')
-  } finally {
-    savingEdit.value = false
   }
 }
 

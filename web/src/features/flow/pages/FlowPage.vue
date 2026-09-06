@@ -111,12 +111,12 @@
           <div class="fp-stat-value" style="color:#07c160">{{ fmt(svcStats.paid) }}</div>
         </div>
         <div class="fp-stat">
-          <div class="fp-stat-label">未收</div>
-          <div class="fp-stat-value" style="color:#ee0a24">{{ fmt(svcStats.unpaid) }}</div>
+          <div class="fp-stat-label">已支出</div>
+          <div class="fp-stat-value" style="color:#ff6034">{{ fmt(svcExpenseTotal) }}</div>
         </div>
         <div class="fp-stat">
-          <div class="fp-stat-label">剩余</div>
-          <div class="fp-stat-value" :style="{color: svcRemaining >= 0 ? '#1989fa' : '#ee0a24'}">{{ fmt(svcRemaining) }}</div>
+          <div class="fp-stat-label">可支出</div>
+          <div class="fp-stat-value" :style="{color: svcAvailable >= 0 ? '#1989fa' : '#ee0a24'}">{{ fmt(svcAvailable) }}</div>
         </div>
       </div>
 
@@ -189,6 +189,7 @@ const props = defineProps<{ activeTab: string }>()
 const parties = ref<any[]>([])
 const allReceivables = ref<Receivable[]>([])
 const allTransactions = ref<Transaction[]>([])
+const allCategories = ref<any[]>([])
 
 const START_YEAR = 2026
 const yearOptions = computed(() => {
@@ -268,8 +269,16 @@ const svcExpenses = computed(() =>
   allTransactions.value.filter(t => t.categoryId === 85 && t.direction === 'expense' && t.txnDate?.startsWith(String(svcYear.value)))
 )
 
-const svcRemaining = computed(() => {
-  return svcStats.value.paid - svcExpenses.value.reduce((s, t) => s + t.amountCents, 0)
+const svcExpenseTotal = computed(() =>
+  svcExpenses.value.reduce((s, t) => s + t.amountCents, 0)
+)
+
+const svcAvailable = computed(() => {
+  // 流转管理费科目（id: 7）的余额 = 累计收入 - 累计支出
+  const mgmtFeeCat = allCategories.value.find((c: any) => c.id === 7)
+  if (!mgmtFeeCat) return 0
+  const childrenBalance = (mgmtFeeCat.children || []).reduce((s: number, c: any) => s + (c.balanceCents || 0), 0)
+  return childrenBalance - svcExpenseTotal.value
 })
 
 function onSvcYearChange() {
@@ -300,14 +309,16 @@ function exportCSV(tab: string) {
 
 async function load() {
   try {
-    const [recvR, txnR] = await Promise.all([
+    const [recvR, txnR, catR] = await Promise.all([
       api.get<{ data: { items: Receivable[] } } | { items: Receivable[] }>('/receivables'),
       api.get<{ data: { items: Transaction[] } } | { items: Transaction[] }>('/transactions'),
+      api.get<any[]>('/categories'),
     ])
     const recvItems = (recvR as any)?.data?.items || (recvR as any)?.items || []
     const txnItems = (txnR as any)?.data?.items || (txnR as any)?.items || []
     allReceivables.value = Array.isArray(recvItems) ? recvItems : []
     allTransactions.value = Array.isArray(txnItems) ? txnItems : []
+    allCategories.value = Array.isArray(catR) ? catR : (catR as any)?.data || []
   } catch (e) {
     console.error('load error', e)
   }

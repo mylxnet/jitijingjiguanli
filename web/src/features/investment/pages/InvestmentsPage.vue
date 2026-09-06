@@ -255,35 +255,38 @@
   <!-- 532分配弹窗 -->
     <van-dialog
       v-model:show="showDistDialog"
-      title="532分配数据"
-      show-cancel-button
-      confirm-button-text="确认分配"
-      @confirm="confirmDist"
+      :title="distLocked ? '532分配数据（已锁定）' : '532分配数据'"
+      :show-cancel-button="!distLocked"
+      :confirm-button-text="distLocked ? '关闭' : '确认分配'"
+      @confirm="distLocked ? (showDistDialog = false) : confirmDist()"
       @cancel="showDistDialog = false"
       class="dist-dialog"
     >
       <div class="dist-dialog-body">
         <div class="dist-dialog-year">{{ distYear }} 年度</div>
-        <div class="dist-dialog-hint">投资收益总余额 {{ fmt(distTotalIncome) }}，已分配 {{ fmt(totalAllocated) }}，剩余可分配 {{ fmt(remainingTotal) }}。按剩余可分配的 50%/30%/20% 生成初始方案，可手动修改</div>
+        <div v-if="distLocked" class="dist-dialog-lock">
+          该方案已有支出记录，无法修改
+        </div>
+        <div class="dist-dialog-hint">{{ distLocked ? '查看已分配的方案数据' : ('投资收益总余额 ' + fmt(distTotalIncome) + '，已分配 ' + fmt(totalAllocated) + '，剩余可分配 ' + fmt(remainingTotal) + '。按剩余可分配的 50%/30%/20% 生成初始方案，可手动修改') }}</div>
         <div class="dist-dialog-fields">
           <div class="dist-dialog-field">
             <label>再投资（50%）</label>
             <div class="dist-input-wrap">
-              <input type="number" class="dist-input" v-model.number="distForm.reinvest" />
+              <input type="number" class="dist-input" :class="{ readonly: distLocked }" v-model.number="distForm.reinvest" :readonly="distLocked" />
               <span class="dist-input-unit">元</span>
             </div>
           </div>
           <div class="dist-dialog-field">
             <label>分红福利（30%）</label>
             <div class="dist-input-wrap">
-              <input type="number" class="dist-input" v-model.number="distForm.dividend" />
+              <input type="number" class="dist-input" :class="{ readonly: distLocked }" v-model.number="distForm.dividend" :readonly="distLocked" />
               <span class="dist-input-unit">元</span>
             </div>
           </div>
           <div class="dist-dialog-field">
             <label>管理公益（20%）</label>
             <div class="dist-input-wrap">
-              <input type="number" class="dist-input" v-model.number="distForm.welfare" />
+              <input type="number" class="dist-input" :class="{ readonly: distLocked }" v-model.number="distForm.welfare" :readonly="distLocked" />
               <span class="dist-input-unit">元</span>
             </div>
           </div>
@@ -441,6 +444,7 @@ const distExpenses = ref<DistExpense[]>([])
 
 // 分配弹窗
 const showDistDialog = ref(false)
+const distLocked = ref(false)
 const distForm = ref({ reinvest: 0, dividend: 0, welfare: 0 })
 
 // 投资收益总余额（累计的，所有可分配资金）
@@ -503,17 +507,32 @@ async function onDistYearChange() {
 }
 
 function openDistDialog() {
-  const remaining = remainingTotal.value  // 用剩余可分配金额生成方案
-  const remainingYuan = Math.round(remaining / 100)
-  distForm.value = {
-    reinvest: Math.round(remainingYuan * 0.5),
-    dividend: Math.round(remainingYuan * 0.3),
-    welfare: remainingYuan - Math.round(remainingYuan * 0.5) - Math.round(remainingYuan * 0.3),
+  // 如果已存在支出记录，方案锁定不可编辑
+  if (distExpenses.value.length > 0) {
+    // 填充现有方案数据用于展示
+    if (distData.value) {
+      distForm.value = {
+        reinvest: Math.round(distData.value.reinvestCents / 100),
+        dividend: Math.round(distData.value.dividendCents / 100),
+        welfare: Math.round(distData.value.welfareCents / 100),
+      }
+    }
+    distLocked.value = true
+  } else {
+    distLocked.value = false
+    const remaining = remainingTotal.value
+    const remainingYuan = Math.round(remaining / 100)
+    distForm.value = {
+      reinvest: Math.round(remainingYuan * 0.5),
+      dividend: Math.round(remainingYuan * 0.3),
+      welfare: remainingYuan - Math.round(remainingYuan * 0.5) - Math.round(remainingYuan * 0.3),
+    }
   }
   showDistDialog.value = true
 }
 
 async function confirmDist() {
+  if (distLocked.value) { showDistDialog.value = false; return }
   const totalYuan = distFormTotal.value
   const remainingYuan = Math.round(remainingTotal.value / 100)
   if (totalYuan > remainingYuan) {
@@ -537,8 +556,8 @@ async function confirmDist() {
   }
 }
 
-// 532分配支出记账
-const CATEGORY_MAP: Record<string, number> = { '再投资': 3, '成员分红': 82, '公益支出': 84 }
+// 532分配支出记账（统一走快速记账模板）
+const CATEGORY_MAP: Record<string, string> = { '再投资': '再投资', '成员分红': '成员分红', '公益支出': '公益支出' }
 const showRecordDialog = ref(false)
 const recordForm = ref({ category: '', amount: 0, date: todayStr(), note: '', partyId: null as number | null })
 const recordSaving = ref(false)
@@ -550,8 +569,8 @@ const RECORD_TITLES: Record<string, string> = {
 }
 const RECORD_DEFAULT_NOTES: Record<string, string> = {
   '再投资': '',
-  '成员分红': '成员分红分配发放',
-  '公益支出': '公益支出',
+  '成员分红': '532-成员分配发放',
+  '公益支出': '532-公益支出',
 }
 const recordTitle = computed(() => RECORD_TITLES[recordForm.value.category] || '532支出记账')
 
@@ -567,6 +586,17 @@ const reinvestPartyOptions = computed(() => {
 function partyNameById(id: number | null | undefined): string {
   if (!id) return ''
   return parties.value.find(p => p.id === id)?.name || ''
+}
+
+function findEquityCat(name: string): any {
+  for (const l1 of categories.value) {
+    if (l1.children) {
+      for (const l2 of l1.children) {
+        if (l2.kind === 'equity' && l2.name === name) return l2
+      }
+    }
+  }
+  return null
 }
 
 async function ensureL2InL1(l1Name: string, l2Name: string) {
@@ -589,7 +619,7 @@ function recordDistExpense(cat: string) {
 }
 function onReinvestPartyChange() {
   const name = partyNameById(recordForm.value.partyId)
-  recordForm.value.note = name ? `${name}—再投资` : ''
+  recordForm.value.note = name ? `${name}—再投资` : '532-再投资'
 }
 async function confirmRecord() {
   if (!recordForm.value.amount || recordForm.value.amount <= 0) { alert('请输入有效金额'); return }
@@ -603,29 +633,31 @@ async function confirmRecord() {
     let note = recordForm.value.note || recordForm.value.category
 
     if (isReinvest) {
+      // 走快速记账 532-再投资 模板逻辑：在再投资L1下建单位名L2
       const partyName = partyNameById(recordForm.value.partyId)
       const l2 = await ensureL2InL1('再投资', partyName)
       categoryId = l2.id
-      // 使用用户在备注栏填入的内容
       note = recordForm.value.note || `${partyName}—再投资`
     } else {
-      const catId = CATEGORY_MAP[recordForm.value.category]
-      if (!catId) { alert('未知支出类别'); return }
-      categoryId = catId
+      // 走快速记账 成员分红/公益支出 模板逻辑：按名称查找科目
+      const catName = CATEGORY_MAP[recordForm.value.category]
+      if (!catName) { alert('未知支出类别'); return }
+      const cat = findEquityCat(catName)
+      if (!cat) { alert(`缺少科目：${catName}`); return }
+      categoryId = cat.id
     }
 
     await api.post('/transactions', {
       direction: 'expense',
       amountCents: Math.round(recordForm.value.amount * 100),
       categoryId,
-      categoryName: recordForm.value.category,
       txnDate: recordForm.value.date,
       note,
       partyId: isReinvest ? recordForm.value.partyId : null,
       status: 'normal',
     })
     showRecordDialog.value = false
-    alert('记账成功')
+    alert('记账成功（快速记账模板）')
     await loadDist(distYear.value)
   } catch (e: any) {
     alert('记账失败：' + (e?.message || '未知错误'))
@@ -738,6 +770,7 @@ onMounted(load)
 .dist-dialog-body { padding: 0 16px 16px; }
 .dist-dialog-year { font-size: 15px; font-weight: 600; color: #1f2329; margin-bottom: 4px; }
 .dist-dialog-hint { font-size: 12px; color: #969799; margin-bottom: 16px; line-height: 1.5; }
+.dist-dialog-lock { font-size: 13px; color: #ee0a24; margin-bottom: 12px; padding: 8px 12px; background: #fff2f0; border-radius: 4px; }
 .dist-dialog-fields { display: flex; flex-direction: column; gap: 10px; }
 .dist-dialog-field {
   display: flex; align-items: center; justify-content: space-between;
@@ -750,6 +783,7 @@ onMounted(load)
   font-size: 14px; text-align: right; outline: none;
 }
 .dist-input:focus { border-color: #1989fa; }
+.dist-input.readonly { background: #f0f0f0; cursor: not-allowed; }
 .dist-input-unit { font-size: 12px; color: #969799; }
 .dist-dialog-total {
   margin-top: 12px; text-align: right; font-size: 13px; font-weight: 500; color: #1f2329;

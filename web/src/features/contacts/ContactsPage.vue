@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="contacts-page">
     <div class="page-header">
       <h3>往来</h3>
@@ -72,7 +72,6 @@
         <div class="detail-block">
           <div class="section-title">
             基本情况
-            <a class="pd-edit-link" @click="openAddPartyEdit">编辑</a>
           </div>
           <div class="party-summary">
           <div class="summary-item">
@@ -968,7 +967,13 @@ async function saveParty() {
       if (updated) currentParty.value = updated
     }
   } catch (e: any) {
-    showDialog({ title: '保存失败', message: e.message || '保存失败，请重试' })
+    if (e?.status === 409 && e?.response?.code === 'DUPLICATE_NAME') {
+      const dupes = e.response.dupes || []
+      const names = dupes.map((d: any) => d.name).join('、')
+      showDialog({ title: '重名提示', message: `存在重名单位：${names}\n\n请修改单位名称后重试。` })
+    } else {
+      showDialog({ title: '保存失败', message: e.message || '保存失败，请重试' })
+    }
   }
 }
 

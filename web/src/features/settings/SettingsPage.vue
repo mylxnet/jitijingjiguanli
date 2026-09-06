@@ -66,11 +66,24 @@
       </van-cell>
     </van-cell-group>
 
+    <!-- 操作日志 -->
+    <van-cell-group inset style="margin-top: 16px">
+      <div class="section-label">操作日志</div>
+      <div style="margin: 4px 16px 8px">
+        <van-button
+          round
+          block
+          size="small"
+          @click="showOpLog = true"
+        >查看操作日志</van-button>
+      </div>
+    </van-cell-group>
+
     <div style="margin: 16px; padding: 0 16px">
       <van-button round block type="danger" @click="handleLogout">登出</van-button>
     </div>
 
-    <div class="version">v0.5.0</div>
+    <div class="version">v0.8.0</div>
 
     <!-- 修改密码 -->
     <van-popup v-model:show="showPwd" :position="popupPos()" round closeable style="max-height: 90vh">
@@ -93,6 +106,9 @@
         <div class="restore-text">正在恢复，请勿关闭页面</div>
       </div>
     </van-overlay>
+
+    <!-- 操作日志 -->
+    <OperationLogDialog v-model:show="showOpLog" />
   </div>
 </template>
 
@@ -106,6 +122,7 @@ import type { ApiResponse } from '../../types/api'
 import { showToast, showDialog } from 'vant'
 
 import { popupPos } from '../../composables/useScreen';
+import OperationLogDialog from './OperationLogDialog.vue'
 interface Settings {
   bankOpeningBalanceCents: number
 }
@@ -127,6 +144,7 @@ const keepBackup = 30
 const backingUp = ref(false)
 const backups = ref<BackupItem[]>([])
 const restoring = ref(false)
+const showOpLog = ref(false)
 
 const showPwd = ref(false)
 const savingPwd = ref(false)

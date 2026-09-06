@@ -56,8 +56,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   if (!res.ok) {
     const errData = await res.json().catch(() => null)
-    const msg = errData?.error?.message || `请求失败 (${res.status})`
-    throw new Error(msg)
+    const msg = errData?.error?.message || errData?.data?.message || `请求失败 (${res.status})`
+    // 构建增强错误对象，保留响应详情供上层判断
+    const err: any = new Error(msg)
+    err.status = res.status
+    err.response = errData?.data || errData?.error || errData
+    throw err
   }
 
   return res.json()
