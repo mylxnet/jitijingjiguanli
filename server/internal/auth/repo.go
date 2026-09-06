@@ -159,8 +159,12 @@ func (r *Repo) createUserTx(tx *sql.Tx, orgID int64, username, passwordHash stri
 	return res.LastInsertId()
 }
 
-// seedPresetCategoriesTx 事务内写入预置科目（长期投资留空：使用时由操作者按公司建普通二级，
-// 投资/收回直接在快速记账里走收支流水；资产类/资金划转已弃用，仅保留旧数据兼容）。
+// seedPresetCategoriesTx 事务内写入预置科目。
+// 共 8 个一级，按 sort 排序：
+//   1 本金(空)  2 长期投资(空)  3 再投资(空)  4 经营收入(其他财政收入/其他收入)
+//   5 投资收益(空)  6 土地流转费收入(空)  7 流转管理费(空)  8 分配与支出(5个L2)
+// 空容器在业务操作时按往来单位名自动建二级（invest→长期投资；flow→土地流转费收入+流转管理费）。
+// 预置科目 preset=1，handler 层禁止删除和重命名（可停用、可改期初）。
 func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 	now := platform.Now()
 	insert := func(name string, level int, parentID any, kind string, sort int) (int64, error) {
@@ -176,25 +180,17 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 		return res.LastInsertId()
 	}
 
-	// 一级分组（权益容器）
-	l1Fund, err := insert("本金", 1, nil, "equity", 1)
-	if err != nil {
-		return fmt.Errorf("预置科目失败(本金): %w", err)
-	}
-	l1Invest, err := insert("长期投资", 1, nil, "equity", 2)
-	if err != nil {
-		return fmt.Errorf("预置科目失败(长期投资): %w", err)
-	}
-	l1Income, err := insert("经营收入", 1, nil, "equity", 3)
-	if err != nil {
-		return fmt.Errorf("预置科目失败(经营收入): %w", err)
-	}
-	l1Dist, err := insert("分配与支出", 1, nil, "equity", 4)
-	if err != nil {
-		return fmt.Errorf("预置科目失败(分配与支出): %w", err)
-	}
+	// 一级分组（8 个 equity 容器）
+	l1Fund, _ := insert("本金", 1, nil, "equity", 1)
+	l1Invest, _ := insert("长期投资", 1, nil, "equity", 2)
+	l1Reinvest, _ := insert("再投资", 1, nil, "equity", 3)
+	l1Income, _ := insert("经营收入", 1, nil, "equity", 4)
+	l1InvIncome, _ := insert("投资收益", 1, nil, "equity", 5)
+	l1Rent, _ := insert("土地流转费收入", 1, nil, "equity", 6)
+	l1Fee, _ := insert("流转管理费", 1, nil, "equity", 7)
+	l1Dist, _ := insert("分配与支出", 1, nil, "equity", 8)
 
-	// 权益二级预设
+	// 二级预设（长期投资/再投资/投资收益/土地流转费收入/流转管理费 五个 L1 留空，业务时自动建）
 	presetL2 := []struct {
 		name     string
 		parentID int64
@@ -202,10 +198,9 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 		sort     int
 	}{
 		{"上级补助", l1Fund, "equity", 1},
-		{"投资收益", l1Income, "equity", 1},
-		{"土地流转费收入", l1Income, "equity", 2},
-		{"流转管理费", l1Income, "equity", 3},
-		{"其他收入", l1Income, "equity", 4},
+		{"待投资", l1Fund, "equity", 2},
+		{"其他财政收入", l1Income, "equity", 1},
+		{"其他收入", l1Income, "equity", 2},
 		{"土地流转费-转付农户", l1Dist, "equity", 1},
 		{"成员分红", l1Dist, "equity", 2},
 		{"福利发放", l1Dist, "equity", 3},
@@ -217,7 +212,5 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 			return fmt.Errorf("预置二级科目失败(%s): %w", c.name, err)
 		}
 	}
-	// 长期投资一级留空：使用时由操作者在快速记账「投资给公司」里按公司建普通二级（自动建往来单位）
-	_ = l1Invest
 	return nil
 }

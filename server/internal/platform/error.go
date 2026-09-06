@@ -33,6 +33,7 @@ var (
 	ErrUsernameExists     = &AppError{Code: "USERNAME_EXISTS", Message: "账号已存在"}
 	ErrInvalidCredentials = &AppError{Code: "INVALID_CREDENTIALS", Message: "账号或密码错误"}
 	ErrNoCategory         = &AppError{Code: "NO_CATEGORY", Message: "尚无科目，请先创建科目"}
+	ErrCategoryPreset     = &AppError{Code: "CATEGORY_PRESET", Message: "预置科目不能删除或重命名"}
 )
 
 // ErrResponse 发送统一错误响应。

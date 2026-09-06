@@ -32,6 +32,8 @@
             登录
           </van-button>
         </div>
+
+        <div class="login-tip">测试账号：admin / admin888</div>
       </van-form>
 
       <div class="login-footer">
@@ -52,8 +54,8 @@ import { showToast } from 'vant'
 const router = useRouter()
 const auth = useAuthStore()
 
-const username = ref('')
-const password = ref('')
+const username = ref('admin')
+const password = ref('admin888')
 const loading = ref(false)
 const error = ref('')
 
@@ -95,7 +97,7 @@ function goRegister() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f7f7f5;
+  background: var(--paper);
   padding: 24px;
 }
 
@@ -115,17 +117,17 @@ function goRegister() {
 .login-title {
   font-size: 22px;
   font-weight: 600;
-  color: #2c2c2a;
+  color: var(--ink);
 }
 
 .login-subtitle {
   font-size: 13px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   margin-top: 4px;
 }
 
 .login-error {
-  color: #a32d2d;
+  color: var(--expense);
   font-size: 13px;
   text-align: center;
   padding: 8px 16px 0;
@@ -135,12 +137,19 @@ function goRegister() {
   text-align: center;
   padding: 0 16px 24px;
   font-size: 13px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .register-link {
-  color: #0f6e56;
+  color: var(--jade);
   margin-left: 4px;
   cursor: pointer;
+}
+
+.login-tip {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: -8px 0 12px;
 }
 </style>

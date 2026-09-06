@@ -1,0 +1,40 @@
+v0.6.0 · 2026-09-05
+
+## 核心变更
+
+### 📊 预置科目重构（6 → 8 个一级）
+- 新增 L1：投资收益、再投资
+- "土地流转费收入" 和 "流转管理费" 从 L2 提升为独立 L1
+- 本金下新增预置 L2：待投资
+- 所有科目 preset 保护：不可删除、不可重命名
+
+### 🧭 引导页完整重写（3 步 → 7 步按类型分步）
+- Step 1-2：流转企业往来 + 余额
+- Step 3-4：投资公司往来 + 余额
+- Step 5-6：再投资往来 + 余额（可跳过）
+- Step 7：银行存款期初 + 预置科目余额 + 预览确认
+- 每个 add-party 步骤类型隐式（flow/invest/reinvest），无需用户选
+
+### ⚡ 快速记账 12 模板定稿 + 自动建 L2
+- 新增/恢复 dividend 收到投资收益、recover 收回投资、reinvest 532-再投资
+- invest 模板改名为"长期投资给公司"
+- 按分组排序 + optgroup 视觉分隔（资金类 / 流转类 / 其他）
+- 默认打开快速记账，左右顺序交换
+- 往来单位下拉按 partyTypesFilter 自动过滤：
+  - 资金类（dividend/recover/reinvest）→ 只显示 invest/reinvest
+  - 流转类（rent/service）→ 只显示 flow
+
+### 🏢 往来单位类型多选
+- Go party.type VARCHAR(20) → types JSON 数组
+- 兼容层：同时返回 type（旧单值）+ types（新数组）
+- 新增 reinvest 类型（再投资）
+
+### 🔧 mock.js 4 个接口修复
+- PUT /api/settings 真正持久化 bankBalanceCents
+- PUT /api/categories/:id 真正持久化 openingBalanceCents + preset 守卫
+- DELETE /api/categories/:id 真正删除 + preset 守卫
+- POST /api/categories 自动 push 进父 L1 的 children
+
+### ✅ 单元测试
+- 51 个 Node 测试全通过（contract + E2E）
+- vue-tsc 零错误

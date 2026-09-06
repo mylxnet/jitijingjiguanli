@@ -78,7 +78,7 @@
     </div>
 
     <!-- 筛选弹窗 -->
-    <van-popup v-model:show="showFilterDialog" position="bottom" round closeable style="max-height: 80vh">
+    <van-popup v-model:show="showFilterDialog" :position="popupPos()" round closeable style="max-height: 80vh">
       <div class="filter-popup">
         <div class="filter-title">筛选条件</div>
 
@@ -123,7 +123,7 @@
             :options="categoryFilterOptions"
             @update:model-value="onNativeCatFilterChange"
           />
-          <van-popup v-model:show="showCategoryFilterPicker" position="bottom">
+          <van-popup v-model:show="showCategoryFilterPicker" :position="popupPos()">
             <van-picker
               :columns="categoryFilterOptions"
               @confirm="onCategoryFilterConfirm"
@@ -160,7 +160,7 @@
     <van-action-sheet v-model:show="showExportPicker" :actions="exportActions" @select="onExportSelect" cancel-text="取消" />
 
     <!-- 编辑/详情弹窗 -->
-    <van-popup v-model:show="showEditDialog" position="bottom" round closeable style="max-height: 90vh">
+    <van-popup v-model:show="showEditDialog" :position="popupPos()" round closeable style="max-height: 90vh">
       <div class="edit-popup">
         <div class="edit-title">{{ editTransfer ? '转账详情' : '编辑流水' }}</div>
 
@@ -236,7 +236,7 @@
                 <option v-for="opt in categoryOptions" :key="opt.value" :value="opt.value">{{ opt.text }}</option>
               </select>
             </div>
-            <van-popup v-model:show="showEditCategoryPicker" position="bottom">
+            <van-popup v-model:show="showEditCategoryPicker" :position="popupPos()">
               <van-picker
                 :columns="categoryOptions"
                 @confirm="onEditCategoryConfirm"
@@ -317,6 +317,7 @@ import { showToast } from 'vant'
 import type { Transaction, ApiResponse, Category } from '../../types/api'
 import NativeSelect from '../../components/NativeSelect.vue'
 
+import { popupPos } from '../../composables/useScreen';
 interface TransferLeg {
   id: number
   transferId: number
@@ -479,7 +480,8 @@ const filters = ref<FilterState>({
 })
 
 const categoryFilterOptions = computed(() => {
-  const options: { text: string; value: number }[] = [{ text: '全部科目', value: 0 }]
+  const options: { text: string;
+value: number }[] = [{ text: '全部科目', value: 0 }]
   for (const l1 of categories.value) {
     if (l1.children) {
       for (const l2 of l1.children) {
@@ -886,30 +888,34 @@ function formatChangelogValue(field: string | null, value: string | null): strin
 
 <style scoped>
 .list-page {
-  padding: 16px;
-  padding-bottom: 60px;
-  min-height: 100vh;
-  background: #f7f7f5;
+  padding: 18px 20px;
+  padding-bottom: 80px;
+  min-height: calc(100vh - 28px);
+  background: var(--paper);
 }
 
 .list-header {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .list-header h3 {
-  font-size: 16px;
-  font-weight: 500;
-  color: #2c2c2a;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
   margin: 0;
+  letter-spacing: -.01em;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .type-filter {
@@ -920,24 +926,27 @@ function formatChangelogValue(field: string | null, value: string | null): strin
 .loading-state {
   padding: 16px;
   background: #fff;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-soft);
 }
 
 .empty-state {
   text-align: center;
   padding: 60px 20px;
   background: #fff;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-soft);
 }
 
 .empty-state p {
-  color: #8f8e88;
+  color: var(--ink-muted);
   margin-bottom: 16px;
 }
 
 .list-content {
   background: #fff;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-soft);
   overflow: hidden;
 }
 
@@ -945,38 +954,44 @@ function formatChangelogValue(field: string | null, value: string | null): strin
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0eb;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background .15s;
+  position: relative;
 }
 
-.txn-row:active {
-  background: #f0f0eb;
+.txn-row::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--ink-faint);
 }
 
-.txn-row:last-child {
-  border-bottom: none;
+.txn-row.incoming::before,
+.txn-row.income::before {
+  background: var(--income);
 }
 
-.txn-row.voided {
-  opacity: 0.5;
-  text-decoration: line-through;
+.txn-row.outgoing::before,
+.txn-row.expense::before {
+  background: var(--expense);
 }
 
-.txn-main {
-  flex: 1;
-  min-width: 0;
-}
+.txn-row:active { background: var(--paper-warm); }
+.txn-row:hover { background: var(--paper-warm); }
+.txn-row:last-child { border-bottom: none; }
+.txn-row.voided { opacity: .5; text-decoration: line-through; }
 
-.txn-date {
-  font-size: 12px;
-  color: #8f8e88;
-}
+.txn-main { flex: 1; min-width: 0; padding-left: 10px; }
+
+.txn-date { font-size: 12px; color: var(--ink-muted); }
 
 .txn-category {
   font-size: 14px;
-  color: #2c2c2a;
+  font-weight: 600;
+  color: var(--ink);
   margin: 2px 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -986,142 +1001,99 @@ function formatChangelogValue(field: string | null, value: string | null): strin
 .transfer-tag {
   display: inline-block;
   font-size: 11px;
-  color: #185fa5;
-  background: #e6f1fb;
-  border-radius: 4px;
+  color: var(--indigo);
+  background: var(--indigo-light);
+  border-radius: var(--r-xs);
   padding: 0 5px;
   margin-right: 4px;
   vertical-align: middle;
 }
 
-.transfer-arrow {
-  margin: 0 2px;
-  color: #8f8e88;
-}
+.transfer-arrow { margin: 0 2px; color: var(--ink-muted); }
 
-.txn-note {
-  font-size: 12px;
-  color: #8f8e88;
-}
+.txn-note { font-size: 12px; color: var(--ink-muted); }
 
 .txn-amount {
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   margin-left: 12px;
 }
 
-.txn-amount.income {
-  color: #0f6e56;
-}
-
-.txn-amount.expense {
-  color: #a32d2d;
-}
-
-.txn-amount.transfer {
-  color: #185fa5;
-}
+.txn-amount.income { color: var(--income); }
+.txn-amount.expense { color: var(--expense); }
+.txn-amount.transfer { color: var(--indigo); }
 
 .list-summary {
   display: flex;
-  gap: 16px;
+  gap: 24px;
   justify-content: center;
   padding: 12px;
-  margin-top: 12px;
+  margin-top: 14px;
   background: #fff;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-soft);
   font-size: 13px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
 }
+.list-summary .income { color: var(--income); font-weight: 700; }
+.list-summary .expense { color: var(--expense); font-weight: 700; }
 
-/* 筛选 */
 .filter-hint {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 14px;
   margin-bottom: 12px;
-  background: #e6f1fb;
-  border-radius: 8px;
+  background: var(--indigo-bg);
+  border-radius: var(--r-sm);
   font-size: 12px;
-  color: #185fa5;
+  color: var(--indigo);
 }
 
-.filter-popup {
-  padding: 0 0 24px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
+.filter-popup { padding: 0 0 24px; max-height: 80vh; overflow-y: auto; }
 
 .filter-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #2c2c2a;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
   padding: 16px;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
-.amount-range {
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-}
+.amount-range { display: flex; align-items: center; padding: 0 12px; }
+.amount-range .van-field { flex: 1; }
+.amount-sep { margin: 0 8px; color: var(--ink-muted); font-size: 16px; }
 
-.amount-range .van-field {
-  flex: 1;
-}
+.filter-actions { display: flex; gap: 12px; padding: 16px; justify-content: flex-end; }
 
-.amount-sep {
-  margin: 0 8px;
-  color: #8f8e88;
-  font-size: 16px;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 12px;
-  padding: 16px;
-  justify-content: flex-end;
-}
-
-/* 编辑弹窗 */
-.edit-popup {
-  padding: 0 0 24px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
+.edit-popup { padding: 0 0 24px; max-height: 80vh; overflow-y: auto; }
 
 .edit-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #2c2c2a;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
   padding: 16px;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
-.edit-direction-toggle {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px 0;
-}
-
-.edit-actions {
-  padding: 12px 16px;
-}
+.edit-direction-toggle { display: flex; gap: 8px; padding: 12px 16px 0; }
+.edit-actions { padding: 12px 16px; }
 
 .changelog-section {
   margin: 12px 16px;
-  background: #f7f7f5;
-  border-radius: 8px;
+  background: var(--paper-warm);
+  border-radius: var(--r-sm);
   padding: 12px;
 }
 
 .section-title {
   font-size: 13px;
-  font-weight: 500;
-  color: #5f5e5a;
+  font-weight: 700;
+  color: var(--ink-soft);
   margin-bottom: 8px;
 }
 
@@ -1130,92 +1102,46 @@ function formatChangelogValue(field: string | null, value: string | null): strin
   flex-wrap: wrap;
   gap: 4px 8px;
   font-size: 12px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   padding: 4px 0;
-  border-bottom: 1px solid #ecebe5;
+  border-bottom: 1px solid var(--line);
+}
+.changelog-item:last-child { border-bottom: none; }
+
+.changelog-action { font-weight: 500; color: var(--jade); }
+.changelog-field { color: var(--ink); }
+.changelog-diff { color: var(--ink-muted); }
+.changelog-time { color: var(--ink-muted); margin-left: auto; }
+
+.desktop-field { display: none; }
+
+@media (max-width: 560px) {
+  .list-page { padding: 14px; }
+  .list-header h3 { font-size: 18px; }
+  .txn-row { padding: 12px 14px; }
 }
 
-.changelog-item:last-child {
-  border-bottom: none;
-}
-
-.changelog-action {
-  font-weight: 500;
-  color: #185fa5;
-}
-
-.changelog-field {
-  color: #2c2c2a;
-}
-
-.changelog-diff {
-  color: #8f8e88;
-}
-
-.changelog-time {
-  color: #8f8e88;
-  margin-left: auto;
-}
-
-.desktop-field {
-  display: none;
-}
-
-/* 桌面端：头部/操作按钮与行内按钮加大 */
-@media (min-width: 992px) {
-  .list-header {
-    margin-bottom: 14px;
-  }
-
-  .list-header .header-actions {
-    gap: 8px;
-    align-items: center;
-  }
-
-  .list-header .type-filter {
-    display: flex;
-    gap: 8px;
-  }
-
-  .list-header .van-button--mini,
-  .filter-hint .van-button--mini,
-  .txn-actions .van-button--mini {
-    height: 40px;
-    padding: 0 18px;
-    font-size: 15px;
-  }
-
-  .txn-row {
-    padding: 14px 16px;
-  }
-
+@media (min-width: 800px) {
+  .list-header { margin-bottom: 16px; }
+  .txn-row { padding: 14px 18px; }
   .desktop-field {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
-    border-bottom: 1px solid #ebedf0;
+    border-bottom: 1px solid var(--line-soft);
   }
-
-  .mobile-field {
-    display: none !important;
-  }
-
-  .d-label {
-    width: 70px;
-    font-size: 15px;
-    color: #969799;
-  }
-
+  .mobile-field { display: none !important; }
+  .d-label { width: 70px; font-size: 15px; color: var(--ink-muted); }
   .d-select {
     flex: 1;
     height: 40px;
-    border: 1px solid #dcdee0;
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
     font-size: 15px;
     padding: 0 10px;
     background: #fff;
-    color: #323233;
+    color: var(--ink);
     min-width: 0;
   }
 }

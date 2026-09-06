@@ -1,163 +1,163 @@
 <template>
   <div id="app" :class="{ 'app-shell': showNav }">
-    <template v-if="showNav">
-      <SideNav class="desktop-only" />
-      <main class="app-main">
+    <!-- 登录/注册：无导航，居中 -->
+    <template v-if="!showNav">
+      <div class="auth-wrap">
         <router-view />
-      </main>
-      <BottomNav class="mobile-only" />
+      </div>
     </template>
-    <div v-else class="auth-wrap">
-      <router-view />
-    </div>
+    <!-- 登录后：SideNav(桌面) + 主区(卡片wrap + router-view) + BottomNav(移动) -->
+    <template v-else>
+      <!-- 左侧 SideNav，仅桌面显示 -->
+      <SideNav class="sidebar-desktop" />
+
+      <!-- 中间主区，桌面时用白色卡片包裹 -->
+      <main class="app-main-wrap">
+        <div class="app-card-inner">
+          <router-view />
+        </div>
+      </main>
+
+      <!-- 底部 BottomNav，仅移动显示 -->
+      <BottomNav class="bottomnav-mobile" />
+    </template>
+
+    <!-- 全局记账弹窗 -->
+    <RecordPopup ref="recordPopupRef" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import BottomNav from './components/BottomNav.vue'
 import SideNav from './components/SideNav.vue'
+import RecordPopup from './features/transaction/RecordPopup.vue'
 
 const route = useRoute()
-const showNav = computed(() => {
-  return !['/login', '/register'].includes(route.path)
+const showNav = computed(() => !['/login', '/register'].includes(route.path))
+
+const recordPopupRef = ref<InstanceType<typeof RecordPopup> | null>(null)
+provide('openRecord', () => {
+  recordPopupRef.value?.openRecord()
 })
 </script>
 
 <style>
-html,
-body {
+html, body {
   margin: 0;
   padding: 0;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f7f7f5;
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--paper);
   -webkit-font-smoothing: antialiased;
 }
 
-/* 移动端（默认）：主区窄栏居中，底部 tabbar */
 #app {
   min-height: 100vh;
-  background: #f7f7f5;
+  background: var(--paper);
 }
 
-.app-main {
+.app-shell {
+  display: flex;
   min-height: 100vh;
+  background: var(--paper);
 }
 
-/* 登录/注册等无导航页：整体居中并占满可用区 */
+/* ========== 默认（移动端） ========== */
+
+/* SideNav 隐藏 */
+.sidebar-desktop {
+  display: none !important;
+}
+
+/* BottomNav 显示 */
+.bottomnav-mobile {
+  display: block;
+}
+
+/* 主区：全宽，无卡片包裹 */
+.app-main-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+.app-card-inner {
+  min-height: 100vh;
+  padding-bottom: 64px; /* 给 BottomNav 留空间 */
+  background: var(--paper);
+}
+
+/* ========== 桌面端 (≥800px) ========== */
+@media (min-width: 800px) {
+  /* SideNav 显示 */
+  .sidebar-desktop {
+    display: flex !important;
+  }
+
+  /* BottomNav 隐藏 */
+  .bottomnav-mobile,
+  .van-tabbar {
+    display: none !important;
+  }
+
+  /* 主区 padding + 白色卡片 */
+  .app-main-wrap {
+    padding: 14px;
+    box-sizing: border-box;
+  }
+
+  .app-card-inner {
+    min-height: calc(100vh - 28px);
+    background: #fff;
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--line-soft);
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+}
+
+/* ========== 桌面端弹窗禁止过渡动画（避免打开瞬间位移动画） ========== */
+@media (min-width: 800px) {
+  /* 禁用 Vant 过渡动画类 */
+  .van-fade-enter-active,
+  .van-fade-leave-active {
+    animation: none !important;
+  }
+  .van-popup-slide-bottom-enter-active,
+  .van-popup-slide-bottom-leave-active {
+    animation: none !important;
+  }
+  /* 强制弹窗居中定位 */
+  .van-popup--center {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    animation: none !important;
+  }
+  .van-overlay {
+    animation: none !important;
+  }
+}
+
+/* ========== 登录/注册 ========== */
 .auth-wrap {
   min-height: 100vh;
-  flex: 1;
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
 }
 
 .auth-wrap .login-page,
 .auth-wrap .register-page {
-  min-height: auto;
   width: 100%;
-}
-
-.desktop-only {
-  display: none !important;
-}
-
-/* 只在手机/窄屏显示（桌面被原生下拉替代） */
-.only-mobile {
-  display: block;
-}
-
-@media (min-width: 992px) {
-  .only-mobile {
-    display: none !important;
-  }
-}
-
-/* 宽屏：仅带导航的主页面启用左右布局（登录/注册保持普通块级全宽居中） */
-@media (min-width: 992px) {
-  .app-shell {
-    display: flex;
-  }
-
-  .desktop-only {
-    display: flex !important;
-  }
-
-  .mobile-only {
-    display: none !important;
-  }
-
-  .app-shell .app-main {
-    flex: 1;
-    min-width: 0;
-    width: auto;
-    padding: 0 16px;
-    box-sizing: border-box;
-  }
-
-  /* 桌面端去“手机感”：按钮/单元格/字号整体放大 */
-  .van-button--mini {
-    height: 36px;
-    padding: 0 16px;
-    font-size: 14px;
-  }
-
-  .van-button--small {
-    height: 42px;
-    padding: 0 22px;
-    font-size: 15px;
-  }
-
-  .van-cell {
-    padding: 14px 16px;
-  }
-
-  .van-cell__title,
-  .van-cell__label {
-    font-size: 15px;
-  }
-
-  .van-field__control,
-  .van-cell__value {
-    font-size: 15px;
-  }
-
-  .van-cell__right-icon {
-    font-size: 16px;
-  }
-
-  .van-popup .popup-title,
-  .van-dialog__header {
-    font-size: 18px;
-  }
-
-  .van-picker-column__item {
-    font-size: 16px;
-  }
-
-  /* 桌面端：底部弹层全部改居中弹窗，避免手机式贴底 */
-  .van-popup--bottom {
-    left: 50% !important;
-    top: 50% !important;
-    right: auto !important;
-    bottom: auto !important;
-    transform: translate(-50%, -50%) !important;
-    width: min(680px, 92vw) !important;
-    max-height: 85vh !important;
-    border-radius: 12px !important;
-  }
-
-  .van-action-sheet {
-    width: min(560px, 92vw) !important;
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
-  }
+  max-width: 400px;
 }
 </style>

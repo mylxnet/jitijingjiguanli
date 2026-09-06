@@ -1,23 +1,37 @@
 <template>
   <nav class="side-nav">
-    <router-link v-for="item in items" :key="item.path" :to="item.path" class="side-link" :class="{ active: isActive(item.path) }">
-      <van-icon :name="item.icon" />
-      <span>{{ item.label }}</span>
-    </router-link>
+    <div class="side-top">
+      <div class="side-org">新庄村</div>
+      <div class="side-org-sub">集体经济管理系统</div>
+    </div>
+    <div class="side-nav-wrap">
+      <a
+        v-for="item in items"
+        :key="item.label"
+        class="side-link"
+        :class="{ active: item.path && isActive(item.path) }"
+        @click="onItemClick(item)"
+      >
+        <span class="side-nav-icon">{{ item.iconChar }}</span>
+        <span>{{ item.label }}</span>
+      </a>
+    </div>
     <div class="side-foot">
       <router-link to="/settings" class="side-link-sub" :class="{ active: isActive('/settings') }">
-        <van-icon name="setting-o" />
+        <span class="side-nav-icon">⚙</span>
         <span>设置</span>
       </router-link>
-      <a class="side-link-sub" @click="onLogout">
-        <van-icon name="close" />
+      <a class="side-link-sub danger" @click="onLogout">
+        <span class="side-nav-icon">🚪</span>
         <span>退出</span>
       </a>
+      <div class="side-version">v0.7.0</div>
     </div>
   </nav>
 </template>
 
 <script setup lang="ts">
+import { inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../features/auth/store'
 
@@ -25,17 +39,27 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+const openRecord = inject<() => void>('openRecord', () => {})
+
 const items = [
-  { label: '看板', path: '/', icon: 'wap-home-o' },
-  { label: '流水', path: '/transactions', icon: 'orders-o' },
-  { label: '汇总', path: '/summary', icon: 'chart-trending-o' },
-  { label: '往来', path: '/contacts', icon: 'friends-o' },
-  { label: '记账', path: '/?record=open', icon: 'edit' },
+  { label: '收支总览', path: '/', iconChar: '◆' },
+  { label: '往来单位', path: '/contacts', iconChar: '◉' },
+  { label: '投资管理', path: '/investment', iconChar: '📈' },
+  { label: '引导页面', path: '/onboarding', iconChar: '→' },
+  { label: '快速记账', path: '', iconChar: '＋', action: 'record' },
 ]
 
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/'
   return route.path.startsWith(path)
+}
+
+function onItemClick(item: typeof items[number]) {
+  if (item.action === 'record') {
+    openRecord()
+  } else if (item.path) {
+    router.push(item.path)
+  }
 }
 
 async function onLogout() {
@@ -46,17 +70,46 @@ async function onLogout() {
 
 <style scoped>
 .side-nav {
-  width: 220px;
+  width: 196px;
   min-height: 100vh;
-  background: #2c2c2a;
-  padding: 12px 0 20px;
+  background: var(--jade-deep);
+  color: rgba(255, 255, 255, .9);
+  padding: 16px 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   position: sticky;
   top: 0;
   align-self: flex-start;
   box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.side-top {
+  padding: 0 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  margin-bottom: 8px;
+}
+
+.side-org {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.side-org-sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, .5);
+  letter-spacing: .1em;
+  margin-top: 2px;
+}
+
+.side-nav-wrap {
+  flex: 1;
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .side-link,
@@ -64,20 +117,61 @@ async function onLogout() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 24px;
-  color: #c9c6be;
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  color: rgba(255, 255, 255, .7);
   text-decoration: none;
-  font-size: 15px;
+  font-size: 13px;
+  transition: all .15s;
+  user-select: none;
+  cursor: pointer;
 }
 
-.side-link.active,
-.side-link-sub.active {
+.side-link:hover,
+.side-link-sub:hover {
+  background: rgba(255, 255, 255, .06);
   color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border-left: 3px solid #0f6e56;
+}
+
+.side-link.active {
+  background: rgba(255, 255, 255, .15);
+  color: #fff;
+  font-weight: 600;
+}
+
+.side-nav-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, .1);
+  border-radius: 6px;
+}
+
+.side-link.active .side-nav-icon {
+  background: var(--jade);
 }
 
 .side-foot {
   margin-top: auto;
+  padding: 8px 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side-link-sub.danger:hover {
+  background: rgba(163, 58, 45, .2);
+  color: #f5c6c0;
+}
+
+.side-version {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, .35);
+  padding: 8px 0 4px;
 }
 </style>

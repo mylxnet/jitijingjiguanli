@@ -249,6 +249,10 @@ func (h *Handler) UpdateCategory(c *gin.Context) {
 	updates := make(map[string]any)
 
 	if req.Name != nil {
+		if cat.Preset {
+			platform.ErrResponse(c, http.StatusForbidden, platform.ErrCategoryPreset)
+			return
+		}
 		dup, err := h.repo.IsNameDup(orgID, *req.Name, cat.ParentID, id)
 		if err != nil {
 			h.internal(c, "服务暂时不可用")
@@ -325,6 +329,11 @@ func (h *Handler) DeleteCategory(c *gin.Context) {
 	}
 	if cat == nil || cat.OrgID != orgID {
 		platform.ErrResponse(c, http.StatusNotFound, platform.ErrCategoryNotFound)
+		return
+	}
+
+	if cat.Preset {
+		platform.ErrResponse(c, http.StatusForbidden, platform.ErrCategoryPreset)
 		return
 	}
 

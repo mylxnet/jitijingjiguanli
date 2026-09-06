@@ -36,21 +36,59 @@ export interface FundMoveListResponse {
   total: number
 }
 
-export type RecvKind = 'rent' | 'dividend' | 'other'
+export type RecvKind = 'rent' | 'dividend' | 'service' | 'reinvest_dividend' | 'other'
 
 export interface Party {
   id: number
   orgId: number
   name: string
-  type: 'flow' | 'invest' | 'other' // 流转企业 / 投资公司 / 其它单位
+  types: ('flow' | 'invest' | 'reinvest' | 'other')[] // 多选类型
+  type: 'flow' | 'invest' | 'reinvest' | 'other' | null // 主类型（兼容旧前端，= types[0]）
   contactPhone: string
   areaMu: number // 流转面积（亩，流转企业）
   note: string | null
   createdAt: string
   updatedAt: string
   outstandingCents: number
-  investAmountCents: number // 投资公司：长期投资同名公司累计投出（只读）
+
+  // 投资/再投资专属字段（invest / reinvest 类型用）
+  investAmountCents: number // 投资本金
+  returnRateBps: number // 收益率基点（500 = 5.00%）
+  expectedReturnCents: number // 年收益（自动算=本金×收益率/10000，可手动改）
+
+  // 土地流转专属字段（flow 类型用）
+  landMu: number // 流转亩数
+  landFeePerMuCents: number // 每亩年流转费
+  expectedLandFeeCents: number // 总流转费（自动=亩数×每亩费，可改）
+  mgmtFeePerMuCents: number // 每亩年管理费
+  expectedMgmtFeeCents: number // 总管理费（自动=亩数×每亩管理费，可改）
 }
+
+// 再投资去向明细（ReinvestAllocation 子表）
+export interface ReinvestAllocation {
+  id: number
+  partyId: number
+  targetName: string
+  amountCents: number
+  notes: string | null
+  createdAt: string
+}
+
+export interface Contract {
+  id: number
+  partyId: number
+  fileName: string
+  fileSize: number // bytes
+  mimeType: string
+  contractTitle: string
+  contractDate: string | null
+  expiresAt: string | null
+  fileData?: string // base64 data URL，仅在下载/预览接口返回
+  createdAt: string
+}
+
+export type ContractType = 'contract' | 'attachment' | 'other'
+
 
 export interface AccrualStandard {
   id: number
@@ -124,7 +162,7 @@ export interface ReceivableDetail {
 }
 
 // 展示标签
-export const recvKindLabel: Record<RecvKind, string> = { rent: '流转费', dividend: '投资收益', other: '其他' }
+export const recvKindLabel: Record<RecvKind, string> = { rent: '流转费', dividend: '投资收益', service: '流转管理费', reinvest_dividend: '再投资收益', other: '其他' }
 
 export interface Transaction {
   id: number

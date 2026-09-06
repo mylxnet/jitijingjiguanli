@@ -1,5 +1,5 @@
 <template>
-  <van-popup v-model:show="innerShow" position="bottom" round closeable style="max-height: 70vh">
+  <van-popup v-model:show="innerShow" :position="popupPos()" round closeable style="max-height: 70vh">
     <div class="changelog-popup">
       <div class="popup-title">变更历史</div>
       <div v-if="loading" class="changelog-empty">加载中…</div>
@@ -25,6 +25,7 @@ import { ref, watch } from 'vue'
 import { api } from '../lib/http'
 import type { ApiResponse } from '../types/api'
 
+import { popupPos } from '../composables/useScreen';
 interface ChangeLogItem {
   id: number
   entityType: string
@@ -147,7 +148,7 @@ function formatTime(s: string): string {
 <style scoped>
 .changelog-popup {
   padding: 16px 0 24px;
-  max-height: 70vh;
+max-height: 70vh;
   overflow-y: auto;
 }
 

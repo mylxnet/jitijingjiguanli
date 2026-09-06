@@ -31,6 +31,9 @@
 
     <!-- 账号与科目 -->
     <van-cell-group inset style="margin-top: 16px">
+      <div class="section-label">查询</div>
+      <van-cell title="流水清单" is-link to="/transactions" />
+      <van-cell title="科目汇总" is-link to="/summary" />
       <div class="section-label">账号</div>
       <van-cell title="科目管理" is-link to="/categories" />
       <van-cell title="修改密码" is-link @click="openPwdDialog" />
@@ -70,7 +73,7 @@
     <div class="version">v0.5.0</div>
 
     <!-- 修改密码 -->
-    <van-popup v-model:show="showPwd" position="bottom" round closeable style="max-height: 90vh">
+    <van-popup v-model:show="showPwd" :position="popupPos()" round closeable style="max-height: 90vh">
       <div class="pwd-popup">
         <div class="popup-title">修改密码</div>
         <van-field v-model="pwdForm.oldPassword" type="password" label="原密码" placeholder="当前登录密码" />
@@ -102,6 +105,7 @@ import { formatFen } from '../../types/api'
 import type { ApiResponse } from '../../types/api'
 import { showToast, showDialog } from 'vant'
 
+import { popupPos } from '../../composables/useScreen';
 interface Settings {
   bankOpeningBalanceCents: number
 }
@@ -271,9 +275,9 @@ async function handleLogout() {
 <style scoped>
 .settings-page {
   padding: 16px 0;
-  padding-bottom: 60px;
+padding-bottom: 60px;
   min-height: 100vh;
-  background: #f7f7f5;
+  background: var(--paper);
 }
 
 .page-header {
@@ -284,32 +288,32 @@ async function handleLogout() {
 .page-header h3 {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   margin: 0;
 }
 
 .section-label {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   padding: 12px 16px 0;
 }
 
 .current-balance {
   font-size: 12px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   padding: 0 16px 8px;
 }
 
 .version {
   text-align: center;
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   margin-top: 24px;
 }
 
 .backup-tip {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   padding: 8px 16px 4px;
   line-height: 1.5;
 }
@@ -317,13 +321,13 @@ async function handleLogout() {
 .backup-empty {
   text-align: center;
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   padding: 12px 0;
 }
 
 .backup-size {
   font-size: 11px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .pwd-popup {
@@ -335,12 +339,12 @@ async function handleLogout() {
 .popup-title {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   padding: 0 16px 12px;
 }
 
 .pwd-error {
-  color: #a32d2d;
+  color: var(--expense);
   font-size: 13px;
   padding: 0 16px 8px;
 }

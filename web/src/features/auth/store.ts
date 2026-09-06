@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, setOnUnauthorized } from '../../lib/http'
+import { api } from '../../lib/http'
 import type { ApiResponse } from '../../types/api'
 
 // 本机记住的组织名（登录页大字展示）
@@ -12,11 +12,12 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref('')
 
   // 检查是否已登录（通过 Cookie session）
+  // 使用原生 fetch 绕过 http.ts 的 onUnauthorized 回调，
+  // 避免在路由守卫中触发 router.push 造成导航冲突
   async function checkLogin() {
     try {
-      // 尝试调用一个受保护的 API 来验证会话
-      await api.get<any>('/categories')
-      isLoggedIn.value = true
+      const res = await fetch('/api/categories', { credentials: 'include' })
+      isLoggedIn.value = res.ok
     } catch {
       isLoggedIn.value = false
     }

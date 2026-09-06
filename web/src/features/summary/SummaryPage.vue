@@ -3,9 +3,9 @@
     <div class="page-header">
       <h3>汇总</h3>
       <div class="month-selector">
-        <van-button size="small" plain @click="prevMonth">&lt;</van-button>
-        <span class="current-month">{{ currentMonth }}</span>
-        <van-button size="small" plain @click="nextMonth">&gt;</van-button>
+        <van-button size="small" plain @click="prevYear">&lt;</van-button>
+        <span class="current-month">{{ currentYear }} 年</span>
+        <van-button size="small" plain @click="nextYear">&gt;</van-button>
         <van-button size="small" type="primary" plain icon="export" @click="showExportSheet = true">导出</van-button>
       </div>
     </div>
@@ -15,7 +15,7 @@
       :actions="exportActions"
       @select="onExportSelect"
       cancel-text="取消"
-      description="收支汇总为所选月份；科目余额表为当前最新余额"
+      description="收支汇总为所选年份；科目余额表为当前最新余额"
     />
 
     <!-- 加载中 -->
@@ -103,18 +103,18 @@
     </template>
 
     <!-- 科目当月流水弹层（点二级科目） -->
-    <van-popup v-model:show="showDrill" position="bottom" round closeable style="max-height: 80vh">
+    <van-popup v-model:show="showDrill" :position="popupPos()" round closeable style="max-height: 80vh">
       <div class="drill-popup">
         <div class="drill-header">
           <span class="drill-title">{{ drillCat ? drillCat.name : '' }} · 流水</span>
         </div>
         <div class="month-selector drill-month">
-          <van-button size="small" plain @click="drillPrevMonth">&lt;</van-button>
-          <span class="current-month">{{ drillMonth }}</span>
-          <van-button size="small" plain @click="drillNextMonth">&gt;</van-button>
+          <van-button size="small" plain @click="drillPrevYear">&lt;</van-button>
+          <span class="current-month">{{ drillYear }} 年</span>
+          <van-button size="small" plain @click="drillNextYear">&gt;</van-button>
         </div>
         <div v-if="drillLoading" class="drill-empty">加载中…</div>
-        <div v-else-if="drillItems.length === 0" class="drill-empty">该科目本月暂无流水</div>
+        <div v-else-if="drillItems.length === 0" class="drill-empty">该科目本年暂无流水</div>
         <div v-else class="drill-list">
           <div v-for="t in drillItems" :key="t.id" class="drill-row" @click="goListWithFilter(t)" :class="{ voided: t.status === 'voided' }">
             <span class="drill-date">{{ t.txnDate }}</span>
@@ -137,10 +137,11 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
 import { downloadExport, type ExportContent, type ExportFormat } from '../../lib/download'
-import { formatFen, currentMonthStr, getMonthRange } from '../../types/api'
+import { formatFen } from '../../types/api'
 import { showToast } from 'vant'
 import type { ApiResponse, Transaction } from '../../types/api'
 
+import { popupPos } from '../../composables/useScreen';
 interface CategorySummary {
   id: number
   name: string
@@ -172,7 +173,7 @@ interface SummaryResponse {
 const router = useRouter()
 const loading = ref(true)
 const loadError = ref(false)
-const currentMonth = ref(currentMonthStr())
+const currentYear = ref(new Date().getFullYear().toString())
 const summary = ref<SummaryResponse>({ incomeTotal: 0, expenseTotal: 0, balance: 0, capital: { bankBalanceCents: 0, assetTotalCents: 0, equityTotalCents: 0 }, categories: [] })
 const capital = computed(() => summary.value.capital)
 const categories = computed(() => summary.value.categories)
@@ -187,8 +188,10 @@ async function loadSummary() {
   loading.value = true
   loadError.value = false
   try {
-    const range = getMonthRange(currentMonth.value)
-    const res = await api.get<ApiResponse<SummaryResponse>>('/summary', { from: range.from, to: range.to })
+    const y = currentYear.value
+    const from = `${y}-01-01`
+    const to = `${y}-12-31`
+    const res = await api.get<ApiResponse<SummaryResponse>>('/summary', { from, to })
     summary.value = res.data
     // 默认展开第一个一级科目
     if (res.data.categories.length > 0) {
@@ -208,7 +211,7 @@ function toggleExpand(id: number) {
 // ---- 科目当月流水弹层（点二级科目） ----
 const showDrill = ref(false)
 const drillCat = ref<CategorySummary | null>(null)
-const drillMonth = ref(currentMonthStr())
+const drillYear = ref(new Date().getFullYear().toString())
 const drillItems = ref<Transaction[]>([])
 const drillLoading = ref(false)
 
@@ -221,7 +224,7 @@ const drillExpense = computed(() =>
 
 async function openDrill(l2: CategorySummary) {
   drillCat.value = l2
-  drillMonth.value = currentMonth.value
+  drillYear.value = new Date().getFullYear().toString()
   showDrill.value = true
   await loadDrill()
 }
@@ -231,10 +234,12 @@ async function loadDrill() {
   drillLoading.value = true
   drillItems.value = []
   try {
-    const range = getMonthRange(drillMonth.value)
+    const y = parseInt(drillYear.value)
+    const from = `${y}-01-01`
+    const to = `${y}-12-31`
     const res = await api.get<ApiResponse<{ items: Transaction[] }>>('/transactions', {
-      from: range.from,
-      to: range.to,
+      from,
+      to,
       categoryId: drillCat.value.id,
       pageSize: 1000,
       includeVoided: 'true',
@@ -247,25 +252,25 @@ async function loadDrill() {
   }
 }
 
-function shiftDrillMonth(delta: number) {
-  const [y, m] = drillMonth.value.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  drillMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+function shiftDrillYear(delta: number) {
+  drillYear.value = String(parseInt(drillYear.value) + delta)
   void loadDrill()
 }
 
-function drillPrevMonth() {
-  shiftDrillMonth(-1)
+function drillPrevYear() {
+  shiftDrillYear(-1)
 }
 
-function drillNextMonth() {
-  shiftDrillMonth(1)
+function drillNextYear() {
+  shiftDrillYear(1)
 }
 
-// 点某条流水跳转到流水页，并带「该科目 + 该月」筛选
+// 点某条流水跳转到流水页，并带「该科目 + 该年」筛选
 function goListWithFilter(t: Transaction) {
   if (!drillCat.value) return
-  const range = getMonthRange(drillMonth.value)
+  const y = drillYear.value
+  const from = `${y}-01-01`
+  const to = `${y}-12-31`
   void t
   router.push({
     path: '/transactions',
@@ -278,17 +283,13 @@ function goListWithFilter(t: Transaction) {
   })
 }
 
-function prevMonth() {
-  const [y, m] = currentMonth.value.split('-').map(Number)
-  const d = new Date(y, m - 2, 1)
-  currentMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+function prevYear() {
+  currentYear.value = String(parseInt(currentYear.value) - 1)
   loadSummary()
 }
 
-function nextMonth() {
-  const [y, m] = currentMonth.value.split('-').map(Number)
-  const d = new Date(y, m, 1)
-  currentMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+function nextYear() {
+  currentYear.value = String(parseInt(currentYear.value) + 1)
   loadSummary()
 }
 
@@ -319,9 +320,8 @@ async function handleExport(action: ExportAction) {
   try {
     const params: Record<string, string> = {}
     if (action.content === 'summary') {
-      const range = getMonthRange(currentMonth.value)
-      params.from = range.from
-      params.to = range.to
+      params.from = `${currentYear.value}-01-01`
+      params.to = `${currentYear.value}-12-31`
     }
     await downloadExport(params, action.content, action.format)
     showToast('导出成功')
@@ -334,9 +334,9 @@ async function handleExport(action: ExportAction) {
 <style scoped>
 .summary-page {
   padding: 16px;
-  padding-bottom: 60px;
+padding-bottom: 60px;
   min-height: 100vh;
-  background: #f7f7f5;
+  background: var(--paper);
 }
 
 .page-header {
@@ -349,7 +349,7 @@ async function handleExport(action: ExportAction) {
 .page-header h3 {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   margin: 0;
 }
 
@@ -362,7 +362,7 @@ async function handleExport(action: ExportAction) {
 .current-month {
   font-size: 14px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   min-width: 80px;
   text-align: center;
 }
@@ -378,7 +378,7 @@ async function handleExport(action: ExportAction) {
   padding: 40px 20px;
   background: #fff;
   border-radius: 12px;
-  color: #a32d2d;
+  color: var(--expense);
 }
 
 .capital-cards {
@@ -404,31 +404,31 @@ async function handleExport(action: ExportAction) {
 }
 
 .capital-card.equity {
-  background: #eaf5ed;
+  background: var(--jade-light);
 }
 
 .capital-card.total {
-  background: #e6f1fb;
+  background: var(--indigo-light);
 }
 
 .capital-card.earmarked {
-  background: #e6f1fb;
+  background: var(--indigo-light);
 }
 
 .capital-card.unallocated {
-  background: #eaf5ed;
+  background: var(--jade-light);
 }
 
 .card-label {
   font-size: 11px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   margin-bottom: 4px;
 }
 
 .card-value {
   font-size: 16px;
   font-weight: 600;
-  color: #2c2c2a;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
@@ -456,17 +456,17 @@ async function handleExport(action: ExportAction) {
   font-size: 13px;
 }
 
-.income-label { color: #0f6e56; }
-.expense-label { color: #a32d2d; }
-.balance-label.positive { color: #0f6e56; }
-.balance-label.negative { color: #a32d2d; }
+.income-label { color: var(--jade); }
+.expense-label { color: var(--expense); }
+.balance-label.positive { color: var(--jade); }
+.balance-label.negative { color: var(--expense); }
 
 .empty-state {
   text-align: center;
   padding: 40px 20px;
   background: #fff;
   border-radius: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .category-section {
@@ -478,13 +478,13 @@ async function handleExport(action: ExportAction) {
 .section-title {
   font-size: 14px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   padding: 12px 16px;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .l1-group {
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .l1-group:last-child {
@@ -515,17 +515,17 @@ async function handleExport(action: ExportAction) {
   border-radius: 99px;
   padding: 1px 8px;
   border: 1px solid #e3e2dd;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
-.l1-chip.residual { border-color: #0f6e56; color: #0f6e56; }
-.l1-chip.spending { border-color: #185fa5; color: #185fa5; }
+.l1-chip.residual { border-color: var(--jade); color: var(--jade); }
+.l1-chip.spending { border-color: var(--indigo); color: var(--indigo); }
 
 .l1-balance {
   font-size: 14px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: #2c2c2a;
+  color: var(--ink);
 }
 
 .l2-list {
@@ -548,7 +548,7 @@ async function handleExport(action: ExportAction) {
 
 .l2-name {
   font-size: 13px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
 }
 
 .l2-chip {
@@ -556,30 +556,30 @@ async function handleExport(action: ExportAction) {
   border-radius: 99px;
   padding: 1px 6px;
   border: 1px solid #e3e2dd;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
-.l2-chip.residual { border-color: #0f6e56; color: #0f6e56; }
-.l2-chip.spending { border-color: #185fa5; color: #185fa5; }
-.l2-chip.equity { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
+.l2-chip.residual { border-color: var(--jade); color: var(--jade); }
+.l2-chip.spending { border-color: var(--indigo); color: var(--indigo); }
+.l2-chip.equity { border-color: var(--jade); color: var(--jade); background: var(--jade-light); }
 .l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
-.l2-chip.reconcile { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
+.l2-chip.reconcile { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 
 .l2-count {
   font-size: 10px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .l2-balance {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: #5f5e5a;
+  color: var(--ink-soft);
 }
 
 .l2-empty {
   padding: 8px 0 8px 40px;
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .l2-row {
@@ -609,7 +609,7 @@ async function handleExport(action: ExportAction) {
 .drill-title {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
 }
 
 .drill-month {
@@ -619,7 +619,7 @@ async function handleExport(action: ExportAction) {
 
 .drill-empty {
   text-align: center;
-  color: #8f8e88;
+  color: var(--ink-muted);
   font-size: 13px;
   padding: 24px 0;
 }
@@ -633,7 +633,7 @@ async function handleExport(action: ExportAction) {
   align-items: center;
   gap: 8px;
   padding: 9px 0;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
 }
 
@@ -647,7 +647,7 @@ async function handleExport(action: ExportAction) {
 
 .drill-date {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .drill-dir {
@@ -657,8 +657,8 @@ async function handleExport(action: ExportAction) {
   flex: none;
 }
 
-.drill-dir.income { background: #eaf5ed; color: #0f6e56; }
-.drill-dir.expense { background: #fcebeb; color: #a32d2d; }
+.drill-dir.income { background: var(--jade-light); color: var(--jade); }
+.drill-dir.expense { background: #fcebeb; color: var(--expense); }
 
 .drill-amount {
   font-size: 13px;
@@ -667,13 +667,13 @@ async function handleExport(action: ExportAction) {
   flex: none;
 }
 
-.drill-amount.income { color: #0f6e56; }
-.drill-amount.expense { color: #a32d2d; }
+.drill-amount.income { color: var(--jade); }
+.drill-amount.expense { color: var(--expense); }
 
 .drill-note {
   flex: 1;
   font-size: 12px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -682,16 +682,16 @@ async function handleExport(action: ExportAction) {
 
 .drill-voided {
   font-size: 10px;
-  color: #a32d2d;
+  color: var(--expense);
   flex: none;
 }
 
 .drill-total {
   margin: 12px 16px 0;
   padding-top: 10px;
-  border-top: 1px solid #f0f0eb;
+  border-top: 1px solid var(--line-soft);
   font-size: 12px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   display: flex;
   justify-content: space-between;
 }

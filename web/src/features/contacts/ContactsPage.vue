@@ -1,10 +1,10 @@
-<template>
+﻿<template>
   <div class="contacts-page">
     <div class="page-header">
       <h3>往来</h3>
       <div class="header-actions">
         <van-button type="primary" plain size="small" @click="openAccrue">年度结转</van-button>
-        <van-button type="primary" plain size="small" icon="down" @click="showExportMenu = true">导出</van-button>
+        <van-button type="primary" plain size="small" icon="down" @click="openExportDialog">导出</van-button>
         <van-button type="primary" size="small" icon="plus" @click="openAddParty">新增单位</van-button>
       </div>
     </div>
@@ -39,7 +39,7 @@
         <div v-for="p in displayParties" :key="p.id" class="party-row" @click="openDetail(p)">
           <div class="party-main">
             <span class="party-name">{{ p.name }}</span>
-            <span class="l2-chip" :class="p.type">{{ partyTypeLabel[p.type] || '流转企业' }}</span>
+            <span class="l2-chip" :class="p.type">{{ partyTypeLabel[p.type ?? 'flow'] || '流转企业' }}</span>
             <span v-if="p.type === 'invest'" class="l2-chip invest-chip">投资 {{ formatFen(p.investAmountCents || 0) }}</span>
           </div>
           <div class="party-owed">
@@ -55,7 +55,7 @@
     <!-- 单位详情弹窗 -->
     <van-popup
       v-model:show="showPartyDetail"
-      position="bottom"
+      :position="popupPos()"
       round
       closeable
       class="party-detail-popup"
@@ -67,14 +67,13 @@
             <h3 class="detail-title">{{ currentParty.name }}</h3>
             <span v-if="currentParty.type" class="pd-type-text">{{ partyTypeLabel[currentParty.type] || '' }}</span>
           </div>
-          <div class="pd-actions">
-            <van-button class="pd-btn" size="small" @click="openAddReceivable">登记应收</van-button>
-            <van-button class="pd-btn ghost" size="small" @click="openAddPartyEdit">编辑单位</van-button>
-          </div>
         </div>
 
         <div class="detail-block">
-          <div class="section-title">基本情况</div>
+          <div class="section-title">
+            基本情况
+            <a class="pd-edit-link" @click="openAddPartyEdit">编辑</a>
+          </div>
           <div class="party-summary">
           <div class="summary-item">
             <div class="summary-value" :class="{ zero: currentParty.outstandingCents <= 0 }">
@@ -103,12 +102,52 @@
           </div>
         </div>
 
+        <!-- 合同附件 -->
+        <div class="detail-block">
+          <div class="section-title">
+            合同附件
+            <span class="section-subtitle">（{{ contracts.length }} 个）</span>
+          </div>
+          <div v-if="contracts.length === 0" class="empty-state">
+            <p>暂无合同或附件</p>
+          </div>
+          <div v-else class="contract-list">
+            <div v-for="c in contracts" :key="c.id" class="contract-item">
+              <van-icon :name="contractIcon(c.fileName, c.mimeType)" class="contract-icon" />
+              <div class="contract-info" @click="previewContract(c)">
+                <div class="contract-name">{{ displayContractName(c) }}</div>
+                <div class="contract-meta">
+                  <span>{{ displayContractFileName(c) }}</span>
+                  <span>{{ formatFileSize(c.fileSize) }}</span>
+                  <span v-if="c.contractDate">签订 {{ c.contractDate }}</span>
+                </div>
+              </div>
+              <van-button size="mini" plain type="primary" @click.stop="previewContract(c)">查看</van-button>
+              <van-button size="mini" plain type="danger" @click.stop="deleteContract(c)">删除</van-button>
+            </div>
+          </div>
+
+          <!-- 上传区 -->
+          <div class="contract-upload">
+            <input
+              type="file"
+              :id="'contract-upload-' + (currentParty?.id ?? 0)"
+              class="hidden-file-input"
+              @change="async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) await onContractUpload(f); (e.target as HTMLInputElement).value = '' }"
+            />
+            <label :for="'contract-upload-' + (currentParty?.id ?? 0)" class="upload-trigger">
+              <van-icon name="plus" />
+              <span>{{ contractUploading ? '上传中…' : '上传合同/附件' }}</span>
+            </label>
+            <div class="upload-hint">支持 PDF / 图片 / Word / Excel，单个 ≤ 5MB</div>
+          </div>
+        </div>
+
         <div class="detail-block">
           <div class="section-title">应收记录</div>
           <div v-if="detailLoading" class="loading-state"><van-skeleton title :row="4" /></div>
         <div v-else-if="receivableItems.length === 0" class="empty-state">
           <p>该单位暂无应收记录</p>
-          <van-button size="small" type="primary" @click="openAddReceivable">登记应收</van-button>
         </div>
 
         <div v-else class="recv-list">
@@ -154,41 +193,103 @@
       </div>
     </van-popup>
 
-    <!-- 导出选择 -->
-    <van-action-sheet
-      v-model:show="showExportMenu"
-      title="导出往来数据"
-      :actions="exportActions"
-      @select="onExportSelect"
-      @cancel="showExportMenu = false"
-    />
+    <!-- 导出筛选 -->
+    <van-dialog v-model:show="showExportDialog" title="导出往来单位及应收汇总" show-cancel-button @confirm="doExport">
+      <van-form>
+        <van-cell-group inset>
+          <van-field label="单位类型">
+            <template #input>
+              <van-checkbox-group v-model="exportFilter.types" shape="square">
+                <van-checkbox name="flow">土地流转企业</van-checkbox>
+                <van-checkbox name="invest">长期投资单位</van-checkbox>
+                <van-checkbox name="reinvest">再投资单位</van-checkbox>
+                <van-checkbox name="other">其他单位</van-checkbox>
+              </van-checkbox-group>
+            </template>
+          </van-field>
+          <van-field label="应收状况">
+            <template #input>
+              <van-radio-group v-model="exportFilter.recvState" direction="horizontal">
+                <van-radio name="all">全部</van-radio>
+                <van-radio name="has">有应收</van-radio>
+                <van-radio name="none">无应收</van-radio>
+              </van-radio-group>
+            </template>
+          </van-field>
+          <van-cell title="预计导出数量" :value="exportPreviewCount + ' 个单位'" />
+        </van-cell-group>
+      </van-form>
+    </van-dialog>
 
     <!-- 新增/编辑往来单位 -->
-    <van-dialog v-model:show="showAddParty" :title="editParty ? '编辑单位' : '新增往来单位'" show-cancel-button @confirm="saveParty">
-      <van-field v-model="partyForm.name" label="单位名称" placeholder="如：XX公司 / XX合作社" :rules="[{ required: true }]" />
-      <van-field label="单位类型">
-        <template #input>
-          <select v-model="partyForm.type" class="party-type-select" @change="onPartyTypeChange">
-            <option value="flow">流转企业</option>
-            <option value="invest">投资公司</option>
-            <option value="other">其它单位</option>
-          </select>
-        </template>
-      </van-field>
-      <van-field v-model="partyForm.contactPhone" label="联系电话" placeholder="联系电话（可选）" />
-      <van-field v-if="partyForm.type === 'flow'" v-model="partyForm.areaYuan" type="number" label="流转面积" placeholder="如 120.5（亩）" inputmode="decimal" />
-      <van-field v-if="partyForm.type === 'flow'" v-model="partyFlowStdYuan" type="number" label="年度流转费" placeholder="如 50000" inputmode="decimal" />
-      <van-field v-if="partyForm.type === 'invest'" label="投资金额">
-        <template #input>
-          <span class="invest-readonly">{{ investAmountDisplay }}</span>
-        </template>
-      </van-field>
-      <van-field v-if="partyForm.type === 'invest'" v-model="partyDividendYuan" type="number" label="年度投资收益" placeholder="如 80000" inputmode="decimal" />
-      <div v-if="partyForm.type === 'other'" class="dialog-tip">其它单位不设年度标准，需要时手动登记应收</div>
-      <div class="dialog-tip" v-if="!editParty && partyForm.type !== 'other'">
-        投资金额自动取长期投资同名公司累计投出（不可手改）；这里的金额是年度标准，一键结转时按类型生成应收
-      </div>
-      <van-field v-model="partyForm.note" label="备注" placeholder="备注（可选）" />
+    <van-dialog v-model:show="showAddParty" :title="editParty ? '编辑往来单位' : '新增往来单位'" show-cancel-button @confirm="saveParty" class="party-edit-dialog">
+      <van-form>
+        <van-tabs v-model:active="formTab" sticky shrink class="party-form-tabs">
+          <van-tab title="基本情况" name="basic">
+            <van-cell-group inset>
+              <van-field v-model="partyForm.name" label-width="150" label="单位名称" placeholder="如：XX公司 / XX合作社" required />
+              <van-field label="单位类型">
+                <template #input>
+                  <van-radio-group v-model="partyForm.type" direction="horizontal">
+                    <van-radio name="invest">长期投资</van-radio>
+                    <van-radio name="reinvest">再投资</van-radio>
+                    <van-radio name="flow">土地流转</van-radio>
+                    <van-radio name="other">其他</van-radio>
+                  </van-radio-group>
+                </template>
+              </van-field>
+              <van-field v-model="partyForm.contactPhone" label-width="150" label="联系电话" placeholder="可选" />
+            </van-cell-group>
+
+            <van-cell-group inset title="合同与备注">
+              <div class="inline-upload">
+                <input
+                  type="file"
+                  :id="'inline-file-' + (currentParty?.id ?? 'new')"
+                  class="hidden-file-input"
+                  @change="handleInlineUpload"
+                />
+                <label :for="'inline-file-' + (currentParty?.id ?? 'new')" class="upload-trigger inline">
+                  <van-icon name="plus" />
+                  <span>{{ inlineUploading ? '上传中…' : '点击选择合同/附件' }}</span>
+                </label>
+                <div v-if="inlineContracts.length > 0" class="inline-contract-list">
+                  <div v-for="(c, i) in inlineContracts" :key="i" class="inline-contract-item">
+                    <van-icon :name="contractIcon(c.fileName, c.mimeType)" class="contract-icon" />
+                    <span class="inline-ctitle">{{ splitCleanFileName(c.fileName).cleanName + splitCleanFileName(c.fileName).ext }}</span>
+                    <span class="inline-cstate" v-if="c._status === 'uploading'">上传中…</span>
+                    <span class="inline-cstate ok" v-else>✓</span>
+                    <van-icon name="cross" class="inline-cremove" @click="inlineContracts.splice(i, 1)" />
+                  </div>
+                </div>
+              </div>
+              <van-field v-model="partyForm.note" label-width="150" label="备注" placeholder="备注（可选）" />
+            </van-cell-group>
+          </van-tab>
+
+          <van-tab title="年度数据" name="data">
+            <!-- 投资/再投资专属字段 -->
+            <van-cell-group inset v-if="partyForm.type === 'invest' || partyForm.type === 'reinvest'" title="投资信息">
+              <van-field v-model="partyForm.investAmountYuan" label-width="150" type="number" label="投资本金（元）" placeholder="如 500000" inputmode="decimal" />
+              <van-field v-model="partyForm.returnRatePercent" label-width="150" type="number" label="年收益率" placeholder="如 0.04" inputmode="decimal" />
+              <van-field v-model="partyForm.expectedReturnYuan" label-width="150" type="number" label="年收益（元）" placeholder="自动计算，可修改" inputmode="decimal" />
+            </van-cell-group>
+
+            <!-- 土地流转专属字段 -->
+            <van-cell-group inset v-else-if="partyForm.type === 'flow'" title="土地流转信息">
+              <van-field v-model="partyForm.landMuYuan" label-width="150" type="number" label="流转亩数" placeholder="如 200" inputmode="decimal" />
+              <van-field v-model="partyForm.landFeePerMuYuan" label-width="150" type="number" label="每亩年流转费" placeholder="如 150" inputmode="decimal" />
+              <van-field v-model="partyForm.expectedLandFeeYuan" label-width="150" type="number" label="总流转费（元）" placeholder="自动计算，可修改" inputmode="decimal" />
+              <van-field v-model="partyForm.mgmtFeePerMuYuan" label-width="150" type="number" label="每亩年管理费" placeholder="如 15" inputmode="decimal" />
+              <van-field v-model="partyForm.expectedMgmtFeeYuan" label-width="150" type="number" label="总管理费（元）" placeholder="自动计算，可修改" inputmode="decimal" />
+            </van-cell-group>
+
+            <van-cell-group inset v-else title="其他类型">
+              <van-field label="说明" placeholder="可选" readonly value="该单位不参与年度投资/流转费结转，需要时手动登记应收" />
+            </van-cell-group>
+          </van-tab>
+        </van-tabs>
+      </van-form>
     </van-dialog>
 
     <!-- 年度标准就地修改 -->
@@ -198,7 +299,7 @@
     </van-dialog>
 
     <!-- 批量计提 / 流转费标准 -->
-    <van-popup v-model:show="showAccrue" position="bottom" round closeable style="max-height: 92vh">
+    <van-popup v-model:show="showAccrue" :position="popupPos()" round closeable style="max-height: 92vh">
       <div class="accrue-popup">
         <van-tabs v-model:active="accrueTab">
           <!-- 年度结转：预览单位标准数据后再确认 -->
@@ -292,7 +393,7 @@
     </van-dialog>
 
     <!-- 收款 / 抵销 -->
-    <van-popup v-model:show="showReceipt" position="bottom" round closeable style="max-height: 92vh">
+    <van-popup v-model:show="showReceipt" :position="popupPos()" round closeable style="max-height: 92vh">
       <div class="receipt-popup">
         <div class="popup-title">收款 / 抵销</div>
         <van-field label="应收单">
@@ -378,35 +479,166 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { showToast, showDialog } from 'vant'
 import type {
-  Category, Party, Receivable, Receipt, ReceivableDetail,
-  ReceivableListResponse, Transaction, ApiResponse, RecvKind, AccrualStandard, AccrueResult, AccruePreview, AccruePreviewItem,
-} from '../../types/api'
+   Category, Party, Receivable, Receipt, ReceivableDetail,
+   ReceivableListResponse, Transaction, ApiResponse, RecvKind, AccrualStandard, AccrueResult, AccruePreview, AccruePreviewItem,
+   Contract, ReinvestAllocation,
+ } from '../../types/api'
 import { formatFen, todayStr, recvKindLabel } from '../../types/api'
 import NativeSelect from '../../components/NativeSelect.vue'
-import { downloadExport } from '../../lib/download'
-
+import * as XLSX from 'xlsx'
+import { popupPos } from '../../composables/useScreen';
 const loading = ref(false)
 const detailLoading = ref(false)
 const parties = ref<Party[]>([])
 
-// ---- 往来导出 ----
-const showExportMenu = ref(false)
-const exportActions = [
-  { name: '导出单位基本情况（Excel）', value: 'parties' },
-  { name: '导出欠款明细（Excel）', value: 'receivables' },
-]
-async function onExportSelect(action: { name: string; value: 'parties' | 'receivables' }) {
-  showExportMenu.value = false
+// ---- 往来导出（纯前端 xlsx） ----
+const showExportDialog = ref(false)
+interface ExportFilter {
+  types: string[]
+  recvState: 'all' | 'has' | 'none'
+}
+const exportFilter = ref<ExportFilter>({ types: ['flow', 'invest', 'reinvest', 'other'], recvState: 'all' })
+
+const exportPreviewCount = computed(() => applyExportFilter(parties.value).length)
+
+function openExportDialog() {
+  // 默认全选所有类型
+  exportFilter.value = { types: ['flow', 'invest', 'reinvest', 'other'], recvState: 'all' }
+  showExportDialog.value = true
+}
+
+function applyExportFilter(list: Party[]): Party[] {
+  const selectedTypes = exportFilter.value.types
+  return list.filter(p => {
+    // 类型匹配：party.types 或 party.type 任一在 selectedTypes 里就算匹配
+    const partyTypes = p.types && p.types.length ? p.types : (p.type ? [p.type] : [])
+    const typeMatch = partyTypes.some(t => selectedTypes.includes(t))
+    if (!typeMatch) return false
+    // 应收状态
+    const outstanding = p.outstandingCents || 0
+    if (exportFilter.value.recvState === 'has' && outstanding <= 0) return false
+    if (exportFilter.value.recvState === 'none' && outstanding > 0) return false
+    return true
+  })
+}
+
+async function doExport() {
+  if (exportPreviewCount.value === 0) {
+    showToast('没有符合条件的单位')
+    return
+  }
+  showExportDialog.value = false
   try {
-    await downloadExport({}, action.value, 'xlsx')
-    showToast('导出成功')
+    const filtered = applyExportFilter(parties.value)
+    exportContactsExcel(filtered)
+    showToast(`已导出 ${filtered.length} 个单位`)
   } catch (e: any) {
     showToast(e.message || '导出失败')
   }
+}
+
+function fenToYuan(cents: number | null | undefined): number {
+  return Math.round((cents || 0) / 100 * 100) / 100
+}
+
+function exportContactsExcel(targetParties: Party[]): void {
+  const wb = XLSX.utils.book_new()
+
+  // --- Sheet 1: 往来单位 ---
+  const partyHeaders = [
+    '名称', '类型', '联系电话',
+    '投资本金(元)', '收益率(%)', '年收益(元)',
+    '流转亩数', '每亩流转费(元)', '总流转费(元)',
+    '每亩管理费(元)', '总管理费(元)',
+    '欠款(元)', '备注',
+  ]
+  const partyRows = targetParties.map(p => {
+    const typesLabel = (p.types || []).map(t => partyTypeLabel[t] || t).join('/') || partyTypeLabel[p.type || ''] || ''
+    return [
+      p.name, typesLabel, p.contactPhone || '',
+      fenToYuan(p.investAmountCents),
+      p.returnRateBps ? (p.returnRateBps / 10000).toFixed(4) : '',
+      fenToYuan(p.expectedReturnCents),
+      p.landMu || p.areaMu || '',
+      fenToYuan(p.landFeePerMuCents),
+      fenToYuan(p.expectedLandFeeCents),
+      fenToYuan(p.mgmtFeePerMuCents),
+      fenToYuan(p.expectedMgmtFeeCents),
+      fenToYuan(p.outstandingCents),
+      p.note || '',
+    ]
+  })
+  const wsParties = XLSX.utils.aoa_to_sheet([partyHeaders, ...partyRows])
+  wsParties['!cols'] = [
+    { wch: 25 }, { wch: 20 }, { wch: 15 },
+    { wch: 14 }, { wch: 10 }, { wch: 14 },
+    { wch: 10 }, { wch: 16 }, { wch: 14 },
+    { wch: 16 }, { wch: 14 },
+    { wch: 12 }, { wch: 20 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsParties, '往来单位')
+
+  // --- Sheet 2: 应收汇总 ---
+  // 按类型汇总每个单位的欠款 + 年度预计应收
+  const recvHeaders = [
+    '单位名称', '类型',
+    '应收投资收益(元)', '应收土地流转费(元)', '应收流转管理费(元)', '应收再投资收益(元)',
+    '已收合计(元)', '待收合计(元)',
+  ]
+  const recvRows = targetParties.map(p => {
+    // 从 receivableItems + standards 汇总（当前页已加载的）
+    const related = receivableItems.value.filter(r => r.partyId === p.id )
+    const sumByKind = (kind: string) => fenToYuan(
+      related.filter(r => r.recvKind === kind).reduce((s, r) => s + (r.outstandingCents || 0), 0)
+    )
+    const paidSum = fenToYuan(
+      related.reduce((s, r) => s + (r.paidCents || 0), 0)
+    )
+    const outstandingTotal = fenToYuan(p.outstandingCents)
+    return [
+      p.name, (p.types || []).map(t => partyTypeLabel[t]).join('/') || partyTypeLabel[p.type || ''] || '',
+      sumByKind('dividend'),
+      sumByKind('rent'),
+      sumByKind('service'),
+      sumByKind('reinvest_dividend'),
+      paidSum,
+      outstandingTotal,
+    ]
+  })
+  // 合计行
+  const totalRow = [
+    '合计', '',
+    fenToYuan(targetParties.reduce((s, p) => {
+      const related = receivableItems.value.filter(r => r.partyId === p.id  && r.recvKind === 'dividend')
+      return s + related.reduce((ss, r) => ss + (r.outstandingCents || 0), 0)
+    }, 0)),
+    fenToYuan(targetParties.reduce((s, p) => {
+      const related = receivableItems.value.filter(r => r.partyId === p.id  && r.recvKind === 'rent')
+      return s + related.reduce((ss, r) => ss + (r.outstandingCents || 0), 0)
+    }, 0)),
+    fenToYuan(targetParties.reduce((s, p) => {
+      const related = receivableItems.value.filter(r => r.partyId === p.id  && r.recvKind === 'service')
+      return s + related.reduce((ss, r) => ss + (r.outstandingCents || 0), 0)
+    }, 0)),
+    fenToYuan(0),
+    fenToYuan(targetParties.reduce((s, p) => s + (receivableItems.value.filter(r => r.partyId === p.id).reduce((ss, r) => ss + (r.paidCents || 0), 0)), 0)),
+    fenToYuan(targetParties.reduce((s, p) => s + p.outstandingCents, 0)),
+  ]
+  const wsRecv = XLSX.utils.aoa_to_sheet([recvHeaders, ...recvRows, totalRow])
+  wsRecv['!cols'] = [
+    { wch: 25 }, { wch: 20 },
+    { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
+    { wch: 14 }, { wch: 14 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsRecv, '应收汇总')
+
+  const now = new Date()
+  const fname = `集体台账-往来单位及应收-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`
+  XLSX.writeFile(wb, fname)
 }
 
 // ---- 往来单位 ----
@@ -417,23 +649,97 @@ const expandedReceipts = ref<Record<number, boolean>>({})
 
 const showAddParty = ref(false)
 const editParty = ref(false)
-const partyForm = ref({ id: 0, name: '', type: 'flow' as 'flow' | 'invest' | 'other', contactPhone: '', areaYuan: '', note: '' })
 
-const partyTypeLabel: Record<string, string> = { flow: '流转企业', invest: '投资公司', other: '其它单位' }
+// 弹窗内合同上传（待保存 party 后再关联）
+interface InlineContract { fileName: string; fileSize: number; mimeType: string; fileData: string; _status?: 'uploading' | 'ok' | 'error' }
+const inlineContracts = ref<InlineContract[]>([])
+const inlineUploading = ref(false)
+const formTab = ref<'basic' | 'data'>('basic')
 
-// 新增/编辑单位弹窗里的年度标准输入
-const partyFlowStdYuan = ref('')
-const partyDividendYuan = ref('')
-const investAmountDisplay = computed(() => {
-  if (editParty.value && currentParty.value?.type === 'invest') {
-    return formatFen(currentParty.value.investAmountCents || 0)
-  }
-  return formatFen(0)
+const partyForm = ref({
+  id: 0,
+  name: '',
+  type: 'flow' as 'flow' | 'invest' | 'reinvest' | 'other',
+  contactPhone: '',
+  note: '',
+  // 投资/再投资专属字段（invest / reinvest 类型用，二者内容一致）
+  investAmountYuan: '',
+  returnRatePercent: '',
+  expectedReturnYuan: '',
+  // 土地流转专属字段（flow 类型用）
+  landMuYuan: '',
+  landFeePerMuYuan: '',
+  expectedLandFeeYuan: '',
+  mgmtFeePerMuYuan: '',
+  expectedMgmtFeeYuan: '',
 })
-function onPartyTypeChange() {
-  partyFlowStdYuan.value = ''
-  partyDividendYuan.value = ''
+
+const partyTypeLabel: Record<string, string> = { invest: '长期投资单位', reinvest: '再投资单位', flow: '土地流转企业', other: '其他单位' }
+const partyTypeColor: Record<string, string> = { invest: '#1989fa', reinvest: '#ff6034', flow: '#07c160', other: '#969799' }
+const ALL_PARTY_TYPES = [
+  { value: 'invest' as const, label: '长期投资单位' },
+  { value: 'reinvest' as const, label: '再投资单位' },
+  { value: 'flow' as const, label: '土地流转企业' },
+  { value: 'other' as const, label: '其他单位' },
+]
+
+// 自动计算辅助
+function autoInvestReturn() {
+  const amtYuan = parseFloat(partyForm.value.investAmountYuan || '0') || 0
+  const rate = parseFloat(partyForm.value.returnRatePercent || '0') || 0
+  return Math.round(amtYuan * rate)  // 年收益 = 投资金额(元) × 收益率(%)
 }
+function autoLandFee() {
+  const mu = parseFloat(partyForm.value.landMuYuan || '0') || 0
+  const perMu = parseFloat(partyForm.value.landFeePerMuYuan || '0') || 0
+  return Math.round(mu * perMu)
+}
+function autoMgmtFee() {
+  const mu = parseFloat(partyForm.value.landMuYuan || '0') || 0
+  const perMu = parseFloat(partyForm.value.mgmtFeePerMuYuan || '0') || 0
+  return Math.round(mu * perMu)
+}
+
+// 自动写入目标字段，用户手改后停止覆盖
+let lastAutoReturn: number | null = null
+let lastAutoLandFee: number | null = null
+let lastAutoMgmt: number | null = null
+
+watch(
+  () => [partyForm.value.investAmountYuan, partyForm.value.returnRatePercent],
+  () => {
+    const auto = autoInvestReturn()
+    const cur = parseFloat(partyForm.value.expectedReturnYuan || '0') || 0
+    if (lastAutoReturn === null || cur === lastAutoReturn) {
+      partyForm.value.expectedReturnYuan = auto > 0 ? String(auto) : ''
+    }
+    lastAutoReturn = auto
+  }
+)
+
+watch(
+  () => [partyForm.value.landMuYuan, partyForm.value.landFeePerMuYuan],
+  () => {
+    const auto = autoLandFee()
+    const cur = parseFloat(partyForm.value.expectedLandFeeYuan || '0') || 0
+    if (lastAutoLandFee === null || cur === lastAutoLandFee) {
+      partyForm.value.expectedLandFeeYuan = auto > 0 ? String(auto) : ''
+    }
+    lastAutoLandFee = auto
+  }
+)
+
+watch(
+  () => [partyForm.value.landMuYuan, partyForm.value.mgmtFeePerMuYuan],
+  () => {
+    const auto = autoMgmtFee()
+    const cur = parseFloat(partyForm.value.expectedMgmtFeeYuan || '0') || 0
+    if (lastAutoMgmt === null || cur === lastAutoMgmt) {
+      partyForm.value.expectedMgmtFeeYuan = auto > 0 ? String(auto) : ''
+    }
+    lastAutoMgmt = auto
+  }
+)
 
 const showAddReceivable = ref(false)
 const recvForm = ref({
@@ -457,6 +763,28 @@ const receiptForm = ref({
   note: '',
 })
 const savingReceipt = ref(false)
+
+// 再投资比例设置（从 /settings 读取）
+const reinvestRatioBps = ref(0)
+let settingsLoaded = false
+async function ensureSettings() {
+  if (settingsLoaded) return
+  try {
+    const s = await api.get<ApiResponse<{ bankBalanceCents?: number; reinvestRatioBps?: number }>>('/settings')
+    reinvestRatioBps.value = (s.data?.reinvestRatioBps as number) || 0
+  } catch { /* 忽略 */ }
+  settingsLoaded = true
+}
+
+// 再投资去向对话框（核销成功后按需弹出）
+const showReinvestDialog = ref(false)
+const reinvestForm = ref({
+  receiptAmountCents: 0,
+  reinvestAmountCents: 0,
+  targetName: '',
+  targetPartyId: null as number | null,
+  notes: '',
+})
 
 const cats = ref<Category[]>([])
 const incomeCatOptions = ref<{ name: string; value: number }[]>([])
@@ -535,34 +863,43 @@ async function loadKindOwes() {
 }
 
 function openAddParty() {
+  inlineContracts.value = []
+  formTab.value = 'basic'
   editParty.value = false
-  partyForm.value = { id: 0, name: '', type: 'flow', contactPhone: '', areaYuan: '', note: '' }
-  partyFlowStdYuan.value = ''
-  partyDividendYuan.value = ''
+  partyForm.value = {
+    id: 0, name: '',
+    type: 'flow',
+    contactPhone: '', note: '',
+    investAmountYuan: '', returnRatePercent: '', expectedReturnYuan: '',
+    landMuYuan: '', landFeePerMuYuan: '', expectedLandFeeYuan: '',
+    mgmtFeePerMuYuan: '', expectedMgmtFeeYuan: '',
+  }
   showAddParty.value = true
 }
 
 function openAddPartyEdit() {
+  inlineContracts.value = []
+  formTab.value = 'basic'
   if (!currentParty.value) return
+  const p = currentParty.value
   editParty.value = true
+  const type = (p.type && ['flow','invest','reinvest','other'].includes(p.type)) ? p.type : 'flow'
   partyForm.value = {
-    id: currentParty.value.id,
-    name: currentParty.value.name,
-    type: currentParty.value.type || 'flow',
-    contactPhone: currentParty.value.contactPhone || '',
-    areaYuan: currentParty.value.areaMu ? String(currentParty.value.areaMu) : '',
-    note: currentParty.value.note || '',
-  }
-  partyFlowStdYuan.value = ''
-  partyDividendYuan.value = ''
-  const kind = currentParty.value.type === 'invest' ? 'dividend' : currentParty.value.type === 'other' ? null : 'rent'
-  if (kind) {
-    const s = standards.value.find(x => x.partyId === currentParty.value!.id && x.recvKind === kind)
-    if (s) {
-      const yuan = (s.amountCents / 100).toFixed(2)
-      if (kind === 'dividend') partyDividendYuan.value = yuan
-      else partyFlowStdYuan.value = yuan
-    }
+    id: p.id,
+    name: p.name,
+    type,
+    contactPhone: p.contactPhone || '',
+    note: p.note || '',
+    // 投资/再投资
+    investAmountYuan: (p.investAmountCents / 100).toFixed(2),
+    returnRatePercent: p.returnRateBps ? (p.returnRateBps / 10000).toFixed(4) : '',
+    expectedReturnYuan: (p.expectedReturnCents / 100).toFixed(2),
+    // 土地流转
+    landMuYuan: p.landMu ? String(p.landMu) : (p.areaMu ? String(p.areaMu) : ''),
+    landFeePerMuYuan: (p.landFeePerMuCents / 100).toFixed(2),
+    expectedLandFeeYuan: (p.expectedLandFeeCents / 100).toFixed(2),
+    mgmtFeePerMuYuan: (p.mgmtFeePerMuCents / 100).toFixed(2),
+    expectedMgmtFeeYuan: (p.expectedMgmtFeeCents / 100).toFixed(2),
   }
   showAddParty.value = true
 }
@@ -579,13 +916,39 @@ async function saveParty() {
     showToast('请填写单位名称')
     return
   }
+  const f = partyForm.value
+  // yuan → cents helper
+  const toCents = (yuan: string) => Math.round(parseFloat(yuan || '0') * 100)
+  const toYuan = (cents: string | number) => (typeof cents === 'number' ? cents : parseFloat(cents || '0') * 100)
+  // 自动计算 expected_* 字段（用户没改的话用自动值）
+  const autoER = autoInvestReturn()
+  const autoLF = autoLandFee()
+  const autoMF = autoMgmtFee()
+  // 如果用户手动改了 expected 字段，优先用用户值；否则用自动值
+  const expectedReturnInput = parseFloat(f.expectedReturnYuan || '0')
+  const expectedLandFeeInput = parseFloat(f.expectedLandFeeYuan || '0')
+  const expectedMgmtFeeInput = parseFloat(f.expectedMgmtFeeYuan || '0')
+
+  const payload: Record<string, unknown> = {
+    name: f.name,
+    type: f.type,
+    types: [f.type], // 后端兼容字段
+    contactPhone: f.contactPhone.trim(),
+    note: f.note,
+    // invest 类型字段
+    investAmountCents: toCents(f.investAmountYuan),
+    returnRateBps: Math.round(parseFloat(f.returnRatePercent || '0') * 10000),
+    expectedReturnCents: toCents(expectedReturnInput > 0 ? f.expectedReturnYuan : String(autoER)),
+    // flow 字段
+    landMu: parseFloat(f.landMuYuan || '0') || 0,
+    areaMu: parseFloat(f.landMuYuan || '0') || 0, // 兼容旧字段
+    landFeePerMuCents: toCents(f.landFeePerMuYuan),
+    expectedLandFeeCents: toCents(expectedLandFeeInput > 0 ? f.expectedLandFeeYuan : String(autoLF)),
+    mgmtFeePerMuCents: toCents(f.mgmtFeePerMuYuan),
+    expectedMgmtFeeCents: toCents(expectedMgmtFeeInput > 0 ? f.expectedMgmtFeeYuan : String(autoMF)),
+  }
   try {
-    const payload: Record<string, unknown> = { name: partyForm.value.name, type: partyForm.value.type }
-    payload.contactPhone = partyForm.value.contactPhone.trim()
-    const area = parseFloat(partyForm.value.areaYuan || '0')
-    payload.areaMu = isNaN(area) ? 0 : area
-    if (partyForm.value.note) payload.note = partyForm.value.note
-    let id = partyForm.value.id
+    let id = f.id
     if (editParty.value) {
       await api.put(`/parties/${id}`, payload)
       showToast('更新成功')
@@ -594,12 +957,11 @@ async function saveParty() {
       id = res.data?.id ?? 0
       showToast('创建成功')
     }
-    if (partyForm.value.type === 'flow') {
-      await syncPartyStandard(id, 'rent', partyFlowStdYuan.value)
-    } else if (partyForm.value.type === 'invest') {
-      await syncPartyStandard(id, 'dividend', partyDividendYuan.value)
+    // 保存弹窗内收集的合同
+    if (inlineContracts.value.length > 0 && id > 0) {
+      await uploadInlineContracts(id)
+      inlineContracts.value = []
     }
-    await loadStandards()
     await loadParties()
     if (currentParty.value) {
       const updated = parties.value.find(p => p.id === currentParty.value!.id)
@@ -612,9 +974,260 @@ async function saveParty() {
 
 // ---- 详情（弹窗） ----
 const showPartyDetail = ref(false)
+const contracts = ref<Contract[]>([])
+const contractUploading = ref(false)
+const allocations = ref<ReinvestAllocation[]>([])
+const showAllocForm = ref(false)
+const allocForm = ref({ targetName: '', amount: '', notes: '' })
+async function loadAllocations(partyId: number) {
+  try {
+    allocations.value = (await api.get<ApiResponse<ReinvestAllocation[]>>(`/parties/${partyId}/allocations`)).data || []
+  } catch { allocations.value = [] }
+}
+async function saveAlloc() {
+  if (!currentParty.value) return
+  const amountCents = Math.round(parseFloat(allocForm.value.amount || '0') * 100)
+  if (!allocForm.value.targetName.trim()) { showToast('请填写去向单位'); return }
+  if (amountCents <= 0) { showToast('金额必须大于 0'); return }
+  await api.post(`/parties/${currentParty.value.id}/allocations`, {
+    targetName: allocForm.value.targetName.trim(),
+    amountCents,
+    notes: allocForm.value.notes || null,
+  })
+  showAllocForm.value = false
+  allocForm.value = { targetName: '', amount: '', notes: '' }
+  await loadAllocations(currentParty.value.id)
+  showToast('已保存')
+}
+async function deleteAlloc(a: ReinvestAllocation) {
+  try { await showDialog({ title: '确认删除', message: `删除对"${a.targetName}"的再投资去向？`, showCancelButton: true }) } catch { return }
+  await api.del(`/allocations/${a.id}`)
+  if (currentParty.value) await loadAllocations(currentParty.value.id)
+}
+
+async function saveReinvest() {
+  if (!currentParty.value) return
+  if (!reinvestForm.value.targetName.trim()) { showToast('请填写再投资去向名称'); return }
+  if (reinvestForm.value.reinvestAmountCents <= 0) { showToast('再投资金额必须大于 0'); return }
+  await api.post(`/parties/${currentParty.value.id}/allocations`, {
+    targetName: reinvestForm.value.targetName.trim(),
+    targetPartyId: reinvestForm.value.targetPartyId,
+    amountCents: reinvestForm.value.reinvestAmountCents,
+    notes: reinvestForm.value.notes || null,
+  })
+  showToast('再投资去向已登记')
+  showReinvestDialog.value = false
+  if (currentParty.value) await loadAllocations(currentParty.value.id)
+}
+
 function onPartyDetailClosed() {
   currentParty.value = null
   receivableItems.value = []
+  contracts.value = []
+  allocations.value = []
+  showAllocForm.value = false
+}
+
+async function loadContracts(partyId: number) {
+  try {
+    contracts.value = (await api.get<ApiResponse<Contract[]>>('/contracts', { partyId })).data || []
+  } catch {
+    contracts.value = []
+  }
+}
+
+// 智能拆分文件名：去掉 URL 风格的 query 串，提取真正的扩展名
+function splitCleanFileName(raw: string): { cleanName: string; ext: string } {
+  if (!raw) return { cleanName: '未命名', ext: '' }
+  let name = raw
+  // 去掉 URL query (第一个 ? 之后的)
+  const qIdx = name.indexOf('?')
+  if (qIdx > 0) name = name.slice(0, qIdx)
+  // 去掉 URL path 里的 / (取最后一段)
+  const slashIdx = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'))
+  if (slashIdx >= 0) name = name.slice(slashIdx + 1)
+  // 拆扩展名
+  const dotIdx = name.lastIndexOf('.')
+  let base = name
+  let ext = ''
+  if (dotIdx > 0 && dotIdx < name.length - 1) {
+    ext = name.slice(dotIdx)
+    base = name.slice(0, dotIdx)
+  }
+  // 清洗 base：去掉明显的 hash/query 风格串
+  // 如 "u=4217215850,4193273696&fm=253&fmt=auto&app=138&f=JPEG" → "image"
+  if (/[=&%]/.test(base) || /^\w+=\d{4,}/.test(base)) {
+    const map: Record<string, string> = {
+      'image': '上传图片',
+      'jpeg': '上传图片',
+      'jpg': '上传图片',
+      'png': '上传图片',
+      'pdf': '上传文档',
+      'doc': '上传文档',
+      'docx': '上传文档',
+      'xls': '上传表格',
+      'xlsx': '上传表格',
+    }
+    const lowerExt = ext.replace('.', '').toLowerCase()
+    base = map[lowerExt] || `上传文件-${Date.now().toString().slice(-6)}`
+  }
+  // 超长截断
+  if (base.length > 50) base = base.slice(0, 50) + '…'
+  return { cleanName: base || '未命名', ext }
+}
+
+// 合同列表显示名称：优先 contractTitle，但也要清洗脏的 contractTitle
+function displayContractName(c: Contract): string {
+  const rawTitle = c.contractTitle?.trim()
+  if (rawTitle && !looksLikeDirtyFileName(rawTitle)) return rawTitle
+  return splitCleanFileName(c.fileName).cleanName
+}
+
+// 合同列表显示的真实文件名（带扩展名）
+function displayContractFileName(c: Contract): string {
+  const { cleanName, ext } = splitCleanFileName(c.fileName)
+  return cleanName + ext
+}
+
+// 检测是否为脏文件名（URL query / hash 风格）
+function looksLikeDirtyFileName(s: string): boolean {
+  if (!s) return false
+  return /[=&%]/.test(s) || /^\w+=\d{4,}/.test(s) || /[?#]/.test(s) || s.length > 80
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB'
+}
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+async function onContractUpload(file: File) {
+  if (!currentParty.value) return
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('文件不能超过 5MB')
+    return
+  }
+  contractUploading.value = true
+  try {
+    const dataUrl = await readFileAsDataURL(file)
+    const { cleanName, ext } = splitCleanFileName(file.name)
+    await api.post('/contracts', {
+      partyId: currentParty.value.id,
+      fileName: cleanName + ext,
+      fileSize: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      contractTitle: cleanName,
+      contractDate: null,
+      expiresAt: null,
+      fileData: dataUrl,
+    })
+    showToast('上传成功')
+    await loadContracts(currentParty.value.id)
+  } catch (e: any) {
+    showToast(e.message || '上传失败')
+  } finally {
+    contractUploading.value = false
+  }
+}
+
+// 弹窗内合同上传：先收集在 inlineContracts 数组，保存 party 后再真正 POST
+async function handleInlineUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) { showToast('文件不能超过 5MB'); return }
+  inlineUploading.value = true
+  try {
+    const dataUrl = await readFileAsDataURL(file)
+    const { cleanName, ext } = splitCleanFileName(file.name)
+    inlineContracts.value.push({
+      fileName: cleanName + ext,
+      fileSize: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      fileData: dataUrl,
+      _status: 'ok',
+    })
+    showToast('已选择：' + cleanName + ext)
+  } catch {
+    showToast('读取文件失败')
+  } finally {
+    inlineUploading.value = false
+  }
+}
+
+async function uploadInlineContracts(partyId: number) {
+  for (const c of inlineContracts.value) {
+    await api.post('/contracts', {
+      partyId, fileName: c.fileName, fileSize: c.fileSize,
+      mimeType: c.mimeType, contractTitle: splitCleanFileName(c.fileName).cleanName,
+      contractDate: null, expiresAt: null, fileData: c.fileData,
+    })
+  }
+}
+
+async function previewContract(c: Contract) {
+  try {
+    const full = (await api.get<ApiResponse<Contract>>(`/contracts/${c.id}`)).data
+    if (!full?.fileData) { showToast('文件内容为空'); return }
+    // 解析 data:mime;base64,xxx → Blob → Blob URL
+    const comma = full.fileData.indexOf(',')
+    if (comma < 0) { showToast('文件格式错误'); return }
+    const meta = full.fileData.slice(0, comma)
+    const base64 = full.fileData.slice(comma + 1)
+    const mimeMatch = meta.match(/data:([^;]+)/)
+    const mime = mimeMatch ? mimeMatch[1] : (full.mimeType || 'application/octet-stream')
+    const bin = atob(base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const blob = new Blob([bytes], { type: mime })
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.download = full.fileName
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+      a.remove()
+      URL.revokeObjectURL(blobUrl)
+    }, 30000)
+  } catch (e: any) {
+    showToast(e.message || '预览失败')
+  }
+}
+
+async function deleteContract(c: Contract) {
+  try {
+    await showDialog({ title: '确认删除', message: `确定删除"${c.fileName}"吗？`, showCancelButton: true })
+  } catch { return }
+  try {
+    await api.del(`/contracts/${c.id}`)
+    showToast('已删除')
+    if (currentParty.value) await loadContracts(currentParty.value.id)
+  } catch (e: any) {
+    showToast(e.message || '删除失败')
+  }
+}
+
+function contractIcon(fileName: string, mimeType?: string | null): string {
+  const mime = mimeType || ''
+  if (mime.startsWith('image/')) return 'photo-o'
+  if (mime === 'application/pdf') return 'description'
+  if (/\.(doc|docx)$/i.test(fileName)) return 'description'
+  if (/\.(xls|xlsx)$/i.test(fileName)) return 'orders-o'
+  if (/\.(zip|rar|7z)$/i.test(fileName)) return 'passed'
+  return 'records'
 }
 
 async function openDetail(p: Party) {
@@ -625,6 +1238,8 @@ async function openDetail(p: Party) {
   receiptsByRec.value = {}
   expandedReceipts.value = {}
   void loadStandards()
+  void loadContracts(p.id)
+  void loadAllocations(p.id)
   try {
     const res = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', { partyId: p.id, pageSize: 200 })
     receivableItems.value = res.data.items || []
@@ -744,6 +1359,21 @@ async function saveReceipt() {
     await api.post(`/receivables/${currentReceivable.value.id}/receipts`, payload)
     showToast('核销成功')
     showReceipt.value = false
+
+    // 再投资钩子：如果 settings 配了 reinvestRatioBps，弹框提示登记再投资去向
+    await ensureSettings()
+    if (reinvestRatioBps.value > 0 && currentParty.value) {
+      const reinvestCents = Math.round(amountCents * reinvestRatioBps.value / 10000)
+      reinvestForm.value = {
+        receiptAmountCents: amountCents,
+        reinvestAmountCents: reinvestCents,
+        targetName: '',
+        targetPartyId: null,
+        notes: `核销 ${formatFen(amountCents)} 按 ${(reinvestRatioBps.value / 100).toFixed(0)}% 比例自动登记`,
+      }
+      showReinvestDialog.value = true
+    }
+
     if (currentParty.value) await openDetail(currentParty.value)
   } catch (e: any) {
     showDialog({ title: '核销失败', message: e.message || '核销失败，请重试' })
@@ -1031,18 +1661,8 @@ async function accrueNow() {
   }
   accruing.value = true
   try {
-    let created = 0
-    let skipped = 0
-    for (const kind of ['rent', 'dividend'] as const) {
-      const res = await api.post<ApiResponse<AccrueResult>>('/recv-standards/accrue', {
-        year,
-        kind,
-        title: kind === 'rent' ? `${year}年度土地流转费` : `${year}年度投资收益`,
-      })
-      created += res.data.created
-      skipped += res.data.skipped
-    }
-    showToast(`结转完成：新增 ${created} 条${skipped ? `，跳过 ${skipped} 条` : ''}`)
+    const res = (await api.post<ApiResponse<AccrueResult>>('/recv-standards/accrue', { year })).data
+    showToast(`结转完成：新增 ${res.created} 条${res.skipped ? `，跳过 ${res.skipped} 条` : ''}`)
     previewItems.value = []
     previewLoaded.value = false
     await loadParties()
@@ -1119,7 +1739,7 @@ function parseFen(yuan: string): number {
   padding: 16px;
   padding-bottom: 60px;
   min-height: 100vh;
-  background: #f7f7f5;
+  background: var(--paper);
 }
 
 .page-header {
@@ -1132,7 +1752,7 @@ function parseFen(yuan: string): number {
 .page-header h3 {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   margin: 0;
 }
 
@@ -1145,7 +1765,7 @@ function parseFen(yuan: string): number {
 
 .back-icon {
   font-size: 18px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   cursor: pointer;
 }
 
@@ -1169,7 +1789,7 @@ function parseFen(yuan: string): number {
   padding: 60px 20px;
   background: #fff;
   border-radius: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .empty-state p {
@@ -1206,17 +1826,17 @@ function parseFen(yuan: string): number {
 .owed-value {
   font-size: 16px;
   font-weight: 600;
-  color: #a32d2d;
+  color: var(--expense);
   font-variant-numeric: tabular-nums;
 }
 
 .owed-value.zero {
-  color: #185fa5;
+  color: var(--indigo);
 }
 
 .owed-label {
   font-size: 11px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   text-align: right;
 }
 
@@ -1237,12 +1857,12 @@ function parseFen(yuan: string): number {
 }
 
 .summary-value.zero {
-  color: #185fa5;
+  color: var(--indigo);
 }
 
 .summary-label {
   font-size: 11px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .recv-list {
@@ -1292,12 +1912,12 @@ function parseFen(yuan: string): number {
 
 .amount-cell.strong {
   font-weight: 600;
-  color: #a32d2d;
+  color: var(--expense);
 }
 
 .amount-label {
   font-size: 11px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .recv-actions {
@@ -1307,14 +1927,14 @@ function parseFen(yuan: string): number {
 }
 
 .receipt-list {
-  border-top: 1px solid #f0f0eb;
+  border-top: 1px solid var(--line-soft);
   margin-top: 8px;
   padding-top: 4px;
 }
 
 .receipt-empty {
   text-align: center;
-  color: #8f8e88;
+  color: var(--ink-muted);
   font-size: 12px;
   padding: 8px 0;
 }
@@ -1334,13 +1954,13 @@ function parseFen(yuan: string): number {
   font-size: 11px;
   border-radius: 99px;
   padding: 1px 8px;
-  border: 1px solid #185fa5;
-  color: #185fa5;
+  border: 1px solid var(--indigo);
+  color: var(--indigo);
 }
 
 .receipt-method.offset {
-  border-color: #185fa5;
-  color: #185fa5;
+  border-color: var(--indigo);
+  color: var(--indigo);
 }
 
 .receipt-amount {
@@ -1350,7 +1970,7 @@ function parseFen(yuan: string): number {
 
 .receipt-date {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .l2-chip {
@@ -1358,17 +1978,17 @@ function parseFen(yuan: string): number {
   border-radius: 99px;
   padding: 1px 8px;
   border: 1px solid #e3e2dd;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
-.l2-chip.household { border-color: #185fa5; color: #185fa5; }
-.l2-chip.unit { border-color: #185fa5; color: #185fa5; }
+.l2-chip.household { border-color: var(--indigo); color: var(--indigo); }
+.l2-chip.unit { border-color: var(--indigo); color: var(--indigo); }
 .l2-chip.rent { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
-.l2-chip.dividend { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
-.l2-chip.other { border-color: #8f8e88; color: #5f5e5a; }
+.l2-chip.dividend { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
+.l2-chip.other { border-color: var(--ink-muted); color: var(--ink-soft); }
 .l2-chip.open { border-color: #e88a3a; color: #a8601a; background: #fef3e8; }
-.l2-chip.closed { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
-.l2-chip.stopped { background: #fcebeb; border-color: #a32d2d; color: #a32d2d; }
+.l2-chip.closed { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
+.l2-chip.stopped { background: #fcebeb; border-color: var(--expense); color: var(--expense); }
 
 .receipt-popup {
   padding: 16px 0 24px;
@@ -1379,18 +1999,18 @@ function parseFen(yuan: string): number {
 .popup-title {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   padding: 0 16px 12px;
 }
 
 .static-text {
   font-size: 13px;
-  color: #2c2c2a;
+  color: var(--ink);
 }
 
 .dialog-tip {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   padding: 0 16px 8px;
   line-height: 1.5;
 }
@@ -1414,7 +2034,7 @@ function parseFen(yuan: string): number {
 }
 
 .accrue-row {
-  background: #f7f7f5;
+  background: var(--paper);
   border-radius: 8px;
   padding: 4px 8px;
 }
@@ -1435,7 +2055,7 @@ function parseFen(yuan: string): number {
 
 .accrue-empty {
   text-align: center;
-  color: #8f8e88;
+  color: var(--ink-muted);
   font-size: 13px;
   padding: 16px 0;
 }
@@ -1446,7 +2066,7 @@ function parseFen(yuan: string): number {
 
 .std-list {
   margin-top: 8px;
-  border-top: 1px solid #f0f0eb;
+  border-top: 1px solid var(--line-soft);
 }
 
 .std-row {
@@ -1454,7 +2074,7 @@ function parseFen(yuan: string): number {
   align-items: center;
   justify-content: space-between;
   padding: 10px 0;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .std-name {
@@ -1463,7 +2083,7 @@ function parseFen(yuan: string): number {
 
 .std-amount {
   font-size: 13px;
-  color: #5f5e5a;
+  color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1477,16 +2097,16 @@ function parseFen(yuan: string): number {
 
 .summary-meta .meta-line {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
-.l2-chip.flow { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
+.l2-chip.flow { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 .l2-chip.invest { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
-.l2-chip.other { border-color: #8f8e88; color: #5f5e5a; }
-.l2-chip.invest-chip { border-color: #185fa5; color: #185fa5; background: #e6f1fb; }
+.l2-chip.other { border-color: var(--ink-muted); color: var(--ink-soft); }
+.l2-chip.invest-chip { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 
 .std-edit-link {
-  color: #185fa5;
+  color: var(--indigo);
   margin-left: 6px;
   cursor: pointer;
 }
@@ -1497,12 +2117,12 @@ function parseFen(yuan: string): number {
 
 .preview-state {
   font-size: 12px;
-  color: #185fa5;
+  color: var(--indigo);
   white-space: nowrap;
 }
 
 .preview-state.dup {
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .party-detail-popup {
@@ -1536,12 +2156,12 @@ function parseFen(yuan: string): number {
   flex: 1;
   width: 100%;
   height: 40px;
-  border: 1px solid #dcdee0;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 15px;
   padding: 0 10px;
   background: #fff;
-  color: #323233;
+  color: var(--ink);
 }
 
 .owe-banners {
@@ -1559,13 +2179,13 @@ function parseFen(yuan: string): number {
 }
 
 .owe-banner.total {
-  background: #185fa5;
+  background: var(--indigo);
   color: #fff;
 }
 
 .owe-banner.rent {
-  background: #e6f1fb;
-  color: #185fa5;
+  background: var(--indigo-light);
+  color: var(--indigo);
 }
 
 .owe-banner.invest {
@@ -1574,7 +2194,7 @@ function parseFen(yuan: string): number {
 }
 
 .owe-banner.active {
-  box-shadow: 0 0 0 2px #185fa5 inset;
+  box-shadow: 0 0 0 2px var(--indigo) inset;
 }
 
 .owe-banner .banner-label {
@@ -1591,7 +2211,7 @@ function parseFen(yuan: string): number {
 
 /* ---- 详情弹窗站点风格美化 ---- */
 .party-detail-popup {
-  background: #f7f7f5;
+  background: var(--paper);
 }
 
 .party-detail-head {
@@ -1600,22 +2220,25 @@ function parseFen(yuan: string): number {
   align-items: stretch;
   gap: 12px;
   padding: 20px 16px 16px;
-  background: linear-gradient(135deg, #185fa5 0%, #12569b 100%);
+  background: linear-gradient(135deg, var(--indigo) 0%, #12569b 100%);
   color: #fff;
 }
 
 .pd-title {
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: 0;
   min-width: 0;
 }
 
 .party-detail-head .detail-title {
   margin: 0;
+  padding: 0;
   font-size: 18px;
   font-weight: 600;
   color: #fff;
+  flex: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1626,32 +2249,26 @@ function parseFen(yuan: string): number {
   font-weight: 400;
   color: rgba(255, 255, 255, 0.85);
   white-space: nowrap;
-  margin-left: 0;
+  margin-left: 2px;
+  flex: none;
 }
 
 .pd-type-text::before {
-  content: '--- ';
+  content: '';
 }
 
-.party-detail-head .pd-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.pd-btn.van-button {
-  flex: 1 1 0%;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+/* 基本情况标题栏的编辑链接（白底场景） */
+.section-title .pd-edit-link {
+  margin-left: auto;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+  color: #1989fa;
+  text-decoration: none;
+  padding: 0 6px;
 }
 
-.pd-btn.ghost.van-button {
-  background: transparent;
+.section-title .pd-edit-link:active {
+  opacity: .7;
 }
 
 .detail-block {
@@ -1664,7 +2281,7 @@ function parseFen(yuan: string): number {
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #2c2c2a;
+  color: var(--ink);
   padding: 2px 0 8px;
 }
 
@@ -1673,7 +2290,7 @@ function parseFen(yuan: string): number {
   width: 4px;
   height: 14px;
   border-radius: 2px;
-  background: #185fa5;
+  background: var(--indigo);
 }
 
 .party-detail-popup .party-summary {
@@ -1707,7 +2324,7 @@ function parseFen(yuan: string): number {
 .party-detail-popup .recv-amounts {
   justify-content: space-between;
   gap: 8px;
-  background: #f7f7f5;
+  background: var(--paper);
   border-radius: 8px;
   padding: 8px 10px;
   margin-top: 8px;
@@ -1722,4 +2339,250 @@ function parseFen(yuan: string): number {
 .party-detail-popup .recv-actions {
   margin-top: 4px;
 }
+
+.auto-hint {
+  color: #969799;
+  font-size: 12px;
+}
+.auto-val {
+  color: #07c160;
+  font-size: 12px;
+  font-weight: 500;
+}
+.party-edit-dialog .van-checkbox-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-subtitle {
+  font-size: 12px;
+  color: var(--ink-muted, #969799);
+  font-weight: normal;
+}
+
+/* 合同附件 */
+.contract-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.contract-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-soft, #f7f8fa);
+  border-radius: 8px;
+}
+.contract-icon {
+  font-size: 24px;
+  color: var(--jade, #07c160);
+  flex-shrink: 0;
+}
+.contract-info {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.contract-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink, #323233);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contract-meta {
+  font-size: 12px;
+  color: var(--ink-muted, #969799);
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.contract-upload {
+  margin-top: 12px;
+}
+.hidden-file-input {
+  display: none;
+}
+.upload-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  border: 1px dashed var(--jade, #07c160);
+  border-radius: 8px;
+  color: var(--jade, #07c160);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background .15s;
+}
+.upload-trigger:active {
+  background: rgba(7, 193, 96, 0.08);
+}
+.upload-hint {
+  font-size: 12px;
+  color: var(--ink-muted, #969799);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* 再投资去向 */
+.alloc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.alloc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-soft, #f7f8fa);
+  border-radius: 8px;
+}
+.alloc-main { flex: 1; min-width: 0; }
+.alloc-target {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink, #323233);
+}
+.alloc-meta {
+  font-size: 12px;
+  color: var(--ink-muted, #969799);
+  margin-top: 2px;
+  display: flex;
+  gap: 10px;
+}
+.alloc-notes {
+  font-size: 12px;
+  color: var(--ink-muted, #969799);
+  margin-top: 4px;
+}
+.alloc-del {
+  font-size: 20px;
+  color: var(--ink-muted, #969799);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.alloc-del:active { color: #ee0a24; }
+
+/* === 新增/编辑单位：宽弹窗 + 两栏 grid === */
+.party-edit-dialog {
+  width: 640px !important;
+  max-width: 95vw;
+}
+.party-edit-dialog .van-dialog__body {
+  max-height: 75vh;
+  overflow-y: auto;
+  padding: 0 0 12px;
+}
+.party-edit-dialog :deep(.van-field) {
+  flex-wrap: nowrap !important;
+}
+.party-edit-dialog :deep(.van-field__label) {
+  width: 150px;
+  flex: none;
+  min-width: 150px;
+  white-space: nowrap;
+}
+.party-edit-dialog :deep(.van-field__label > span) {
+  white-space: nowrap;
+}
+.party-edit-dialog :deep(.van-field__control) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.party-edit-dialog :deep(.van-field__control input) {
+  white-space: nowrap;
+}
+.party-edit-dialog :deep(.van-cell:last-child)::after {
+  display: block !important;
+}
+.party-form-tabs {
+  background: #fff;
+}
+.party-form-tabs .van-tab {
+  font-size: 14px;
+}
+.party-form-tabs .van-tab--active {
+  color: #1989fa;
+}
+.party-form-tabs__content {
+  padding: 14px 16px 4px;
+}
+.party-form-tabs .van-cell-group.inset {
+  margin: 0 0 10px;
+  border-radius: 8px;
+}
+@media (max-width: 600px) {
+  .party-edit-dialog { width: 96vw !important; }
+}
+
+/* 弹窗内 inline 合同上传 */
+.inline-upload {
+  padding: 8px 0;
+}
+.upload-trigger.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px dashed #dcdee0;
+  border-radius: 6px;
+  color: #1989fa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.upload-trigger.inline:hover { border-color: #1989fa; }
+.inline-contract-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inline-contract-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.inline-ctitle {
+  flex: 1;
+  color: #323233;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-cstate { color: #969799; font-size: 12px; }
+.inline-cstate.ok { color: #07c160; }
+.inline-cremove {
+  color: #969799;
+  cursor: pointer;
+  padding: 2px;
+}
+.inline-cremove:hover { color: #ee0a24; }
 </style>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -107,7 +107,7 @@ function goLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f7f7f5;
+  background: var(--paper);
   padding: 24px;
 }
 
@@ -127,17 +127,17 @@ function goLogin() {
 .register-title {
   font-size: 20px;
   font-weight: 600;
-  color: #2c2c2a;
+  color: var(--ink);
 }
 
 .register-subtitle {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   margin-top: 6px;
 }
 
 .register-error {
-  color: #a32d2d;
+  color: var(--expense);
   font-size: 13px;
   text-align: center;
   padding: 8px 16px 0;

@@ -77,105 +77,19 @@
       <van-icon name="plus" class="quick-icon" />
       <span>记一笔</span>
     </div>
-
-    <!-- 记一笔弹层 -->
-    <van-popup v-model:show="showRecord" position="bottom" round closeable style="max-height: 90vh">
-      <div class="record-popup">
-        <div class="popup-title">记一笔</div>
-        <div class="record-modes">
-          <van-button class="mode-btn" :type="recordMode === 'normal' ? 'primary' : 'default'" @click="recordMode = 'normal'">普通记账</van-button>
-          <van-button class="mode-btn" :type="recordMode === 'quick' ? 'primary' : 'default'" @click="recordMode = 'quick'">快速记账</van-button>
-        </div>
-
-        <template v-if="recordMode === 'normal'">
-          <div class="direction-toggle">
-            <van-button :type="record.direction === 'income' ? 'primary' : 'default'" size="small" @click="record.direction = 'income'">收入</van-button>
-            <van-button :type="record.direction === 'expense' ? 'primary' : 'default'" size="small" @click="record.direction = 'expense'">支出</van-button>
-          </div>
-          <van-field v-model="record.date" label="日期" placeholder="YYYY-MM-DD" />
-          <van-field v-model="record.note" label="摘要" placeholder="买了什么、给了谁（可选）" />
-          <van-field
-            :model-value="record.categoryName || '请选择科目'"
-            is-link readonly label="科目"
-            @click="showCatPicker = true"
-            class="mobile-field"
-          />
-          <div class="desktop-field">
-            <span class="d-label">科目</span>
-            <select v-model="record.categoryId" class="d-select" @change="onCatNativeChange">
-              <option :value="0" disabled>请选择科目</option>
-              <option v-for="opt in catColumns" :key="opt.value" :value="opt.value">{{ opt.text }}</option>
-            </select>
-          </div>
-          <van-field v-model="record.amount" label="金额" type="number" placeholder="0.00" inputmode="decimal" />
-        </template>
-
-        <template v-else>
-          <van-field v-model="quick.date" label="日期" placeholder="YYYY-MM-DD" />
-          <van-field label="业务">
-            <template #input>
-              <select v-model="quick.biz" class="qselect" @change="onQuickBizChange">
-                <option value="" disabled>选择业务</option>
-                <option v-for="b in quickBusinesses" :key="b.key" :value="b.key">{{ b.label }}</option>
-              </select>
-            </template>
-          </van-field>
-          <van-field v-if="quickNeedCompany" label="投资对象（长期投资）">
-            <template #input>
-              <select v-model="quick.companyId" class="qselect">
-                <option :value="0" disabled>选择投资公司</option>
-                <option v-for="a in investCompanyOptions" :key="a.value" :value="a.value">{{ a.text }}</option>
-              </select>
-            </template>
-          </van-field>
-          <div v-if="quickNeedCompany && !showNewCompany" class="new-company-link" @click="showNewCompany = true">
-            ＋ 没有这家公司？新增长期投资公司
-          </div>
-          <template v-if="quickNeedCompany && showNewCompany">
-            <van-field v-model="newCompanyName" label="新公司名" placeholder="输入公司全称" />
-            <div class="new-company-hint">创建后自动在「长期投资」下建该公司科目，并在往来中新增同名单位</div>
-            <div class="new-company-actions">
-              <van-button size="small" plain @click="showNewCompany = false">取消</van-button>
-              <van-button size="small" type="primary" :loading="creatingCompany" @click="handleCreateCompany">创建并选中</van-button>
-            </div>
-          </template>
-          <van-field v-if="quickNeedParty" label="往来单位">
-            <template #input>
-              <select v-model="quick.partyId" class="qselect">
-                <option :value="0" disabled>选择单位</option>
-                <option v-for="p in partyOptions" :key="p.value" :value="p.value">{{ p.text }}</option>
-              </select>
-            </template>
-          </van-field>
-          <van-field v-model="quick.amount" label="金额" type="number" placeholder="0.00" inputmode="decimal" />
-        </template>
-
-        <div v-if="recordError" class="record-error">{{ recordError }}</div>
-        <div class="record-save">
-          <van-button round block type="primary" :loading="saving" @click="saveRecord">
-            {{ recordMode === 'quick' ? '保存（自动入账）' : '保存' }}
-          </van-button>
-        </div>
-      </div>
-    </van-popup>
-
-    <!-- 科目选择 -->
-    <van-popup v-model:show="showCatPicker" position="bottom">
-      <van-picker :columns="catColumns" @confirm="onCatConfirm" @cancel="showCatPicker = false" />
-    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, computed, onMounted, inject } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
-import { formatFen, todayStr, currentMonthStr, recvKindLabel } from '../../types/api'
-import { showToast } from 'vant'
-import type { Category, Party, Receivable, ReceivableListResponse, RecvKind, ApiResponse, Transaction } from '../../types/api'
+import { formatFen, todayStr, recvKindLabel } from '../../types/api'
+import type { Category, Receivable, ReceivableListResponse, RecvKind, Transaction } from '../../types/api'
 
 const router = useRouter()
-const route = useRoute()
+
+const openRecord = inject<() => void>('openRecord', () => {})
 
 interface Cap {
   bankBalanceCents: number
@@ -195,235 +109,7 @@ const noCategory = ref(false)
 const latestTxn = ref<Transaction | null>(null)
 const latestCatName = ref('')
 const owedTotal = computed(() => oweRows.value.reduce((s, r) => s + r.outstanding, 0))
-
-const showRecord = ref(false)
-const saving = ref(false)
-const recordError = ref('')
-const record = ref({ date: todayStr(), note: '', categoryName: '', categoryId: null as number | null, amount: '', direction: 'expense' as 'income' | 'expense' })
-const showCatPicker = ref(false)
-const catColumns = ref<{ text: string; value: number }[]>([])
-
-// ---- 快速记账（业务模板自动入账） ----
-const recordMode = ref<'normal' | 'quick'>('normal')
 const fullCats = ref<Category[]>([])
-const investCompanyOptions = ref<{ text: string; value: number }[]>([])
-const partyOptions = ref<{ text: string; value: number }[]>([])
-const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, amount: '' })
-const showNewCompany = ref(false)
-const newCompanyName = ref('')
-const creatingCompany = ref(false)
-
-// 长期投资一级科目名（兼容旧库里的「对外投资」）
-const INVEST_L1_NAMES = ['长期投资', '对外投资']
-
-interface QuickBiz {
-  key: string
-  label: string
-  dir?: 'income' | 'expense'
-  catName?: string
-  invest?: boolean
-  needParty?: boolean
-}
-const quickBusinesses: QuickBiz[] = [
-  { key: 'grant', label: '收上级财政补助', dir: 'income', catName: '上级补助' },
-  { key: 'dividend', label: '收到投资收益/分红', dir: 'income', catName: '投资收益' },
-  { key: 'rent', label: '收到土地流转费（单位缴款）', needParty: true, catName: '土地流转费收入' },
-  { key: 'service', label: '收到流转管理费', dir: 'income', catName: '流转管理费' },
-  { key: 'toHousehold', label: '拨付土地流转费给农户', dir: 'expense', catName: '土地流转费-转付农户' },
-  { key: 'interest', label: '银行存款利息', dir: 'income', catName: '其他收入' },
-  { key: 'member', label: '532-成员分配发放', dir: 'expense', catName: '成员分红' },
-  { key: 'welfare', label: '532-公益支出', dir: 'expense', catName: '公益支出' },
-  { key: 'mgmtFee', label: '支出管理费', dir: 'expense', catName: '管理费支出' },
-  { key: 'invest', label: '投资给公司', invest: true },
-  { key: 'recover', label: '收回投资' },
-]
-
-const quickNeedCompany = computed(() => {
-  const b = quickBusinesses.find(x => x.key === quick.value.biz)
-  return !!(b && b.invest)
-})
-const quickNeedParty = computed(() => {
-  const b = quickBusinesses.find(x => x.key === quick.value.biz)
-  return !!(b && b.needParty)
-})
-
-function onQuickBizChange() {
-  quick.value.companyId = null
-  quick.value.partyId = null
-  showNewCompany.value = false
-  newCompanyName.value = ''
-}
-
-function findEquityCat(name: string): Category | null {
-  for (const l1 of fullCats.value) {
-    if (l1.children) {
-      for (const l2 of l1.children) {
-        if (l2.kind === 'equity' && l2.name === name) return l2
-      }
-    }
-  }
-  return null
-}
-
-async function loadPartiesQuick() {
-  try {
-    const res = await api.get<ApiResponse<Party[]>>('/parties')
-    partyOptions.value = (res.data || []).map(p => ({ text: p.name, value: p.id }))
-  } catch {
-    partyOptions.value = []
-  }
-}
-
-function investL1(): Category | null {
-  for (const l1 of fullCats.value) {
-    if (INVEST_L1_NAMES.includes(l1.name)) return l1
-  }
-  return null
-}
-
-async function ensureInvestL1(): Promise<Category> {
-  const existing = investL1()
-  if (existing) return existing
-  await api.post('/categories', { name: '长期投资', level: 1 })
-  await loadCats()
-  const created = investL1()
-  if (!created) throw new Error('创建「长期投资」分组失败，请刷新后重试')
-  return created
-}
-
-async function handleCreateCompany() {
-  const name = newCompanyName.value.trim()
-  if (!name) {
-    showToast('请填写公司名称')
-    return
-  }
-  creatingCompany.value = true
-  try {
-    // 已存在同名长期投资公司：直接选中（避免重复科目）
-    const existing = investCompanyOptions.value.find(o => o.text === name || o.text.startsWith(`${name}（`))
-    if (existing) {
-      quick.value.companyId = existing.value
-      showNewCompany.value = false
-      newCompanyName.value = ''
-      showToast('该公司已存在，已自动选中')
-      return
-    }
-    const l1 = await ensureInvestL1()
-    const res = await api.post<ApiResponse<Category>>('/categories', {
-      name,
-      level: 2,
-      parentId: l1.id,
-      kind: 'equity',
-    })
-    // 往来里没有同名单位则自动新增（投资对象按投资公司建档）
-    if (!partyOptions.value.some(p => p.text === name)) {
-      await api.post('/parties', { name, type: 'invest', note: '自动创建（长期投资）' })
-    }
-    await loadCats()
-    await loadPartiesQuick()
-    const cat = investCompanyOptions.value.find(o => o.value === (res.data?.id ?? -1))
-      || investCompanyOptions.value.find(o => o.text === name || o.text.startsWith(`${name}（`))
-    if (cat) quick.value.companyId = cat.value
-    showNewCompany.value = false
-    newCompanyName.value = ''
-    showToast('已创建并选中')
-  } catch (e: any) {
-    showToast(e.message || '创建失败')
-  } finally {
-    creatingCompany.value = false
-  }
-}
-
-async function saveQuick() {
-  const amount = Math.round(parseFloat(quick.value.amount || '0') * 100)
-  const biz = quickBusinesses.find(x => x.key === quick.value.biz)
-  if (!biz) {
-    showToast('请选择业务')
-    return
-  }
-  if (amount <= 0) {
-    showToast('金额必须大于 0')
-    return
-  }
-  if (quickNeedCompany.value && !quick.value.companyId) {
-    showToast('请选择投资公司')
-    return
-  }
-  if (quickNeedParty.value && !quick.value.partyId) {
-    showToast('请选择往来单位')
-    return
-  }
-  saving.value = true
-  recordError.value = ''
-  try {
-    if (biz.invest) {
-      // 投资给公司：银行减少，记支出到「长期投资 / 公司」
-      await api.post('/transactions', {
-        txnDate: quick.value.date,
-        direction: 'expense',
-        amountCents: amount,
-        categoryId: quick.value.companyId,
-        note: '投资给公司',
-      })
-    } else if (biz.key === 'recover') {
-      // 收回投资：银行增加，记收入到「上级补助」
-      const cat = findEquityCat('上级补助')
-      if (!cat) throw new Error('缺少科目：上级补助')
-      await api.post('/transactions', {
-        txnDate: quick.value.date,
-        direction: 'income',
-        amountCents: amount,
-        categoryId: cat.id,
-        note: '收回投资',
-      })
-    } else if (biz.key === 'rent' && quick.value.partyId) {
-      // 优先冲该单位未收流转费欠款；无欠款则直记收入
-      const list = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', {
-        partyId: quick.value.partyId,
-        kind: 'rent',
-        status: 'open',
-        pageSize: 50,
-      })
-      const best = (list.data.items || []).filter(r => r.outstandingCents > 0)
-        .sort((a, b) => b.outstandingCents - a.outstandingCents)[0]
-      if (best && amount <= best.outstandingCents) {
-        const cat = findEquityCat('土地流转费收入')
-        if (!cat) throw new Error('缺少科目：土地流转费收入')
-        await api.post(`/receivables/${best.id}/receipts`, {
-          amountCents: amount,
-          receiptDate: quick.value.date,
-          method: 'cash',
-          categoryId: cat.id,
-        })
-      } else if (best && amount > best.outstandingCents) {
-        throw new Error(`该单位待收 ${formatFen(best.outstandingCents)}，不能超过`)
-      } else {
-        const cat = findEquityCat('土地流转费收入')
-        if (!cat) throw new Error('缺少科目：土地流转费收入')
-        await api.post('/transactions', {
-          txnDate: quick.value.date, direction: 'income', amountCents: amount, categoryId: cat.id, note: biz.label,
-        })
-      }
-    } else {
-      const cat = findEquityCat(biz.catName || '')
-      if (!cat) throw new Error(`缺少科目：${biz.catName}`)
-      await api.post('/transactions', {
-        txnDate: quick.value.date,
-        direction: biz.dir || 'income',
-        amountCents: amount,
-        categoryId: cat.id,
-        note: biz.label,
-      })
-    }
-    showToast('保存成功（已自动入账）')
-    showRecord.value = false
-    await loadAll()
-  } catch (e: any) {
-    recordError.value = e.message || '保存失败'
-  } finally {
-    saving.value = false
-  }
-}
 
 onMounted(loadAll)
 
@@ -493,6 +179,7 @@ async function loadCats() {
     fullCats.value = cats
     const options: { text: string; value: number }[] = []
     const companies: { text: string; value: number }[] = []
+    const INVEST_L1_NAMES = ['长期投资', '对外投资']
     for (const l1 of cats) {
       const isInvest = INVEST_L1_NAMES.includes(l1.name)
       if (l1.children) {
@@ -500,7 +187,6 @@ async function loadCats() {
           if (l2.status !== 'active') continue
           if (l2.kind === 'equity') {
             if (isInvest) {
-              // 长期投资组下的权益二级视为公司：显示累计投出（余额为负时取正）
               const invested = (l2.balanceCents ?? 0) < 0 ? -l2.balanceCents! : 0
               companies.push({
                 text: invested > 0 ? `${l2.name}（已投 ${formatFen(invested)}）` : l2.name,
@@ -513,81 +199,9 @@ async function loadCats() {
         }
       }
     }
-    catColumns.value = options
-    investCompanyOptions.value = companies
     noCategory.value = options.length === 0 && companies.length === 0
   } catch {
-    catColumns.value = []
-    investCompanyOptions.value = []
     noCategory.value = true
-  }
-}
-
-function openRecord() {
-  recordMode.value = 'normal'
-  record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
-  quick.value = { date: todayStr(), biz: '', companyId: null, partyId: null, amount: '' }
-  showNewCompany.value = false
-  newCompanyName.value = ''
-  recordError.value = ''
-  showRecord.value = true
-  void loadPartiesQuick()
-  void loadCats()
-}
-
-// 桌面左侧导航「记账」：带 ?record=open 进入本页时自动打开记一笔
-watch(() => route.query.record, (v) => {
-  if (v) {
-    openRecord()
-    void router.replace({ query: {} })
-  }
-})
-
-function onCatConfirm({ selectedOptions }: any) {
-  const opt = selectedOptions[0]
-  if (opt) {
-    record.value.categoryName = opt.text
-    record.value.categoryId = opt.value
-  }
-  showCatPicker.value = false
-}
-
-function onCatNativeChange() {
-  const opt = catColumns.value.find(o => o.value === record.value.categoryId)
-  record.value.categoryName = opt ? opt.text : ''
-}
-
-async function saveRecord() {
-  if (recordMode.value === 'quick') {
-    await saveQuick()
-    return
-  }
-  const amount = Math.round(parseFloat(record.value.amount || '0') * 100)
-  if (!record.value.categoryId) {
-    showToast('请选择科目')
-    return
-  }
-  if (amount <= 0) {
-    showToast('金额必须大于 0')
-    return
-  }
-  saving.value = true
-  recordError.value = ''
-  try {
-    await api.post('/transactions', {
-      txnDate: record.value.date,
-      direction: record.value.direction,
-      amountCents: amount,
-      categoryId: record.value.categoryId,
-      note: record.value.note || '',
-    })
-    showToast('保存成功')
-    showRecord.value = false
-    await loadAll()
-  } catch (e: any) {
-    recordError.value = e.message || '保存失败'
-  } finally {
-    saving.value = false
   }
 }
 
@@ -852,84 +466,6 @@ function goCategories() {
   font-size: 18px;
 }
 
-.record-popup {
-  padding: 16px 0 24px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.popup-title {
-  font-size: 16px;
-  font-weight: 500;
-  padding: 0 16px 12px;
-}
-
-.direction-toggle {
-  display: flex;
-  gap: 8px;
-  padding: 0 16px 8px;
-}
-
-.record-error {
-  color: #a32d2d;
-  font-size: 13px;
-  padding: 0 16px 8px;
-}
-
-.record-save {
-  margin: 8px 16px 0;
-}
-
-.record-modes {
-  display: flex;
-  gap: 10px;
-  margin: 4px 16px 10px;
-}
-
-.mode-btn {
-  flex: 1 1 0%;
-  min-width: 0;
-  height: 44px;
-  font-size: 15px;
-  border-radius: 8px;
-}
-
-.qselect {
-  flex: 1;
-  width: 100%;
-  height: 40px;
-  border: 1px solid #dcdee0;
-  border-radius: 8px;
-  font-size: 15px;
-  padding: 0 10px;
-  background: #fff;
-  color: #323233;
-}
-
-.new-company-link {
-  padding: 6px 16px 2px;
-  font-size: 13px;
-  color: #0f6e56;
-  cursor: pointer;
-}
-
-.new-company-hint {
-  padding: 0 16px;
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.new-company-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 8px 16px;
-}
-
-.desktop-field {
-  display: none;
-}
-
 @media (min-width: 992px) {
   .quick-record {
     bottom: 40px;
@@ -937,34 +473,6 @@ function goCategories() {
 
   .cards .dash-card {
     flex: 1 1 23%;
-  }
-
-  .desktop-field {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-  }
-
-  .mobile-field {
-    display: none !important;
-  }
-
-  .d-label {
-    width: 70px;
-    font-size: 15px;
-    color: #969799;
-  }
-
-  .d-select {
-    flex: 1;
-    height: 40px;
-    border: 1px solid #dcdee0;
-    border-radius: 8px;
-    font-size: 15px;
-    padding: 0 10px;
-    background: #fff;
-    color: #323233;
   }
 }
 </style>

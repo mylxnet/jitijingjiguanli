@@ -1,0 +1,175 @@
+/* ========================================================================
+   集体台账 · 全局设计 Token（从 app-demo.html 提炼）
+   ======================================================================== */
+:root {
+  /* —— 基础色 —— */
+  --ink: #1a1a18;
+  --ink-soft: #3a3936;
+  --ink-muted: #7a7770;
+  --ink-faint: #a8a59e;
+  --paper: #faf8f4;
+  --paper-warm: #f5f0e6;
+  --paper-deep: #f2ede3;
+  --line: #e8e3d8;
+  --line-soft: #f0ebe0;
+
+  /* —— 主题色（玉绿 + 赭石） —— */
+  --jade: #1f5c48;
+  --jade-deep: #143d30;
+  --jade-light: #e3ede9;
+  --jade-hover: #2a7a61;
+  --jade-bg: #f4f8f5;
+  --terracotta: #b86b3d;
+  --terracotta-light: #f4e4d8;
+  --terracotta-bg: #fdf3e3;
+  --indigo: #2d4a7a;
+  --indigo-light: #e2e8f2;
+  --indigo-bg: #eef2f8;
+
+  /* —— 语义色 —— */
+  --income: #1f5c48;
+  --expense: #a33a2d;
+  --asset: #7a502d;
+  --warning: #b86b3d;
+
+  /* —— 圆角 —— */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  /* —— 阴影 —— */
+  --shadow-sm: 0 1px 2px rgba(26, 26, 24, .04);
+  --shadow-md: 0 4px 14px rgba(26, 26, 24, .06), 0 14px 36px rgba(26, 26, 24, .08);
+  --shadow-lg: 0 8px 28px rgba(26, 26, 24, .08), 0 28px 72px rgba(26, 26, 24, .12);
+}
+
+/* —— 全局字体 & 背景 —— */
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+/* 衬线标题字 */
+.font-serif {
+  font-family: 'Noto Serif SC', serif;
+}
+
+/* Tabular nums 金额数字 */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* —— Vant 主题覆盖 —— */
+.van-button--primary {
+  background-color: var(--jade);
+  border-color: var(--jade);
+}
+.van-button--primary:hover {
+  background-color: var(--jade-hover);
+  border-color: var(--jade-hover);
+}
+.van-button--primary.van-button--plain {
+  color: var(--jade);
+  background: var(--jade-light);
+  border-color: var(--jade);
+}
+.van-button--primary.van-button--plain:hover {
+  background: var(--jade-bg);
+}
+
+.van-cell-group {
+  background: #fff !important;
+  border-radius: var(--r-lg) !important;
+  overflow: hidden;
+  margin: 0 16px 16px !important;
+}
+.van-cell-group--inset {
+  box-shadow: none !important;
+}
+.van-cell {
+  font-size: 14px;
+}
+
+.van-popup {
+  border-radius: var(--r-xl) !important;
+}
+
+.van-tabbar {
+  background: #fff !important;
+  border-top: 1px solid var(--line) !important;
+}
+.van-tabbar-item--active {
+  color: var(--jade) !important;
+}
+.van-tabbar-item__icon {
+  color: var(--jade) !important;
+}
+.van-tabbar-item:not(.van-tabbar-item--active) .van-tabbar-item__icon,
+.van-tabbar-item:not(.van-tabbar-item--active) span {
+  color: var(--ink-muted) !important;
+}
+
+/* —— 滚动条 —— */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(26, 26, 24, .1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(26, 26, 24, .2);
+}
+
+/* —— 桌面端居中弹窗样式（Vant van-popup position="center"） —— */
+@media (min-width: 800px) {
+  .van-popup--center {
+    max-width: 560px !important;
+    width: calc(100vw - 48px) !important;
+    max-height: calc(100vh - 80px) !important;
+    border-radius: var(--r-xl) !important;
+    box-shadow: var(--shadow-lg), 0 2px 8px rgba(26, 26, 24, .08) !important;
+    overflow: hidden;
+    animation: popupCenterIn .18s ease-out !important;
+  }
+
+  .van-popup--center .van-cell-group,
+  .van-popup--center .van-cell-group--inset {
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  /* 桌面端 action-sheet 也变成居中弹窗 */
+  .van-action-sheet {
+    max-width: 480px !important;
+    width: calc(100vw - 48px) !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    border-radius: var(--r-xl) !important;
+    box-shadow: var(--shadow-lg) !important;
+    animation: popupCenterIn .18s ease-out !important;
+  }
+}
+
+@keyframes popupCenterIn {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}

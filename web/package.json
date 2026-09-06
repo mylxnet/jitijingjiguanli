@@ -1,7 +1,7 @@
 {
   "name": "jititaizhang-web",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
     "pinia": "^3.0.0",
     "vant": "^4.9.13",
     "vue": "^3.5.41",
