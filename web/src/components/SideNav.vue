@@ -45,6 +45,7 @@ const items = [
   { label: '收支总览', path: '/', iconChar: '◆' },
   { label: '往来单位', path: '/contacts', iconChar: '◉' },
   { label: '投资管理', path: '/investment', iconChar: '📈' },
+  { label: '流转管理', path: '/flow', iconChar: '🏠' },
   { label: '引导页面', path: '/onboarding', iconChar: '→' },
   { label: '快速记账', path: '', iconChar: '＋', action: 'record' },
 ]

@@ -34,6 +34,11 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/flow',
+      component: () => import('../features/flow/FlowLayout.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/',
       name: 'Home',
       component: () => import('../features/transaction/Home.vue'),

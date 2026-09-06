@@ -62,6 +62,85 @@ const TRANSFERS = [];
 // 应收种子数据
 const RECEIVABLES = [];
 
+// ========== 流转管理种子数据 ==========
+// 流转类型往来单位（土地流转费 + 管理费）
+(function initFlowData() {
+  // 3 个 flow 类型单位
+  const flowParties = [
+    { id: 101, name: '绿野种植合作社', types: ['flow'], landMu: 120, landFeePerMuCents: 60000, expectedLandFeeCents: 7200000, mgmtFeePerMuCents: 6000, expectedMgmtFeeCents: 720000 },
+    { id: 102, name: '丰源农业公司',     types: ['flow'], landMu: 85,  landFeePerMuCents: 55000, expectedLandFeeCents: 4675000, mgmtFeePerMuCents: 5500, expectedMgmtFeeCents: 467500 },
+    { id: 103, name: '金穗家庭农场',     types: ['flow'], landMu: 60,  landFeePerMuCents: 50000, expectedLandFeeCents: 3000000, mgmtFeePerMuCents: 5000, expectedMgmtFeeCents: 300000 },
+  ];
+  for (const p of flowParties) {
+    if (!PARTIES.find(x => x.id === p.id)) {
+      PARTIES.push({ ...p, contactPhone: '', note: null, areaMu: p.landMu, createdAt: '2026-01-01', updatedAt: '2026-01-01', outstandingCents: 0, investAmountCents: 0, returnRateBps: 0, expectedReturnCents: 0 });
+    }
+  }
+
+  // 2026 年度应收种子数据
+  const rentRecv = [
+    { partyId: 101, partyName: '绿野种植合作社', amountCents: 7200000, paidCents: 4000000, outstandingCents: 3200000, status: 'partial' },
+    { partyId: 102, partyName: '丰源农业公司',     amountCents: 4675000, paidCents: 4675000, outstandingCents: 0,       status: 'paid' },
+    { partyId: 103, partyName: '金穗家庭农场',     amountCents: 3000000, paidCents: 0,       outstandingCents: 3000000, status: 'open' },
+  ];
+  const svcRecv = [
+    { partyId: 101, partyName: '绿野种植合作社', amountCents: 720000, paidCents: 500000, outstandingCents: 220000, status: 'partial' },
+    { partyId: 102, partyName: '丰源农业公司',     amountCents: 467500, paidCents: 467500, outstandingCents: 0,      status: 'paid' },
+    { partyId: 103, partyName: '金穗家庭农场',     amountCents: 300000, paidCents: 0,      outstandingCents: 300000, status: 'open' },
+  ];
+  let nextRecvId = 100;
+  for (const r of rentRecv) {
+    RECEIVABLES.push({
+      id: nextRecvId++, orgId: 1, partyId: r.partyId, partyName: r.partyName,
+      recvYear: 2026, kind: 'rent', recvKind: 'rent',
+      title: '2026年度土地流转费',
+      amountCents: r.amountCents, incomeCategoryId: null,
+      status: r.status, note: null, paidCents: r.paidCents, outstandingCents: r.outstandingCents,
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-06-01T00:00:00Z',
+    });
+  }
+  for (const r of svcRecv) {
+    RECEIVABLES.push({
+      id: nextRecvId++, orgId: 1, partyId: r.partyId, partyName: r.partyName,
+      recvYear: 2026, kind: 'service', recvKind: 'service',
+      title: '2026年度流转管理费',
+      amountCents: r.amountCents, incomeCategoryId: null,
+      status: r.status, note: null, paidCents: r.paidCents, outstandingCents: r.outstandingCents,
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-06-01T00:00:00Z',
+    });
+  }
+
+  // 转付农户支出（categoryId: 81）
+  let nextTxnId = TRANSACTIONS.length ? Math.max(...TRANSACTIONS.map(t => t.id)) + 1 : 100;
+  const farmerTxns = [
+    { amountCents: 1500000, txnDate: '2026-03-15', note: '一季度土地流转费转付农户' },
+    { amountCents: 1200000, txnDate: '2026-06-20', note: '二季度土地流转费转付农户' },
+  ];
+  for (const t of farmerTxns) {
+    TRANSACTIONS.push({
+      id: nextTxnId++, orgId: 1, categoryId: 81, categoryName: '土地流转费-转付农户',
+      direction: 'expense', amountCents: t.amountCents, txnDate: t.txnDate,
+      note: t.note, status: 'normal', partyId: null, partyName: null,
+      createdAt: t.txnDate + 'T00:00:00Z', updatedAt: t.txnDate + 'T00:00:00Z',
+    });
+  }
+
+  // 管理费支出（categoryId: 85）
+  const mgmtTxns = [
+    { amountCents: 80000,  txnDate: '2026-04-10', note: '管理费支出-办公用品采购' },
+    { amountCents: 120000, txnDate: '2026-07-05', note: '管理费支出-人员工资' },
+    { amountCents: 50000,  txnDate: '2026-09-01', note: '管理费支出-其他' },
+  ];
+  for (const t of mgmtTxns) {
+    TRANSACTIONS.push({
+      id: nextTxnId++, orgId: 1, categoryId: 85, categoryName: '管理费支出',
+      direction: 'expense', amountCents: t.amountCents, txnDate: t.txnDate,
+      note: t.note, status: 'normal', partyId: null, partyName: null,
+      createdAt: t.txnDate + 'T00:00:00Z', updatedAt: t.txnDate + 'T00:00:00Z',
+    });
+  }
+})();
+
 // 把 CATEGORIES 加工成 SummaryPage 期望的 CategorySummary（带 currentBalanceCents / txnCount / incomeCents / expenseCents）
 function buildCategorySummary() {
   return CATEGORIES.map(l1 => {
