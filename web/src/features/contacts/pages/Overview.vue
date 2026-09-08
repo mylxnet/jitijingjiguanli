@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="ov-page">
     <div class="page-header">
       <div>
@@ -10,28 +10,28 @@
 
     <div class="ov-stats">
       <div class="ov-stat">
-        <span class="ov-stat-ic blue">🏢</span>
+        <span class="ov-fi"><van-icon name="shop" /></span>
         <div>
           <div class="ov-stat-label">单位总数</div>
           <div class="ov-stat-value">{{ parties.length }}</div>
         </div>
       </div>
       <div class="ov-stat">
-        <span class="ov-stat-ic orange">📥</span>
+        <span class="ov-fi"><van-icon name="balance-list" /></span>
         <div>
           <div class="ov-stat-label">本年应收合计</div>
           <div class="ov-stat-value">{{ fmtYuan(totalReceivable) }}</div>
         </div>
       </div>
       <div class="ov-stat">
-        <span class="ov-stat-ic green">✅</span>
+        <span class="ov-fi"><van-icon name="passed" /></span>
         <div>
           <div class="ov-stat-label">本年已收</div>
           <div class="ov-stat-value">{{ fmtYuan(totalPaid) }}</div>
         </div>
       </div>
       <div class="ov-stat">
-        <span class="ov-stat-ic red">⏳</span>
+        <span class="ov-fi"><van-icon name="clock" /></span>
         <div>
           <div class="ov-stat-label">本年未收</div>
           <div class="ov-stat-value">{{ fmtYuan(totalReceivable - totalPaid) }}</div>
@@ -154,21 +154,23 @@ const serviceCount    = computed(() => receivables.value.filter(r => r.kind === 
   margin-bottom: 18px;
 }
 .ov-stat {
-  background: #fff;
+  background: #ffffff;
   border: 1px solid var(--line-soft, #eaeaea);
   border-radius: 8px;
   padding: 12px 14px;
   display: flex; align-items: center; gap: 12px;
 }
-.ov-stat-ic {
-  width: 36px; height: 36px; border-radius: 8px;
+.ov-stats .ov-stat { border-color: transparent; }
+.ov-stats .ov-stat:nth-child(1) { background: #f1edfc; }
+.ov-stats .ov-stat:nth-child(2) { background: #fff1e0; }
+.ov-stats .ov-stat:nth-child(3) { background: #e8f0fb; }
+.ov-stats .ov-stat:nth-child(4) { background: #fcecec; }
+.ov-fi {
+  width: 40px; height: 40px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px; color: #fff; flex-shrink: 0;
+  font-size: 22px; color: #7b8794; background: rgba(255, 255, 255, 0.65);
+  flex-shrink: 0;
 }
-.ov-stat-ic.blue   { background: #1989fa; }
-.ov-stat-ic.orange { background: #ff6034; }
-.ov-stat-ic.green  { background: #07c160; }
-.ov-stat-ic.red    { background: #ee0a24; }
 .ov-stat-label { font-size: 12px; color: var(--ink-300, #969799); }
 .ov-stat-value { font-size: 17px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
 

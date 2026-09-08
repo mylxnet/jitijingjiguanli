@@ -348,6 +348,11 @@ onMounted(load)
 }
 .fp-stat-label { font-size: 12px; color: #969799; }
 .fp-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.fp-stats .fp-stat { border-color: transparent; }
+.fp-stats .fp-stat:nth-child(1) { background: #fdf3e3; }
+.fp-stats .fp-stat:nth-child(2) { background: #eaf5ed; }
+.fp-stats .fp-stat:nth-child(3) { background: #fcecec; }
+.fp-stats .fp-stat:nth-child(4) { background: #e8f0fb; }
 
 .fp-section { margin-bottom: 20px; }
 .fp-section-title {

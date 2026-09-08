@@ -177,16 +177,19 @@
           <div class="ip-stat-label">50% 再投资</div>
           <div class="ip-stat-value" :style="{color:'#07c160'}" v-if="distData">{{ fmt(distData.reinvestCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
+          <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(reinvestStat.total) }} · 已支 {{ fmt(reinvestStat.invested) }} · <span class="rd">余 {{ fmt(reinvestStat.remain) }}</span></div>
         </div>
         <div class="ip-stat">
           <div class="ip-stat-label">30% 分红福利</div>
           <div class="ip-stat-value" :style="{color:'#1989fa'}" v-if="distData">{{ fmt(distData.dividendCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
+          <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(dividendStat.total) }} · 已支 {{ fmt(dividendStat.invested) }} · <span class="rd">余 {{ fmt(dividendStat.remain) }}</span></div>
         </div>
         <div class="ip-stat">
           <div class="ip-stat-label">20% 管理公益</div>
           <div class="ip-stat-value" :style="{color:'#ff6034'}" v-if="distData">{{ fmt(distData.welfareCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
+          <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(welfareStat.total) }} · 已支 {{ fmt(welfareStat.invested) }} · <span class="rd">余 {{ fmt(welfareStat.remain) }}</span></div>
         </div>
       </div>
 
@@ -339,7 +342,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../../../lib/http'
 import { todayStr } from '../../../types/api'
 
@@ -478,12 +481,54 @@ const remainingTotal = computed(() => {
   return Math.max(0, distTotalIncome.value - totalAllocated.value)
 })
 
+// 532 各类目投入统计：已投入 = 该类目已记账的支出流水合计（不限定年度）
+const distInvested = reactive({ reinvest: 0, dividend: 0, welfare: 0 })
+
+async function loadDistInvested() {
+  distInvested.reinvest = 0
+  distInvested.dividend = 0
+  // welfare 直接复用 distExpenses（公益支出一级/二级归口流水），无需重复请求
+  distInvested.welfare = distExpenses.value.reduce((s, e) => s + e.amountCents, 0)
+  const reinvestL1 = categories.value.find(c => c.name === '再投资' && c.level === 1)
+  const divCat = findEquityCat('成员分红')
+  await Promise.all([
+    reinvestL1 ? loadCatSpent(reinvestL1.id, 'reinvest') : Promise.resolve(),
+    divCat ? loadCatSpent(divCat.id, 'dividend') : Promise.resolve(),
+  ])
+}
+async function loadCatSpent(catId: number, key: 'reinvest' | 'dividend') {
+  try {
+    const r = await api.get<any>(`/transactions?categoryId=${catId}&direction=expense&pageSize=10000`)
+    const items = r?.data?.items || r?.items || (Array.isArray(r?.data) ? r?.data : []) || []
+    distInvested[key] = (items as any[]).reduce((s, t) => s + (t.amountCents || 0), 0)
+  } catch { /* 忽略单个类别统计失败 */ }
+}
+
+// 三张类目卡的「总计 · 已投入 · 余」
+const reinvestStat = computed(() => ({
+  total: distData.value?.reinvestCents || 0,
+  invested: distInvested.reinvest,
+  remain: Math.max(0, (distData.value?.reinvestCents || 0) - distInvested.reinvest),
+}))
+const dividendStat = computed(() => ({
+  total: distData.value?.dividendCents || 0,
+  invested: distInvested.dividend,
+  remain: Math.max(0, (distData.value?.dividendCents || 0) - distInvested.dividend),
+}))
+const welfareStat = computed(() => ({
+  total: distData.value?.welfareCents || 0,
+  invested: distInvested.welfare,
+  remain: Math.max(0, (distData.value?.welfareCents || 0) - distInvested.welfare),
+}))
+
 async function loadDist(year: number) {
   try {
+    const wCat = findEquityCat('公益支出')
+    const txnPath = wCat ? `/transactions?categoryId=${wCat.id}&direction=expense` : '/transactions?direction=expense'
     const [distR, allR, txnR] = await Promise.all([
       api.get<any>('/distributions-532?year=' + year),
       api.get<any>('/distributions-532'),
-      api.get<any>('/transactions?categoryId=84&direction=expense'),
+      api.get<any>(txnPath),
     ])
     const payload = distR?.data !== undefined ? distR.data : distR
     distData.value = payload || null
@@ -499,6 +544,7 @@ async function loadDist(year: number) {
       amountCents: t.amountCents || 0,
       date: t.txnDate || '',
     }))
+    await loadDistInvested()
   } catch (e) { distData.value = null; allDistributions.value = []; distExpenses.value = [] }
 }
 
@@ -728,6 +774,12 @@ onMounted(load)
 .ip-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .ip-stat-sub { font-size: 11px; color: #969799; margin-top: 4px; }
 .ip-stat-sub.na { color: #969799; }
+.ip-stat-sub .rd { color: #ee0a24; }
+.ip-stats .ip-stat { border-color: transparent; }
+.ip-stats .ip-stat:nth-child(1) { background: #e8f0fb; }
+.ip-stats .ip-stat:nth-child(2) { background: #e6f5f4; }
+.ip-stats .ip-stat:nth-child(3) { background: #f1edfc; }
+.ip-stats .ip-stat:nth-child(4) { background: #fff1e0; }
 
 .ip-filter { margin-bottom: 8px; }
 .ip-search { padding: 0; }

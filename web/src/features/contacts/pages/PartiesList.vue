@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="pl-page">
     <div class="page-header">
       <div>
@@ -33,8 +33,8 @@
           <tr class="pl-tr-head">
             <th class="pl-th">单位名称</th>
             <th class="pl-th">联系电话</th>
-            <th class="pl-th">投资金额</th>
-            <th class="pl-th">流转面积</th>
+            <th class="pl-th" v-if="!hideInvestCol">投资金额</th>
+            <th class="pl-th" v-if="!hideLandCol">流转面积</th>
             <th class="pl-th">是否有合同</th>
             <th class="pl-th">备注</th>
             <th class="pl-th pl-th-action">操作</th>
@@ -47,11 +47,11 @@
               <span class="pl-tag" :class="'tag-' + (p.type || 'other')">{{ partyTypeLabel(p.type) }}</span>
             </td>
             <td class="pl-td">{{ p.contactPhone || '—' }}</td>
-            <td class="pl-td">
+            <td class="pl-td" v-if="!hideInvestCol">
               <template v-if="p.type === 'invest' || p.type === 'reinvest'">{{ fmtYuan(p.investAmountCents) }}</template>
               <span v-else class="pl-na">—</span>
             </td>
-            <td class="pl-td">
+            <td class="pl-td" v-if="!hideLandCol">
               <template v-if="p.type === 'flow'">{{ p.landMu ?? p.areaMu ?? 0 }} 亩</template>
               <span v-else class="pl-na">—</span>
             </td>
@@ -95,10 +95,10 @@
         <van-tabs v-model:active="formTab" sticky shrink class="party-form-tabs">
           <van-tab title="基本情况" name="basic">
             <van-cell-group inset>
-              <van-field v-model="partyForm.name" label-width="150" label="单位名称" placeholder="如：XX公司 / XX合作社" required />
+              <van-field v-model="partyForm.name" label-width="150" label="单位名称" placeholder="如：XX公司 / XX合作社" required :readonly="isEditing" />
               <van-field label="单位类型">
                 <template #input>
-                  <van-radio-group v-model="partyForm.type" direction="horizontal">
+                  <van-radio-group v-model="partyForm.type" direction="horizontal" :disabled="isEditing">
                     <van-radio name="invest">长期投资</van-radio>
                     <van-radio name="reinvest">再投资</van-radio>
                     <van-radio name="flow">土地流转</van-radio>
@@ -138,7 +138,7 @@
           <van-tab title="年度数据" name="data">
             <van-cell-group inset v-if="partyForm.type === 'invest' || partyForm.type === 'reinvest'" title="投资信息">
               <van-field v-model="partyForm.investAmountYuan" label-width="150" type="number" label="投资本金（元）" placeholder="如 500000" inputmode="decimal" />
-              <van-field v-model="partyForm.returnRatePercent" label-width="150" type="number" label="年收益率" placeholder="如 0.04" inputmode="decimal" />
+              <van-field v-model="partyForm.returnRatePercent" label-width="150" type="text" inputmode="decimal" label="年投资收益率（%）" placeholder="如 3.5（即 3.5%）" />
               <van-field v-model="partyForm.expectedReturnYuan" label-width="150" type="number" label="年收益（元）" placeholder="自动计算，可修改" inputmode="decimal" />
             </van-cell-group>
 
@@ -197,6 +197,10 @@ const keyword = ref('')
 const partyTypeLabel = (t?: string) => ({
   invest: '长投', reinvest: '再投', flow: '流转', other: '其他',
 }[t || 'other'] || '其他')
+
+// 按类型筛选时隐藏无关列：投资类不展示流转面积，流转企业不展示投资金额
+const hideInvestCol = computed(() => activeType.value === 'flow')
+const hideLandCol = computed(() => activeType.value === 'invest' || activeType.value === 'reinvest')
 
 const filtered = computed(() => {
   let arr = parties.value
@@ -313,8 +317,8 @@ const partyForm = ref({
 // 自动计算辅助
 function autoInvestReturn() {
   const amtYuan = parseFloat(partyForm.value.investAmountYuan || '0') || 0
-  const rate = parseFloat(partyForm.value.returnRatePercent || '0') || 0
-  return Math.round(amtYuan * rate)
+  const percent = parseFloat(partyForm.value.returnRatePercent || '0') || 0
+  return Math.round(amtYuan * percent / 100) // 收益率按 % 输入（如 3 即 3%）
 }
 function autoLandFee() {
   const mu = parseFloat(partyForm.value.landMuYuan || '0') || 0
@@ -398,7 +402,7 @@ function openEdit(p: Party) {
     contactPhone: p.contactPhone || '',
     note: p.note || '',
     investAmountYuan: (p.investAmountCents! / 100).toFixed(2),
-    returnRatePercent: p.returnRateBps ? (p.returnRateBps / 10000).toFixed(4) : '',
+    returnRatePercent: p.returnRateBps != null && p.returnRateBps > 0 ? String(p.returnRateBps / 100) : '', // bps=万分之→百分比(×100)，如 3% → 300bps
     expectedReturnYuan: (p.expectedReturnCents! / 100).toFixed(2),
     landMuYuan: p.landMu ? String(p.landMu) : (p.areaMu ? String(p.areaMu) : ''),
     landFeePerMuYuan: (p.landFeePerMuCents! / 100).toFixed(2),
@@ -430,7 +434,7 @@ async function saveParty() {
     contactPhone: f.contactPhone.trim(),
     note: f.note,
     investAmountCents: toCents(f.investAmountYuan),
-    returnRateBps: Math.round(parseFloat(f.returnRatePercent || '0') * 10000),
+    returnRateBps: Math.round(parseFloat(f.returnRatePercent || '0') * 100), // 百分比→bps：3% → 300bps（0.03）
     expectedReturnCents: toCents(expectedReturnInput > 0 ? f.expectedReturnYuan : String(autoER)),
     landMu: parseFloat(f.landMuYuan || '0') || 0,
     areaMu: parseFloat(f.landMuYuan || '0') || 0,
@@ -438,6 +442,12 @@ async function saveParty() {
     expectedLandFeeCents: toCents(expectedLandFeeInput > 0 ? f.expectedLandFeeYuan : String(autoLF)),
     mgmtFeePerMuCents: toCents(f.mgmtFeePerMuYuan),
     expectedMgmtFeeCents: toCents(expectedMgmtFeeInput > 0 ? f.expectedMgmtFeeYuan : String(autoMF)),
+  }
+  // 名称/类型不可编辑：编辑态不提交这两个字段（后端亦拒绝变更）
+  if (isEditing.value) {
+    delete payload.name
+    delete payload.type
+    delete payload.types
   }
   try {
     let partyId = f.id

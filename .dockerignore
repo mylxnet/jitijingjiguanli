@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# 前端 node_modules 与构建产物（容器内重新安装/构建）
+web/node_modules
+web/dist
+web/.vite
+
+# Go 构建产物与本地数据
+server/bin
+server/data
+server/backups
+server/cmd/server/web
+data
+backups
+*.db
+*.db-wal
+*.db-shm
+
+# 部署敏感文件（Gitee 令牌等）
+deploy/*.txt
+deploy/.env
+
+# IDE / 系统
+.idea
+.vscode
+.DS_Store
+*.log

@@ -38,8 +38,8 @@ const route = useRoute()
 const showNav = computed(() => !['/login', '/register', '/onboarding'].includes(route.path))
 
 const recordPopupRef = ref<InstanceType<typeof RecordPopup> | null>(null)
-provide('openRecord', () => {
-  recordPopupRef.value?.openRecord()
+provide('openRecord', (opts?: { biz?: string; partyId?: number; amount?: string }) => {
+  recordPopupRef.value?.openRecord(opts)
 })
 </script>
 

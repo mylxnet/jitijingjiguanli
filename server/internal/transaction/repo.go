@@ -53,7 +53,7 @@ func (r *Repo) FindByID(id int64) (*Transaction, error) {
 }
 
 // List 按日期倒序查询某组织的流水列表（v0.3 多组织隔离）。
-func (r *Repo) List(orgID int64, from, to string, categoryID *int64, keyword string, minAmount, maxAmount *int64, includeVoided bool, page, pageSize int) ([]*Transaction, int, error) {
+func (r *Repo) List(orgID int64, from, to string, categoryID *int64, keyword, direction string, minAmount, maxAmount *int64, includeVoided bool, page, pageSize int) ([]*Transaction, int, error) {
 	where := "WHERE org_id = ?"
 	var args []any
 	args = append(args, orgID)
@@ -67,12 +67,17 @@ func (r *Repo) List(orgID int64, from, to string, categoryID *int64, keyword str
 		args = append(args, to)
 	}
 	if categoryID != nil {
-		where += " AND category_id = ?"
-		args = append(args, *categoryID)
+		// 一级科目自动包含其全部二级子科目；二级则精确匹配。
+		where += " AND category_id IN (SELECT id FROM category WHERE id = ? OR parent_id = ?)"
+		args = append(args, *categoryID, *categoryID)
 	}
 	if keyword != "" {
 		where += " AND (note LIKE ? OR note LIKE ?)"
 		args = append(args, "%"+keyword+"%", "%"+keyword+"%")
+	}
+	if direction != "" {
+		where += " AND direction = ?"
+		args = append(args, direction)
 	}
 	if minAmount != nil {
 		where += " AND amount_cents >= ?"
@@ -118,7 +123,7 @@ func (r *Repo) List(orgID int64, from, to string, categoryID *int64, keyword str
 
 // GetSummary 计算某组织当前筛选条件下的收支合计。
 // 与 List 口径一致：includeVoided=false 时只统计 normal；=true 时含作废流水。
-func (r *Repo) GetSummary(orgID int64, from, to string, categoryID *int64, keyword string, minAmount, maxAmount *int64, includeVoided bool) (incomeTotal, expenseTotal int64, err error) {
+func (r *Repo) GetSummary(orgID int64, from, to string, categoryID *int64, keyword, direction string, minAmount, maxAmount *int64, includeVoided bool) (incomeTotal, expenseTotal int64, err error) {
 	where := "WHERE org_id = ?"
 	var args []any
 	args = append(args, orgID)
@@ -134,12 +139,17 @@ func (r *Repo) GetSummary(orgID int64, from, to string, categoryID *int64, keywo
 		args = append(args, to)
 	}
 	if categoryID != nil {
-		where += " AND category_id = ?"
-		args = append(args, *categoryID)
+		// 一级科目自动包含其全部二级子科目；二级则精确匹配。
+		where += " AND category_id IN (SELECT id FROM category WHERE id = ? OR parent_id = ?)"
+		args = append(args, *categoryID, *categoryID)
 	}
 	if keyword != "" {
 		where += " AND note LIKE ?"
 		args = append(args, "%"+keyword+"%")
+	}
+	if direction != "" {
+		where += " AND direction = ?"
+		args = append(args, direction)
 	}
 	if minAmount != nil {
 		where += " AND amount_cents >= ?"

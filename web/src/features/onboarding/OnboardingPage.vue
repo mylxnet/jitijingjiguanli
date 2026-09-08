@@ -31,6 +31,12 @@ const STEPS: StepDef[] = [
 const step = ref(0)
 const currentStep = computed(() => STEPS[step.value])
 const isLast = computed(() => step.value === STEPS.length - 1)
+// fill-balance 步骤绑定其前一个 add-party 的类型（用于按单位分组）
+const balancePartyType = computed<'flow' | 'invest' | 'reinvest' | ''>(() => {
+  const s = currentStep.value
+  if (s.type !== 'fill-balance') return ''
+  return STEPS[step.value - 1]?.partyType || ''
+})
 const canNext = computed(() => {
   const s = currentStep.value
   if (s.type === 'add-party') return getPartiesByType(s.partyType!).length > 0 || skipThisStep.value
@@ -99,16 +105,21 @@ async function saveParty() {
   if (!name) return
   const t = currentStep.value.partyType!
   try {
-    await api.post('/parties', { name, types: [t] })
+    // 后端：type 为单值落库，types 数组为多选兼容层（引导页单类型，两者都传以兼容新旧后端）
+    await api.post('/parties', { name, type: t, types: [t] })
     // 服务器端自动在关联 L1 下建同名 L2，无需前端重复创建
     showPartyForm.value = false
     await loadParties()
     await loadCats()
   } catch (e: any) {
     if (e?.status === 409 && e?.response?.code === 'DUPLICATE_NAME') {
-      const dupes = e.response.dupes || []
-      const names = dupes.map((d: any) => d.name).join('、')
-      alert('存在重名单位：' + names + '\n\n请修改单位名称后重试。')
+      const dupes: any[] = e?.response?.details || []
+      if (dupes.length > 0) {
+        const names = dupes.map((d: any) => (typeof d === 'string' ? d : d.name)).filter(Boolean).join('、')
+        alert('以下近似重名单位与您输入高度相近：' + names + '\n\n请修改单位名称后重试。')
+      } else {
+        alert('该类型下已存在同名单位，请修改单位名称后重试。')
+      }
     } else {
       alert('保存失败：' + (e.message || e))
     }
@@ -116,19 +127,32 @@ async function saveParty() {
 }
 
 // ========== Step: fill-balance ==========
-// 本步涉及的 L2 列表
+// 本步涉及的单位同名科目（L2），剔除了系统预置/普通科目
 const stepL2s = computed(() => {
   const s = currentStep.value
   if (s.type !== 'fill-balance') return []
+  const t = balancePartyType.value
+  const unitNames = new Set(getPartiesByType(t).map(p => p.name))
   const result: { l1Name: string; l2: Category }[] = []
   for (const l1Name of (s.l1Names || [])) {
     const l1 = findL1(l1Name)
     if (!l1) continue
     for (const l2 of l1.children || []) {
-      result.push({ l1Name, l2 })
+      if (unitNames.has(l2.name)) result.push({ l1Name, l2 })
     }
   }
   return result
+})
+
+// 按单位分组：每个单位一组，组内含其全部同名科目（行标签用 L1 名区分）
+const unitBalances = computed(() => {
+  const t = balancePartyType.value
+  if (!t) return [] as { party: Party; items: { l1Name: string; l2: Category }[] }[]
+  const groups: { party: Party; items: { l1Name: string; l2: Category }[] }[] = []
+  for (const p of getPartiesByType(t)) {
+    groups.push({ party: p, items: stepL2s.value.filter(it => it.l2.name === p.name) })
+  }
+  return groups
 })
 
 // ========== Step: final (银行 + 预置科目 + 预览) ==========
@@ -151,7 +175,10 @@ const previewParties = computed(() => parties.value.map(p => ({
 })))
 const previewBalances = computed(() => {
   const items: { name: string; yuan: number }[] = []
+  const flowNames = new Set(getPartiesByType('flow').map(p => p.name))
   for (const { l1Name, l2 } of [...stepL2s.value, ...presetL2s.value]) {
+    // 流转企业费用存在往来单位基本信息，不入科目余额，故不列入预览
+    if (flowNames.has(l2.name)) continue
     const input = openingInputs.value[l2.id]
     if (input && parseFloat(input) > 0) {
       items.push({ name: `${l1Name} / ${l2.name}`, yuan: parseFloat(input) })
@@ -161,24 +188,64 @@ const previewBalances = computed(() => {
 })
 
 async function onConfirm() {
-  // 1. 更新银行期初
-  if (previewBank.value > 0) {
-    await api.put('/settings', { bankOpeningBalanceCents: Math.round(previewBank.value * 100) })
-  }
-  // 2. 更新所有填了余额的 L2
-  for (const [idStr, yuanStr] of Object.entries(openingInputs.value)) {
-    const yuan = parseFloat(yuanStr)
-    if (yuan > 0) {
-      await api.put(`/categories/${idStr}`, { openingBalanceCents: Math.round(yuan * 100) })
-    }
-  }
-  // 3. 写 localStorage 标记完成
   try {
+    // 0. 长期投资/再投资：填写的余额双写 → 基本信息 investAmount + 同名科目期初（步骤2统一写入）
+    for (const t of (['invest', 'reinvest'] as const)) {
+      const l1Name = t === 'invest' ? '长期投资' : '再投资'
+      const l1 = findL1(l1Name)
+      for (const p of getPartiesByType(t)) {
+        const l2 = l1?.children?.find(c => c.name === p.name)
+        if (!l2) continue
+        const yuan = parseFloat(openingInputs.value[l2.id])
+        if (!(yuan > 0)) continue
+        await api.put(`/parties/${p.id}`, { investAmountCents: Math.round(yuan * 100) })
+      }
+    }
+    // 1. 更新银行期初
+    if (previewBank.value > 0) {
+      await api.put('/settings', { bankOpeningBalanceCents: Math.round(previewBank.value * 100) })
+    }
+    // 2. 流转企业：填写的流转费/管理费 → 存入往来单位基本信息（expectedLandFee/expectedMgmtFee），不入科目余额
+    const flowPartyFees = new Map<number, { landFee?: number; mgmtFee?: number }>()
+    const skipCat = new Set<number>()
+    for (const p of getPartiesByType('flow')) {
+      const rec: { landFee?: number; mgmtFee?: number } = {}
+      for (const l1Name of ['土地流转费收入', '流转管理费']) {
+        const l1 = findL1(l1Name)
+        const l2 = l1?.children?.find(c => c.name === p.name)
+        if (!l2) continue
+        const yuan = parseFloat(openingInputs.value[l2.id])
+        if (yuan > 0) {
+          if (l1Name === '土地流转费收入') rec.landFee = Math.round(yuan * 100)
+          else rec.mgmtFee = Math.round(yuan * 100)
+          skipCat.add(l2.id)
+        }
+      }
+      if (rec.landFee !== undefined || rec.mgmtFee !== undefined) flowPartyFees.set(p.id, rec)
+    }
+    for (const [pid, fee] of flowPartyFees) {
+      const payload: any = {}
+      if (fee.landFee !== undefined) payload.expectedLandFeeCents = fee.landFee
+      if (fee.mgmtFee !== undefined) payload.expectedMgmtFeeCents = fee.mgmtFee
+      if (Object.keys(payload).length) await api.put(`/parties/${pid}`, payload)
+    }
+    // 3. 更新其余填了余额的 L2（投资/再投资同名科目与预置科目）
+    for (const [idStr, yuanStr] of Object.entries(openingInputs.value)) {
+      if (skipCat.has(Number(idStr))) continue
+      const yuan = parseFloat(yuanStr)
+      if (yuan > 0) {
+        await api.put(`/categories/${idStr}`, { openingBalanceCents: Math.round(yuan * 100) })
+      }
+    }
+    // 3. 写 localStorage 标记完成
     const me = await api.get<ApiResponse<any>>('/auth/me')
-    const orgId = (me.data?.orgId ?? 'default')
+    // 后端返回 orgID（大写 D），兼容旧字段 orgId
+    const orgId: any = (me.data?.orgID ?? me.data?.orgId ?? 'default')
     localStorage.setItem(`jt_onboarding_done_${orgId}`, '1')
-  } catch { /* ignore */ }
-  router.push('/')
+    router.push('/')
+  } catch (e: any) {
+    alert('保存失败：' + (e?.message || e) + (e?.response?.message ? '（' + e.response.message + '）' : ''))
+  }
 }
 
 // ========== 导航 ==========
@@ -187,7 +254,7 @@ function prevStep() { skipThisStep.value = false; step.value-- }
 async function skipToHome() {
   try {
     const me = await api.get<ApiResponse<any>>('/auth/me')
-    const orgId = (me.data?.orgId ?? 'default')
+    const orgId: any = (me.data?.orgID ?? me.data?.orgId ?? 'default')
     localStorage.setItem(`jt_onboarding_done_${orgId}`, '1')
   } catch { /* ignore */ }
   router.push('/')
@@ -249,14 +316,15 @@ async function skipToHome() {
       <!-- ========== fill-balance 步骤 ========== -->
       <div v-else-if="currentStep.type === 'fill-balance'" class="ob-step-panel">
         <p class="ob-hint">
-          为这些自动创建的二级科目设置期初余额（建账时点的存量）。不填默认为 0。
+          分别为每个<strong>{{ STEPS[step - 1]?.label }}</strong>录入其同名科目期初余额（建账时点的存量）。不填默认为 0。
         </p>
 
         <div class="ob-balance-block">
-          <template v-for="group in groupByL1(stepL2s)" :key="group.l1Name">
-            <div class="ob-group-title">{{ group.l1Name }}</div>
-            <div v-for="item in group.items" :key="item.l2.id" class="ob-balance-row">
-              <div class="ob-balance-name">{{ item.l2.name }}</div>
+          <div v-for="g in unitBalances" :key="g.party.id" class="ob-unit-block">
+            <div class="ob-unit-title">{{ g.party.name }}</div>
+            <div v-if="g.items.length === 0" class="ob-empty">（无已创建同名科目）</div>
+            <div v-for="item in g.items" :key="item.l2.id" class="ob-balance-row">
+              <div class="ob-balance-name">{{ item.l1Name }}</div>
               <input
                 v-model="openingInputs[item.l2.id]"
                 class="ob-yuan-input"
@@ -265,9 +333,9 @@ async function skipToHome() {
               />
               <span class="ob-yuan-tail">元</span>
             </div>
-          </template>
-          <div v-if="stepL2s.length === 0" class="ob-empty">
-            暂无可填余额的二级科目（可能上一步没有录入单位）
+          </div>
+          <div v-if="unitBalances.length === 0" class="ob-empty">
+            暂无可填余额的单位（可能上一步没有录入单位）
           </div>
         </div>
 
@@ -394,6 +462,8 @@ export default { methods: { groupByL1 } }
 /* balance */
 .ob-balance-block { display: flex; flex-direction: column; gap: 12px; }
 .ob-group-title { font-size: 12px; font-weight: 600; color: var(--terracotta); padding: 8px 0 4px; border-bottom: 1px dashed #eee; }
+.ob-unit-block { background: #faf8f4; border: 1px solid #f0eadf; border-radius: 8px; padding: 8px 12px; }
+.ob-unit-title { font-size: 13px; font-weight: 600; color: var(--ink); padding: 2px 0 4px; border-bottom: 1px dashed #eee; margin-bottom: 4px; }
 .ob-balance-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
 .ob-balance-name { flex: 1; font-size: 13px; color: var(--ink); }
 .ob-yuan-input { width: 120px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; text-align: right; }

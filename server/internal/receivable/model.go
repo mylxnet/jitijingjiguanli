@@ -1,4 +1,4 @@
-﻿// Package receivable 提供应收/往来功能（D11）：
+// Package receivable 提供应收/往来功能（D11）：
 // party 往来单位、receivable 应收单、receipt 收款核销（现金入账 cash / 抵销 offset）。
 package receivable
 
@@ -191,9 +191,18 @@ type ReinvestAllocation struct {
 	ID            int64     `json:"id"`
 	PartyID       int64     `json:"partyId"`
 	TargetName    string    `json:"targetName"`
+	TargetPartyID *int64    `json:"targetPartyId,omitempty"` // 可选
 	AmountCents   int64     `json:"amountCents"`
 	Notes         *string   `json:"notes"`
 	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// ReinvestAllocationRequest 新增再投资去向。
+type ReinvestAllocationRequest struct {
+	TargetName    string `json:"targetName" binding:"required"`
+	TargetPartyID *int64 `json:"targetPartyId"` // 可选
+	AmountCents   int64  `json:"amountCents"`
+	Notes         string `json:"notes"`
 }
 
 // CreateReceiptRequest 收款核销。
@@ -218,5 +227,27 @@ type ReceivableListResponse struct {
 type ReceivableDetail struct {
 	Receivable Receivable `json:"receivable"`
 	Receipts   []Receipt  `json:"receipts"`
+}
+
+// Distribution532 532分配方案（按 org+year 唯一，一年一条）。
+type Distribution532 struct {
+	ID               int64     `json:"id"`
+	OrgID            int64     `json:"orgId"`
+	Year             int       `json:"year"`
+	TotalIncomeCents int64     `json:"totalIncomeCents"` // 分配基准总收益（快照）
+	ReinvestCents    int64     `json:"reinvestCents"`    // 再投资
+	DividendCents    int64     `json:"dividendCents"`    // 成员分红福利
+	WelfareCents     int64     `json:"welfareCents"`     // 管理公益支出
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+// SaveDistribution532Request 保存/更新某年 532 分配方案。
+type SaveDistribution532Request struct {
+	Year             int64 `json:"year" binding:"required"`
+	TotalIncomeCents int64 `json:"totalIncomeCents"`
+	ReinvestCents    int64 `json:"reinvestCents"`
+	DividendCents    int64 `json:"dividendCents"`
+	WelfareCents     int64 `json:"welfareCents"`
 }
 

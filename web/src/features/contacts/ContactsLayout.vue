@@ -8,6 +8,7 @@
       <router-link to="/contacts/receivables/rent"     class="cl-tab">🌾 应收流转费</router-link>
       <router-link to="/contacts/receivables/service"  class="cl-tab">📋 应收管理费</router-link>
       <router-link to="/contacts/contracts"          class="cl-tab">📄 合同管理</router-link>
+      <router-link to="/contacts/accrue"             class="cl-tab">🧭 年度计提</router-link>
     </nav>
     <div class="cl-content">
       <router-view />

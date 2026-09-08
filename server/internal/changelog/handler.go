@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -24,6 +25,7 @@ func NewHandler(db *sql.DB) *Handler {
 // Register 挂载路由。
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/changelog", h.ListChangelog)
+	r.GET("/api/operation-logs", h.ListOperationLogs)
 }
 
 // ListChangelog 查询变更日志。
@@ -68,4 +70,33 @@ func (h *Handler) ListChangelog(c *gin.Context) {
 	}
 
 	platform.SuccessResponse(c, items)
+}
+
+// ListOperationLogs 查询近 48 小时操作日志。
+// GET /api/operation-logs → { data: { items: OpLog[] } }（前端取 res.data 再 .items）
+func (h *Handler) ListOperationLogs(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
+			Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
+		})
+		return
+	}
+
+	since := time.Now().UTC().Add(-48 * time.Hour)
+	rows, err := h.repo.ListRecentByOrg(orgID, since)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
+			Code: "INTERNAL_ERROR", Message: "查询操作日志失败",
+		})
+		return
+	}
+
+	items := make([]OpLog, 0, len(rows))
+	for _, cl := range rows {
+		business := h.repo.Describe(orgID, cl.EntityType, cl.EntityID)
+		items = append(items, toOpLog(cl, business))
+	}
+
+	platform.SuccessResponse(c, gin.H{"items": items})
 }

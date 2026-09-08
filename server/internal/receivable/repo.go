@@ -25,28 +25,119 @@ func NewRepo(db *sql.DB) *Repo {
 // ---------- party ----------
 
 // CreateParty 新建往来单位。
+// typeToL1 单位类型 → 需联动创建同名二级科目的容器 L1（与预置科目名一致）。
+var typeToL1 = map[string][]string{
+	"flow":    {"土地流转费收入", "流转管理费"},
+	"invest":  {"长期投资"},
+	"reinvest": {"再投资"},
+}
+
+// CreateParty 新建往来单位，并在事务内按单位类型自动创建同名二级科目（容器 L1 下）。
 func (r *Repo) CreateParty(p *Party) (*Party, error) {
 	now := platform.Now()
-	res, err := r.db.Exec(
-		`INSERT INTO party(org_id, name, type, contact_phone, area_mu, note, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.OrgID, p.Name, p.Type, p.ContactPhone, p.AreaMu, p.Note, now, now,
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("新建往来单位事务开启失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
+		`INSERT INTO party(org_id, name, type, contact_phone, area_mu, note,
+			invest_amount_cents, return_rate_bps, expected_return_cents,
+			land_mu, land_fee_per_mu_cents, expected_land_fee_cents,
+			mgmt_fee_per_mu_cents, expected_mgmt_fee_cents,
+			created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.OrgID, p.Name, p.Type, p.ContactPhone, p.AreaMu, p.Note,
+		p.InvestAmountCents, p.ReturnRateBps, p.ExpectedReturnCents,
+		p.LandMu, p.LandFeePerMuCents, p.ExpectedLandFeeCents,
+		p.MgmtFeePerMuCents, p.ExpectedMgmtFeeCents,
+		now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("新建往来单位失败: %w", err)
 	}
 	id, _ := res.LastInsertId()
+
+	// 联动创建同名二级科目（invest→长期投资；flow→土地流转费收入+流转管理费；reinvest→再投资）
+	for _, l1name := range typeToL1[p.Type] {
+		var l1id int64
+		if err := tx.QueryRow(
+			`SELECT id FROM category WHERE org_id=? AND name=? AND level=1 AND status='active'`,
+			p.OrgID, l1name,
+		).Scan(&l1id); err != nil {
+			continue // 该容器 L1 不存在（未预置/已停用），跳过
+		}
+		var one int
+		if err := tx.QueryRow(
+			`SELECT EXISTS(SELECT 1 FROM category WHERE org_id=? AND name=? AND parent_id=?)`,
+			p.OrgID, p.Name, l1id,
+		).Scan(&one); err == nil && one == 1 {
+			continue // 同名 L2 已存在，不重复创建
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO category(org_id, name, level, parent_id, status, kind, preset, sort_order, created_at, updated_at)
+			 VALUES(?, ?, 2, ?, 'active', 'equity', 0, 0, ?, ?)`,
+			p.OrgID, p.Name, l1id, now, now,
+		); err != nil {
+			return nil, fmt.Errorf("自动创建同名二级科目失败: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("新建往来单位提交失败: %w", err)
+	}
+
 	p.ID = id
 	p.CreatedAt = now
 	p.UpdatedAt = now
 	return p, nil
 }
 
+// FindDuplicate 校验同名重复。
+// 返回：exact=true 表示同 org+同名+同类型 完全重复（应直接拒绝）；
+// dupes 为同 org 下名称模糊匹配到的其它单位名（供前端提示，exact 时为空）。
+func (r *Repo) FindDuplicate(orgID int64, name, ptype string) (exact bool, dupes []string) {
+	var one int
+	_ = r.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM party WHERE org_id=? AND name=? AND type=?)`,
+		orgID, name, ptype,
+	).Scan(&one)
+	if one == 1 {
+		return true, nil
+	}
+
+	rows, err := r.db.Query(
+		`SELECT DISTINCT name FROM party WHERE org_id=? AND name LIKE ? AND name <> ?`,
+		orgID, "%"+name+"%", name,
+	)
+	if err != nil {
+		return false, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n string
+		if rows.Scan(&n) == nil {
+			dupes = append(dupes, n)
+		}
+	}
+	return false, dupes
+}
+
 // FindPartyByID 按 ID 查询往来单位（调用方需校验 OrgID）。
 func (r *Repo) FindPartyByID(id int64) (*Party, error) {
 	p := &Party{}
 	err := r.db.QueryRow(
-		`SELECT id, org_id, name, type, contact_phone, area_mu, note, created_at, updated_at FROM party WHERE id = ?`, id,
-	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt)
+		`SELECT id, org_id, name, type, contact_phone, area_mu, note,
+		        invest_amount_cents, return_rate_bps, expected_return_cents,
+		        land_mu, land_fee_per_mu_cents, expected_land_fee_cents,
+		        mgmt_fee_per_mu_cents, expected_mgmt_fee_cents,
+		        created_at, updated_at FROM party WHERE id = ?`, id,
+	).Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note,
+		&p.InvestAmountCents, &p.ReturnRateBps, &p.ExpectedReturnCents,
+		&p.LandMu, &p.LandFeePerMuCents, &p.ExpectedLandFeeCents,
+		&p.MgmtFeePerMuCents, &p.ExpectedMgmtFeeCents,
+		&p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -69,6 +160,9 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 
 	rows, err := r.db.Query(
 		`SELECT p.id, p.org_id, p.name, p.type, p.contact_phone, p.area_mu, p.note, p.created_at, p.updated_at,
+		        p.invest_amount_cents, p.return_rate_bps, p.expected_return_cents,
+		        p.land_mu, p.land_fee_per_mu_cents, p.expected_land_fee_cents,
+		        p.mgmt_fee_per_mu_cents, p.expected_mgmt_fee_cents,
 		        COALESCE((SELECT SUM(rec.amount_cents - COALESCE((
 		            SELECT SUM(re2.amount_cents) FROM receipt re2
 		            WHERE re2.org_id = p.org_id AND re2.receivable_id = rec.id AND re2.status = 'normal'
@@ -84,42 +178,18 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	var items []Party
 	for rows.Next() {
 		p := Party{}
-		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt, &p.OutstandingCents); err != nil {
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt,
+			&p.InvestAmountCents, &p.ReturnRateBps, &p.ExpectedReturnCents,
+			&p.LandMu, &p.LandFeePerMuCents, &p.ExpectedLandFeeCents,
+			&p.MgmtFeePerMuCents, &p.ExpectedMgmtFeeCents, &p.OutstandingCents); err != nil {
 			return nil, fmt.Errorf("扫描往来单位行失败: %w", err)
 		}
 		items = append(items, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range items {
-		if items[i].Type == "invest" {
-			items[i].InvestAmountCents = r.partyInvestAmount(orgID, items[i].Name)
+			return nil, err
 		}
-	}
 	return items, nil
-}
-
-// partyInvestAmount 计算某投资公司的累计投出 = 「长期投资/对外投资」组下同名普通二级科目收到的支出流水合计。
-func (r *Repo) partyInvestAmount(orgID int64, name string) int64 {
-	var invested int64
-	err := r.db.QueryRow(
-		`SELECT COALESCE(SUM(CASE WHEN t.direction = 'expense' THEN t.amount_cents
-		                          WHEN t.direction = 'income' THEN -t.amount_cents ELSE 0 END), 0)
-		 FROM txn t
-		 JOIN category c ON t.category_id = c.id
-		 JOIN category l1 ON c.parent_id = l1.id
-		 WHERE t.org_id = ? AND t.status = 'normal' AND c.level = 2
-		   AND c.kind = 'equity' AND c.name = ?
-		   AND l1.name IN ('长期投资', '对外投资')`, orgID, name,
-	).Scan(&invested)
-	if err != nil {
-		return 0
-	}
-	if invested < 0 {
-		return 0
-	}
-	return invested
 }
 
 // UpdateParty 更新往来单位（限定本组织）。
@@ -341,6 +411,76 @@ type CreateOutcome struct {
 	Receipt          *Receipt
 	ReceivableStatus string // 核销后应收单状态（open/closed）
 	TxnCreated       *int64 // cash 方式自动生成的银行收入流水 id
+}
+
+// recvKindToL1 应收类型 → 收入入账容器 L1（与预置科目名一致的容器）。
+// 现金收款无预设入账科目时，按此定位该单位同名的收入二级科目并自动入账。
+var recvKindToL1 = map[string]string{
+	"rent":              "土地流转费收入",
+	"service":           "流转管理费",
+	"dividend":          "投资收益",
+	"reinvest_dividend": "再投资",
+}
+
+// ResolveIncomeCategory 按应收类型自动定位（必要时自动创建）该单位的收入二级科目，
+// 用于现金收款无预设入账科目时的自动入账。
+// 返回 0 表示该应收类型无自动映射、或缺少对应容器 L1，交由上层决定是否报错。
+func (r *Repo) ResolveIncomeCategory(orgID, partyID int64, recvKind string) (int64, error) {
+	l1Name, ok := recvKindToL1[recvKind]
+	if !ok {
+		return 0, nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("开启科目解析事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	var l1id int64
+	err = tx.QueryRow(
+		`SELECT id FROM category WHERE org_id=? AND name=? AND level=1 AND status='active'`,
+		orgID, l1Name,
+	).Scan(&l1id)
+	if err == sql.ErrNoRows {
+		return 0, nil // 缺少容器 L1，无法自动入账
+	}
+	if err != nil {
+		return 0, fmt.Errorf("查询收入容器科目失败: %w", err)
+	}
+
+	var partyName string
+	if err := tx.QueryRow(
+		`SELECT name FROM party WHERE id=? AND org_id=?`, partyID, orgID,
+	).Scan(&partyName); err != nil {
+		return 0, fmt.Errorf("查询往来单位失败: %w", err)
+	}
+
+	var l2id int64
+	err = tx.QueryRow(
+		`SELECT id FROM category WHERE org_id=? AND name=? AND parent_id=?`,
+		orgID, partyName, l1id,
+	).Scan(&l2id)
+	if err == nil {
+		return l2id, nil // 同名收入二级已存在
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("查询收入二级科目失败: %w", err)
+	}
+
+	// 同名收入二级不存在 → 自动创建（与建单位时的联动一致）
+	now := platform.Now()
+	res, err := tx.Exec(
+		`INSERT INTO category(org_id, name, level, parent_id, status, kind, preset, sort_order, created_at, updated_at)
+		 VALUES(?, ?, 2, ?, 'active', 'equity', 0, 0, ?, ?)`,
+		orgID, partyName, l1id, now, now,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("自动创建收入二级科目失败: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("提交科目解析事务失败: %w", err)
+	}
+	return res.LastInsertId()
 }
 
 // CreateCashReceipt 现金核销：单事务写入 receipt + 银行收入流水（txn），
@@ -667,39 +807,86 @@ func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*
 	return r.BatchCreateReceivables(orgID, year, title, items)
 }
 
-// PreviewAccrueFromStandards 生成年度结转预览：启用标准中类型匹配的行，并标注同年同类应收单是否已存在。
-func (r *Repo) PreviewAccrueFromStandards(orgID int64, year int) (*PreviewAccrueResult, error) {
+// PreviewAccrueAuto 生成年度结转预览：按往来单位基本信息自动带出建议金额
+// （投资公司→投资收益=年收益；流转企业→土地流转费=总流转费、管理费=总管理费），
+// 金额可在前端修改后再确认；同年同类应收单已存在则标注 Exists（确认结转时跳过）。
+func (r *Repo) PreviewAccrueAuto(orgID int64, year int) (*PreviewAccrueResult, error) {
+	// 汇总候选条目（kind / partyID / name / amount）
+	type cand struct {
+		kind   string
+		pid    int64
+		name   string
+		amount int64
+	}
+	cands := []cand{}
+
 	rows, err := r.db.Query(
-		`SELECT s.recv_kind, s.party_id, p.name, s.amount_cents,
-		        EXISTS(SELECT 1 FROM receivable rec
-		               WHERE rec.org_id = s.org_id AND rec.party_id = s.party_id
-		                 AND rec.recv_year = ? AND rec.recv_kind = s.recv_kind) AS already
-		 FROM recv_standard s JOIN party p ON p.id = s.party_id AND p.org_id = s.org_id
-		 WHERE s.org_id = ? AND s.active = 1
-		   AND ((s.recv_kind = 'rent' AND p.type = 'flow') OR (s.recv_kind = 'dividend' AND p.type = 'invest'))
-		 ORDER BY s.recv_kind, p.name`, year, orgID,
+		`SELECT id, name, type, expected_return_cents, expected_land_fee_cents, expected_mgmt_fee_cents
+		 FROM party WHERE org_id = ? ORDER BY name`, orgID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询年度结转预览失败: %w", err)
+		return nil, fmt.Errorf("查询单位基本信息失败: %w", err)
 	}
-	defer rows.Close()
-	result := &PreviewAccrueResult{Year: year, Items: []PreviewAccrueItem{}}
 	for rows.Next() {
-		it := PreviewAccrueItem{}
-		var already int
-		if err := rows.Scan(&it.Kind, &it.PartyID, &it.PartyName, &it.AmountCents, &already); err != nil {
-			return nil, fmt.Errorf("扫描年度结转预览失败: %w", err)
+		var id int64
+		var name, ptype string
+		var ret, landFee, mgmtFee int64
+		if err := rows.Scan(&id, &name, &ptype, &ret, &landFee, &mgmtFee); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("扫描单位基本信息失败: %w", err)
 		}
-		it.Exists = already == 1
-		if it.Kind == "rent" {
-			it.Title = fmt.Sprintf("%d年度土地流转费", year)
-		} else {
-			it.Title = fmt.Sprintf("%d年度投资收益", year)
+		if ptype == "invest" && ret > 0 {
+			cands = append(cands, cand{"dividend", id, name, ret})
 		}
-		result.Items = append(result.Items, it)
+		if ptype == "flow" && landFee > 0 {
+			cands = append(cands, cand{"rent", id, name, landFee})
+		}
+		if ptype == "flow" && mgmtFee > 0 {
+			cands = append(cands, cand{"service", id, name, mgmtFee})
+		}
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	// 同年同类应收单已存在集合
+	type key struct {
+		pid  int64
+		kind string
+	}
+	exists := map[key]bool{}
+	{
+		er, err := r.db.Query(`SELECT party_id, recv_kind FROM receivable WHERE org_id = ? AND recv_year = ?`, orgID, year)
+		if err != nil {
+			return nil, err
+		}
+		defer er.Close()
+		for er.Next() {
+			var pid int64
+			var k string
+			if err := er.Scan(&pid, &k); err != nil {
+				return nil, fmt.Errorf("扫描应收单失败: %w", err)
+			}
+			exists[key{pid, k}] = true
+		}
+	}
+
+	result := &PreviewAccrueResult{Year: year, Items: []PreviewAccrueItem{}}
+	for _, cd := range cands {
+		title := fmt.Sprintf("%d年度计提", year)
+		switch cd.kind {
+		case "rent":
+			title = fmt.Sprintf("%d年度土地流转费", year)
+		case "dividend":
+			title = fmt.Sprintf("%d年度投资收益", year)
+		case "service":
+			title = fmt.Sprintf("%d年度管理费", year)
+		}
+		result.Items = append(result.Items, PreviewAccrueItem{
+			Kind: cd.kind, Title: title, PartyID: cd.pid, PartyName: cd.name,
+			AmountCents: cd.amount, Exists: exists[key{cd.pid, cd.kind}],
+		})
 	}
 	return result, nil
 }
@@ -713,4 +900,131 @@ func sumPaidTx(tx *sql.Tx, orgID, receivableID int64) (int64, error) {
 		return 0, fmt.Errorf("统计已核销金额失败: %w", err)
 	}
 	return paid, nil
+}
+
+// ------------- 再投资去向（reinvest_allocation） -------------
+
+// ListAllocations 查询某组织某单位的再投资去向，按 id 倒序。
+func (r *Repo) ListAllocations(orgID, partyID int64) ([]ReinvestAllocation, error) {
+	rows, err := r.db.Query(
+		`SELECT id, party_id, target_name, amount_cents, notes, created_at
+		 FROM reinvest_allocation WHERE org_id = ? AND party_id = ? ORDER BY id DESC`, orgID, partyID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询再投资去向失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := []ReinvestAllocation{}
+	for rows.Next() {
+		a := ReinvestAllocation{}
+		if err := rows.Scan(&a.ID, &a.PartyID, &a.TargetName, &a.AmountCents, &a.Notes, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描再投资去向行失败: %w", err)
+		}
+		items = append(items, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// CreateAllocation 新建再投资去向。
+func (r *Repo) CreateAllocation(orgID int64, a *ReinvestAllocation) (*ReinvestAllocation, error) {
+	now := platform.Now()
+	res, err := r.db.Exec(
+		`INSERT INTO reinvest_allocation(org_id, party_id, target_name, target_party_id, amount_cents, notes, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+		orgID, a.PartyID, a.TargetName, a.TargetPartyID, a.AmountCents, a.Notes, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("新建再投资去向失败: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	a.ID = id
+	a.CreatedAt = now
+	return a, nil
+}
+
+// DeleteAllocation 删除再投资去向，返回是否命中该组织的记录。
+func (r *Repo) DeleteAllocation(id, orgID int64) (bool, error) {
+	res, err := r.db.Exec(`DELETE FROM reinvest_allocation WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return false, fmt.Errorf("删除再投资去向失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// ---------- 532分配 ----------
+
+// GetDistribution532ByYear 查询某组织某年的 532 分配方案，不存在返回 nil。
+func (r *Repo) GetDistribution532ByYear(orgID int64, year int) (*Distribution532, error) {
+	d := Distribution532{}
+	err := r.db.QueryRow(
+		`SELECT id, org_id, year, total_income_cents, reinvest_cents, dividend_cents, welfare_cents, created_at, updated_at
+		 FROM distribution_532 WHERE org_id = ? AND year = ?`, orgID, year,
+	).Scan(&d.ID, &d.OrgID, &d.Year, &d.TotalIncomeCents, &d.ReinvestCents, &d.DividendCents,
+		&d.WelfareCents, &d.CreatedAt, &d.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查询 532 分配方案失败: %w", err)
+	}
+	return &d, nil
+}
+
+// ListDistributions532 查询某组织全部年份的 532 分配方案，按年度倒序。
+func (r *Repo) ListDistributions532(orgID int64) ([]Distribution532, error) {
+	rows, err := r.db.Query(
+		`SELECT id, org_id, year, total_income_cents, reinvest_cents, dividend_cents, welfare_cents, created_at, updated_at
+		 FROM distribution_532 WHERE org_id = ? ORDER BY year DESC`, orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询 532 分配方案列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := []Distribution532{}
+	for rows.Next() {
+		d := Distribution532{}
+		if err := rows.Scan(&d.ID, &d.OrgID, &d.Year, &d.TotalIncomeCents, &d.ReinvestCents,
+			&d.DividendCents, &d.WelfareCents, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描 532 分配方案行失败: %w", err)
+		}
+		items = append(items, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// UpsertDistribution532 按 org+year 插入或更新 532 分配方案，返回最新记录。
+func (r *Repo) UpsertDistribution532(orgID int64, d *Distribution532) (*Distribution532, error) {
+	now := platform.Now()
+	// 尝试插入；若组织同年已存在则改为更新
+	res, err := r.db.Exec(
+		`INSERT INTO distribution_532(org_id, year, total_income_cents, reinvest_cents, dividend_cents, welfare_cents, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(org_id, year) DO UPDATE SET
+			total_income_cents = excluded.total_income_cents,
+			reinvest_cents     = excluded.reinvest_cents,
+			dividend_cents     = excluded.dividend_cents,
+			welfare_cents      = excluded.welfare_cents,
+			updated_at         = excluded.updated_at`, // 保留首版 created_at
+		orgID, d.Year, d.TotalIncomeCents, d.ReinvestCents, d.DividendCents, d.WelfareCents, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("保存 532 分配方案失败: %w", err)
+	}
+	if id, err := res.LastInsertId(); err == nil && id > 0 {
+		d.ID = id
+		d.OrgID = orgID
+	}
+	d.CreatedAt = now
+	d.UpdatedAt = now
+	// 走查询拿最终一致记录（含既有记录的 id / created_at）
+	return r.GetDistribution532ByYear(orgID, d.Year)
 }

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="rl-page" :class="'theme-' + theme">
     <div class="page-header">
       <div>
@@ -7,7 +7,6 @@
       </div>
       <div class="rl-header-actions">
         <van-button size="small" @click="exportCSV">导出</van-button>
-        <van-button type="primary" plain size="small" @click="openAccrue">年度计提</van-button>
       </div>
     </div>
 
@@ -18,30 +17,36 @@
       <div class="rl-stat"><div class="rl-stat-label">收缴率</div><div class="rl-stat-value">{{ rate }}%</div></div>
     </div>
 
-    <div class="rl-status-tabs">
-      <button
-        v-for="s in statusOptions" :key="s.value"
-        class="rl-status-btn" :class="{ active: activeStatus === s.value }"
-        @click="activeStatus = s.value"
-      >{{ s.label }}</button>
+    <div class="rl-filter-bar">
+      <label class="rl-year-select">
+        <span class="rl-year-label">年度</span>
+        <select class="rl-year-native" :value="String(activeYear)" @change="onYearChange($event)">
+          <option v-for="o in yearSelectOptions" :key="String(o.value)" :value="String(o.value)">{{ o.text }}</option>
+        </select>
+      </label>
     </div>
 
-    <van-loading v-if="loading && filtered.length === 0" />
-    <div v-else-if="filtered.length === 0" class="empty">
+    <van-loading v-if="loading && rows.length === 0" />
+    <div v-else-if="rows.length === 0" class="empty">
       <van-empty description="暂无应收记录" />
     </div>
     <van-cell-group v-else inset class="rl-list">
       <van-cell
-        v-for="r in filtered" :key="r.id"
-        :title="partyName(r.partyId)"
+        v-for="r in rows" :key="r.id"
         :label="`${kindLabel(r.kind)} · ${r.recvYear || '—'}`"
       >
+        <template #title>
+          <div class="rl-title">
+            <span>{{ partyName(r.partyId) }}</span>
+            <van-tag round :type="statusMeta[statusOf(r)].type" class="rl-badge">{{ statusMeta[statusOf(r)].text }}</van-tag>
+          </div>
+        </template>
         <template #right-icon>
           <div class="rl-row-right">
             <div class="rl-amounts">
               <div class="rl-amount">{{ fmt(r.amountCents) }}</div>
               <div class="rl-progress">
-                <div class="rl-progress-bar" :style="{ width: progressPct(r) + '%' }"></div>
+                <div class="rl-progress-bar" :class="'st-' + statusOf(r)" :style="{ width: progressPct(r) + '%' }"></div>
               </div>
               <div class="rl-amount-sub">已 {{ fmt(r.paidCents) }} · 未 {{ fmt(r.outstandingCents) }}</div>
             </div>
@@ -53,58 +58,19 @@
         </template>
       </van-cell>
     </van-cell-group>
-
-    <!-- 年度计提预览弹窗 -->
-    <van-dialog
-      v-model:show="showAccrueDialog"
-      title="年度计提预览"
-      show-cancel-button
-      confirm-button-text="确认计提"
-      @confirm="confirmAccrue"
-      @cancel="showAccrueDialog = false"
-      class="accrue-dialog"
-    >
-      <div v-if="accrueLoading" class="accrue-loading"><van-loading /></div>
-      <div v-else-if="accrueItems.length === 0" class="accrue-empty">暂无待计提数据</div>
-      <div v-else class="accrue-body">
-        <div class="accrue-year">计提年份：{{ accrueYear }} 年</div>
-        <div class="accrue-hint">已存在的条目将自动跳过，可修改金额后确认</div>
-        <div class="accrue-list">
-          <div v-for="(item, i) in accrueItems" :key="i" class="accrue-item" :class="{ exists: item.exists }">
-            <div class="accrue-item-left">
-              <div class="accrue-party">{{ item.partyName }}</div>
-              <div class="accrue-kind">{{ kindLabel(item.kind) }}</div>
-            </div>
-            <div class="accrue-item-right">
-              <template v-if="item.exists">
-                <span class="accrue-exists">已存在</span>
-              </template>
-              <template v-else>
-                <input
-                  type="number"
-                  class="accrue-input"
-                  :value="(item.amountCents / 100).toFixed(2)"
-                  @input="onAccrueAmountChange(i, $event)"
-                />
-                <span class="accrue-unit">元</span>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
-    </van-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, defineProps } from 'vue'
+import { ref, computed, onMounted, defineProps, inject } from 'vue'
 import { api } from '../../../lib/http'
 
-// 统一从 API 响应里提取数组（兼容 data / data.items / 直接数组）
+// 统一从 API 响应里提取数组（兼容 data / data.items / data.Items / 直接数组）
 function extractList(r: any) {
   if (r == null) return [];
   if (Array.isArray(r)) return r;
   if (Array.isArray(r.data)) return r.data;
+  if (r.data && Array.isArray(r.data.Items)) return r.data.Items;
   if (r.data && Array.isArray(r.data.items)) return r.data.items;
   return [];
 }
@@ -124,33 +90,58 @@ const props = defineProps<{
 const receivables = ref<Receivable[]>([])
 const parties = ref<Party[]>([])
 const loading = ref(false)
-const activeStatus = ref<'all' | 'open' | 'partial' | 'closed'>('all')
 
-// 年度计提预览
-const showAccrueDialog = ref(false)
-const accrueLoading = ref(false)
-const accrueYear = ref(0)
-const accrueItems = ref<{ partyId: number; partyName: string; kind: string; amountCents: number; exists: boolean; _amountCents: number }[]>([])
+type YearKey = 'all' | 'none' | number
+const activeYear = ref<YearKey>('all')
 
-const statusOptions = [
-  { value: 'all',     label: '全部' },
-  { value: 'open',   label: '未收' },
-  { value: 'partial', label: '部分收' },
-  { value: 'closed',  label: '已清' },
-] as const
+// 状态判定：按已收/未收对照应收金额
+const statusOf = (r: Receivable) => r.outstandingCents <= 0 ? 'closed' : (r.paidCents > 0 ? 'partial' : 'open')
+const statusMeta: Record<string, { text: string; type: string }> = {
+  open:    { text: '未收',   type: 'danger' },
+  partial: { text: '部分收', type: 'warning' },
+  closed:  { text: '结清',   type: 'success' },
+}
 
 const kindLabel = (k: string) => ({
   dividend: '投资收益', reinvest_dividend: '再投资收益',
   rent: '土地流转费', service: '管理费',
 }[k] || k)
 
-const rows = computed(() => receivables.value.filter(r => props.kind.includes(r.kind)))
+// 本页类别下的全部应收（所有年份）
+const kindRows = computed(() => receivables.value.filter(r => props.kind.includes(r.kind)))
 
-const filtered = computed(() => rows.value.filter(r => {
-  if (activeStatus.value === 'all') return true
-  if (activeStatus.value === 'open')   return r.paidCents === 0
-  if (activeStatus.value === 'closed') return r.outstandingCents <= 0
-  return r.paidCents > 0 && r.outstandingCents > 0
+// 年度选项：全部 + 各年份（倒序）+ 无年度（若有未标注年份的记录）
+const yearOptions = computed<{ key: YearKey; label: string }[]>(() => {
+  const map = new Map<string, { key: YearKey; label: string }>()
+  map.set('all', { key: 'all', label: '全部年度' })
+  kindRows.value.forEach(r => {
+    const y = r.recvYear
+    if (!y || y <= 0) map.set('none', { key: 'none', label: '无年度' })
+    else if (!map.has(String(y))) map.set(String(y), { key: y, label: y + '年' })
+  })
+  return [...map.values()].sort((a, b) => {
+    if (a.key === 'all') return -1
+    if (b.key === 'all') return 1
+    if (a.key === 'none') return 1
+    if (b.key === 'none') return -1
+    return (b.key as number) - (a.key as number)
+  })
+})
+
+// 年份下拉选项（Vant dropdown-item 用 { text, value }）
+const yearSelectOptions = computed(() => yearOptions.value.map(o => ({ text: o.label, value: o.key })))
+
+// 原生下拉选择年度（桌面端）：value 回填为匹配的类型
+function onYearChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  activeYear.value = (v === 'all' || v === 'none') ? v as 'all' | 'none' : Number(v)
+}
+
+// 行 = 类别 + 年度
+const rows = computed(() => kindRows.value.filter(r => {
+  if (activeYear.value === 'all') return true
+  if (activeYear.value === 'none') return !r.recvYear || r.recvYear <= 0
+  return r.recvYear === activeYear.value
 }))
 
 const total = computed(() => rows.value.reduce((s, r) => s + r.amountCents, 0))
@@ -194,55 +185,24 @@ async function load() {
       api.get<{ data: Receivable[] } | Receivable[]>('/receivables'),
     ])
     parties.value = extractList(p)
-    receivables.value = extractList(r)
+    // 后端字段为 recvKind，前端统一归一化为 kind 使用
+    receivables.value = (extractList(r) || []).map((it: any) => ({ ...it, kind: it.recvKind }))
   } finally { loading.value = false }
 }
 
-async function openAccrue() {
-  const year = new Date().getFullYear()
-  accrueYear.value = year
-  showAccrueDialog.value = true
-  accrueLoading.value = true
-  accrueItems.value = []
-  try {
-    const r = await api.get<any>('/recv-standards/preview?year=' + year)
-    const data = r?.data || r
-    accrueItems.value = (data?.items || []).map((item: any) => ({ ...item, _amountCents: item.amountCents }))
-  } catch (e: any) {
-    alert('获取预览数据失败：' + (e?.message || '未知错误'))
-    showAccrueDialog.value = false
-  } finally { accrueLoading.value = false }
-}
-
-function onAccrueAmountChange(i: number, e: Event) {
-  const val = parseFloat((e.target as HTMLInputElement).value)
-  if (!isNaN(val) && val >= 0) {
-    accrueItems.value[i]._amountCents = Math.round(val * 100)
+async function openCollect(r: Receivable) {
+  // 统一走快速记账通道：预填对应收款业务与该单位，金额默认该单待收
+  const bizKey: Record<string, string> = {
+    rent: 'rent', dividend: 'dividend', reinvest_dividend: 'dividend', service: 'service',
   }
+  openRecord({
+    biz: bizKey[r.kind] || '',
+    partyId: r.partyId,
+    amount: (r.outstandingCents / 100).toFixed(2),
+  })
 }
 
-async function confirmAccrue() {
-  const items = accrueItems.value
-    .filter(item => !item.exists)
-    .map(item => ({ partyId: item.partyId, kind: item.kind, amountCents: item._amountCents }))
-  if (items.length === 0) { alert('没有需要计提的条目'); return }
-  try {
-    await api.post('/recv-standards/accrue', { year: accrueYear.value, items })
-    alert('计提完成，共 ' + items.length + ' 条')
-    showAccrueDialog.value = false
-    load()
-  } catch (e: any) { alert(e?.message || '计提失败') }
-}
-
-function openCollect(r: Receivable) {
-  const amt = prompt('本次收缴金额（元）', (r.outstandingCents / 100).toFixed(2))
-  if (!amt) return
-  const yuan = parseFloat(amt)
-  if (isNaN(yuan) || yuan <= 0) return alert('金额不合法')
-  api.post('/receipts', { receivableId: r.id, amountCents: Math.round(yuan * 100) })
-    .then(() => { alert('收缴成功'); load() })
-    .catch((e: any) => alert(e?.message || '收缴失败'))
-}
+const openRecord = inject<(opts?: { biz?: string; partyId?: number; amount?: string }) => void>('openRecord', () => {})
 
 onMounted(load)
 </script>
@@ -263,27 +223,38 @@ onMounted(load)
 .rl-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .rl-stat-value.paid   { color: #07c160; }
 .rl-stat-value.unpaid { color: #ee0a24; }
+.rl-stats .rl-stat { border-color: transparent; }
+.rl-stats .rl-stat:nth-child(1) { background: #f1edfc; }
+.rl-stats .rl-stat:nth-child(2) { background: #eaf5ed; }
+.rl-stats .rl-stat:nth-child(3) { background: #fcecec; }
+.rl-stats .rl-stat:nth-child(4) { background: #e8f0fb; }
 
-.rl-status-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-.rl-status-btn { padding: 6px 12px; border-radius: 20px; font-size: 13px; border: 1px solid #eaeaea; background: #fff; cursor: pointer; }
-.rl-status-btn.active { background: #1989fa; color: #fff; border-color: #1989fa; }
+.rl-filter-bar { display: flex; margin-bottom: 10px; }
+.rl-year-select { display: inline-flex; align-items: center; gap: 8px; }
+.rl-year-label { font-size: 13px; color: #969799; }
+.rl-year-native {
+  height: 32px; min-width: 120px; padding: 0 8px;
+  border: 1px solid #dcdee0; border-radius: 6px;
+  font-size: 13px; color: #1f2329; background: #fff; outline: none;
+  -webkit-appearance: auto; appearance: auto;
+}
+.rl-year-native:focus { border-color: #1989fa; }
+.rl-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rl-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-badge { flex-shrink: 0; border-radius: 999px; }
 
 .rl-list { margin-top: 4px; }
-.rl-row-right { display: flex; align-items: center; gap: 12px; }
-.rl-amounts { text-align: right; min-width: 140px; }
+.rl-row-right { display: flex; align-items: center; gap: 10px; }
+.rl-amounts { text-align: right; min-width: 118px; }
 .rl-amount { font-weight: 600; color: #1f2329; font-size: 14px; }
-.rl-progress { width: 140px; height: 4px; background: #f0f1f2; border-radius: 3px; margin: 4px 0 2px; overflow: hidden; }
-.rl-progress-bar { height: 100%; background: var(--jade, #07c160); transition: width .3s; }
+.rl-progress { width: 112px; height: 9px; background: #f0f1f2; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
+.rl-progress-bar { height: 100%; transition: width .3s; }
+/* 进度条按收缴状态着色：未收红 / 部分收橙 / 结清绿 */
+.rl-progress-bar.st-open    { background: #ee0a24; }
+.rl-progress-bar.st-partial { background: #ff976a; }
+.rl-progress-bar.st-closed  { background: var(--jade, #07c160); }
 .rl-amount-sub { font-size: 11px; color: #969799; }
 .empty { padding: 40px 0; }
-
-/* theme accent for progress bar */
-.theme-blue   .rl-progress-bar { background: #1989fa; }
-.theme-orange .rl-progress-bar { background: #ff6034; }
-.theme-purple .rl-progress-bar { background: #764ba2; }
-.theme-blue   .rl-status-btn.active { background: #1989fa; border-color: #1989fa; }
-.theme-orange .rl-status-btn.active { background: #ff6034; border-color: #ff6034; }
-.theme-purple .rl-status-btn.active { background: #764ba2; border-color: #764ba2; }
 
 /* 年度计提预览弹窗 */
 .accrue-dialog { width: 90vw; max-width: 460px; }

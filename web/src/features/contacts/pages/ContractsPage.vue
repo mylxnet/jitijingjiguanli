@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="cp-page">
     <div class="page-header">
       <div>
@@ -28,21 +28,21 @@
     </div>
 
     <div v-for="g in grouped" :key="g.partyId" class="cp-group">
-      <div class="cp-group-header">
-        <div class="cp-group-left" @click="g.expanded = !g.expanded">
-          <span class="cp-chev">{{ g.expanded ? '▼' : '▶' }}</span>
+      <div class="cp-group-header" @click="toggleExpand(g.partyId)">
+        <div class="cp-group-left">
+          <span class="cp-chev">{{ isExpanded(g.partyId) ? '▼' : '▶' }}</span>
           <span class="cp-party-name">{{ g.partyName }}</span>
           <span class="cp-party-type" :class="'tag-' + g.partyType">{{ partyTypeLabel(g.partyType) }}</span>
           <span class="cp-count">{{ g.files.length }}</span>
         </div>
-        <van-button size="mini" plain icon="plus" @click="openUpload(g.partyId)">上传到此单位</van-button>
+        <van-button size="mini" plain icon="plus" @click.stop="openUpload(g.partyId)">上传到此单位</van-button>
       </div>
-      <div v-show="g.expanded" class="cp-group-body">
+      <div v-show="isExpanded(g.partyId)" class="cp-group-body">
         <div v-if="g.files.length === 0" class="cp-empty-group">（暂无合同）</div>
         <div v-for="c in g.files" :key="c.id" class="cp-file-item">
           <span class="cp-file-ic" :class="'ic-' + fileExt(c.fileName)">📄</span>
           <div class="cp-file-info">
-            <div class="cp-file-name">{{ c.fileName }}</div>
+            <div class="cp-file-name" @click="viewContract(c)">{{ c.fileName }}</div>
             <div class="cp-file-meta">{{ fileExt(c.fileName).toUpperCase() }} · {{ fmtSize(c.fileSize) }} · {{ c.uploadedAt }}</div>
           </div>
           <div class="cp-file-actions">
@@ -84,6 +84,10 @@
             </template>
           </div>
           <input ref="fileInputRef" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.txt" @change="onPickFile" style="display:none" />
+        </div>
+        <div class="up-field">
+          <label>合同名称</label>
+          <input class="up-name-input" v-model="manualName" placeholder="填合同名称，留空自动按类型命名（如：图片合同）" />
         </div>
       </div>
     </van-dialog>
@@ -160,6 +164,7 @@ const dialogVisible = ref(false)
 const uploadPartyId = ref<number | null>(null)
 const uploadPartyChosen = ref<number | null>(null)
 const chosenFile = ref<File | null>(null)
+const manualName = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // 预览相关
@@ -206,7 +211,17 @@ const filteredContracts = computed(() => {
   return arr
 })
 
-interface Group { partyId: number; partyName: string; partyType: string; expanded: boolean; files: Contract[] }
+interface Group { partyId: number; partyName: string; partyType: string; files: Contract[] }
+
+// 展开状态独立于 grouped 派生结构，用单位 id 列表控制（默认全折叠）
+const expandedIds = ref<number[]>([])
+function isExpanded(id: number) { return expandedIds.value.includes(id) }
+function toggleExpand(id: number) {
+  expandedIds.value = expandedIds.value.includes(id)
+    ? expandedIds.value.filter(x => x !== id)
+    : [...expandedIds.value, id]
+}
+
 const grouped = computed<Group[]>(() => {
   const byParty = new Map<number, Group>()
   for (const c of filteredContracts.value) {
@@ -216,7 +231,6 @@ const grouped = computed<Group[]>(() => {
         partyId: c.partyId,
         partyName: p?.name || `单位#${c.partyId}`,
         partyType: p?.type || 'other',
-        expanded: true,
         files: [],
       })
     }
@@ -290,17 +304,46 @@ function openUpload(partyId: number | null) {
   uploadPartyId.value = partyId
   uploadPartyChosen.value = partyId
   chosenFile.value = null
+  manualName.value = ''
   dialogVisible.value = true
 }
 
 function triggerFile() { fileInputRef.value?.click() }
 function onPickFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
-  if (f) chosenFile.value = f
+  if (f) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
 }
 function onDrop(e: DragEvent) {
   const f = e.dataTransfer?.files?.[0]
-  if (f) chosenFile.value = f
+  if (f) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
+}
+
+// 异常文件名的识别与清理：如 "u=4217215850,4193273696&fm=253&fmt=auto&app=138&f=JPEG.jpg"
+function isAbnormalName(name: string): boolean {
+  const base = name.slice(0, name.lastIndexOf('.'))
+  if (/[&=,?]/.test(name)) return true                        // 含 URL 参数残留
+  if (!/[\u4e00-\u9fa5a-zA-Z]/.test(base)) return true        // 无任何中/英文（纯数字/乱码）
+  if (!base.includes(' ') && base.length > 40) return true    // 超长无空格字符串
+  return false
+}
+const EXT_KIND: Record<string, string> = {
+  jpg: '图片合同', jpeg: '图片合同', png: '图片合同', gif: '图片合同', webp: '图片合同', bmp: '图片合同',
+  doc: 'Word合同', docx: 'Word合同',
+  xls: 'Excel合同', xlsx: 'Excel合同', csv: 'Excel合同',
+  pdf: 'PDF合同',
+  txt: '文本合同', md: '文本合同',
+}
+function cleanContractName(raw: string): string {
+  if (!isAbnormalName(raw)) return raw.trim()
+  const kind = EXT_KIND[fileExt(raw)] || '合同文件'
+  return kind
+}
+// 同单位内避免重复名，追加 (2)(3)
+function dedupeContractName(partyId: number, name: string): string {
+  const siblings = contracts.value.filter(c => c.partyId === partyId).map(c => c.fileName)
+  let n = name, i = 2
+  while (siblings.includes(n)) { n = `${name}(${i})`; i++ }
+  return n
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -319,12 +362,18 @@ async function submitUpload() {
 
   try {
     const fileData = await fileToBase64(chosenFile.value)
+    const rawName = (manualName.value || '').trim() || cleanContractName(chosenFile.value.name)
+    let fileName = rawName
+    // 保留扩展名（判断类型/预览用），泛称只替换主名
+    const ext = fileExt(chosenFile.value.name)
+    if (!fileExt(rawName) && ext) fileName = `${rawName}.${ext}`
+    fileName = dedupeContractName(pid, fileName)
     const body = {
       partyId: pid,
-      fileName: chosenFile.value.name,
+      fileName,
       fileSize: chosenFile.value.size,
       mimeType: chosenFile.value.type || 'application/octet-stream',
-      contractTitle: chosenFile.value.name,
+      contractTitle: fileName,
       fileData,
     }
     await api.post<any>('/contracts', body)
@@ -468,6 +517,7 @@ onUnmounted(() => {
 .cp-group-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 14px; background: #fafbfc; border-bottom: 1px solid var(--line-soft, #eaeaea);
+  cursor: pointer; user-select: none;
 }
 .cp-group-left { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
 .cp-chev { font-size: 11px; color: #969799; width: 14px; }
@@ -496,7 +546,8 @@ onUnmounted(() => {
 .cp-file-ic.ic-pdf { background: #d4380d; }
 .cp-file-ic.ic-jpg, .cp-file-ic.ic-jpeg, .cp-file-ic.ic-png, .cp-file-ic.ic-gif { background: #52c41a; }
 .cp-file-info { flex: 1; min-width: 0; }
-.cp-file-name { font-weight: 500; color: #1f2329; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-file-name { font-weight: 500; color: #1f2329; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cp-file-name:hover { color: #1989fa; }
 .cp-file-meta { font-size: 11px; color: #969799; margin-top: 2px; }
 .cp-file-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .empty { padding: 40px 0; }
@@ -507,6 +558,8 @@ onUnmounted(() => {
 .up-party-fixed { padding: 8px 12px; background: #f7f8fa; border-radius: 6px; font-size: 13px; color: #1f2329; }
 .up-select { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
 .up-select:focus { border-color: #1989fa; }
+.up-name-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
+.up-name-input:focus { border-color: #1989fa; }
 .up-drop {
   border: 2px dashed #dcdee0; border-radius: 10px; padding: 22px 16px;
   text-align: center; color: #969799; cursor: pointer; transition: all .15s;

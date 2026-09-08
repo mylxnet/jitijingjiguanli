@@ -59,6 +59,15 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/recv-standards", h.SaveStandard)
 	r.PUT("/api/recv-standards/:id", h.ToggleStandard)
 	r.POST("/api/recv-standards/accrue", h.AccrueByStandards)
+
+	r.GET("/api/parties/:id/allocations", h.ListAllocations)
+	r.POST("/api/parties/:id/allocations", h.CreateAllocation)
+	r.DELETE("/api/allocations/:id", h.DeleteAllocation)
+
+	r.POST("/api/receipts", h.CreateReceiptByReceivable)
+
+	r.GET("/api/distributions-532", h.ListDistributions532)
+	r.POST("/api/distributions-532", h.SaveDistribution532)
 }
 
 func (h *Handler) unauthorized(c *gin.Context) {
@@ -120,6 +129,9 @@ func (h *Handler) CreateParty(c *gin.Context) {
 		return
 	}
 	ptype := trimSpace(req.Type)
+	if ptype == "" && len(req.Types) > 0 {
+		ptype = trimSpace(req.Types[0]) // types 优先级高于 type（v0.7 多选数组）
+	}
 	if ptype == "" {
 		ptype = "flow"
 	}
@@ -136,6 +148,19 @@ func (h *Handler) CreateParty(c *gin.Context) {
 		return
 	}
 
+	// 重名校验：同类型精确重名直接拒绝；模糊相近重名给出候选，交由用户改名称
+	if exact, dupes := h.repo.FindDuplicate(orgID, req.Name, ptype); exact {
+		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+			Code: "DUPLICATE_NAME", Message: "该类型下已存在同名单位",
+		})
+		return
+	} else if len(dupes) > 0 {
+		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+			Code: "DUPLICATE_NAME", Message: "存在相近重名单位，请修改名称后重试", Details: dupes,
+		})
+		return
+	}
+
 	var note *string
 	if req.Note != "" {
 		note = &req.Note
@@ -143,6 +168,14 @@ func (h *Handler) CreateParty(c *gin.Context) {
 	p := &Party{
 		OrgID: orgID, Name: req.Name, Type: ptype,
 		ContactPhone: trimSpace(req.ContactPhone), AreaMu: req.AreaMu, Note: note,
+		InvestAmountCents:   req.InvestAmountCents,
+		ReturnRateBps:       req.ReturnRateBps,
+		ExpectedReturnCents: req.ExpectedReturnCents,
+		LandMu:              req.LandMu,
+		LandFeePerMuCents:   req.LandFeePerMuCents,
+		ExpectedLandFeeCents: req.ExpectedLandFeeCents,
+		MgmtFeePerMuCents:   req.MgmtFeePerMuCents,
+		ExpectedMgmtFeeCents: req.ExpectedMgmtFeeCents,
 	}
 	created, err := h.repo.CreateParty(p)
 	if err != nil {
@@ -191,25 +224,18 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 
 	updates := make(map[string]any)
-	if req.Name != nil {
-		name := trimSpace(*req.Name)
-		if name == "" {
-			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code: "INVALID_REQUEST", Message: "请填写单位名称",
-			})
-			return
-		}
-		updates["name"] = name
+	// 名称/类型不可编辑：仅允许同名同值（忽略），否则拒绝
+	if req.Name != nil && trimSpace(*req.Name) != p.Name {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "NAME_IMMUTABLE", Message: "单位名称不可编辑",
+		})
+		return
 	}
-	if req.Type != nil {
-		ptype := trimSpace(*req.Type)
-		if !validPartyType(ptype) {
-			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code: "INVALID_REQUEST", Message: "单位类型不合法",
-			})
-			return
-		}
-		updates["type"] = ptype
+	if req.Type != nil && trimSpace(*req.Type) != p.Type {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "TYPE_IMMUTABLE", Message: "单位类型不可编辑",
+		})
+		return
 	}
 	if req.ContactPhone != nil {
 		updates["contact_phone"] = trimSpace(*req.ContactPhone)
@@ -230,18 +256,37 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 			updates["note"] = *req.Note
 		}
 	}
+	// 年度数据（v0.9+ 已落库）
+	if req.InvestAmountCents != nil {
+		updates["invest_amount_cents"] = *req.InvestAmountCents
+	}
+	if req.ReturnRateBps != nil {
+		updates["return_rate_bps"] = *req.ReturnRateBps
+	}
+	if req.ExpectedReturnCents != nil {
+		updates["expected_return_cents"] = *req.ExpectedReturnCents
+	}
+	if req.LandMu != nil {
+		updates["land_mu"] = *req.LandMu
+	}
+	if req.LandFeePerMuCents != nil {
+		updates["land_fee_per_mu_cents"] = *req.LandFeePerMuCents
+	}
+	if req.ExpectedLandFeeCents != nil {
+		updates["expected_land_fee_cents"] = *req.ExpectedLandFeeCents
+	}
+	if req.MgmtFeePerMuCents != nil {
+		updates["mgmt_fee_per_mu_cents"] = *req.MgmtFeePerMuCents
+	}
+	if req.ExpectedMgmtFeeCents != nil {
+		updates["expected_mgmt_fee_cents"] = *req.ExpectedMgmtFeeCents
+	}
 
 	if err := h.repo.UpdateParty(id, orgID, updates); err != nil {
 		h.internal(c, "更新往来单位失败")
 		return
 	}
 
-	if v, ok := updates["name"]; ok {
-		_ = h.clRepo.LogUpdateField(orgID, "party", id, "name", p.Name, v.(string))
-	}
-	if v, ok := updates["type"]; ok {
-		_ = h.clRepo.LogUpdateField(orgID, "party", id, "type", p.Type, v.(string))
-	}
 	if v, ok := updates["note"]; ok {
 		oldNote := ""
 		if p.Note != nil {
@@ -437,7 +482,7 @@ func (h *Handler) ListStandards(c *gin.Context) {
 	platform.SuccessResponse(c, items)
 }
 
-// PreviewAccrue 预览年度结转：从各单位启用的年度标准带出数据（流转企业→流转费 / 投资公司→投资收益）。
+// PreviewAccrue 预览年度计提：自动按单位基本信息带出建议金额（投资→投资收益/流转→流转费+管理费）。
 // GET /api/recv-standards/preview?year=
 func (h *Handler) PreviewAccrue(c *gin.Context) {
 	orgID, ok := auth.CurrentOrgID(c)
@@ -449,9 +494,9 @@ func (h *Handler) PreviewAccrue(c *gin.Context) {
 	if year == 0 {
 		year = time.Now().Year()
 	}
-	result, err := h.repo.PreviewAccrueFromStandards(orgID, year)
+	result, err := h.repo.PreviewAccrueAuto(orgID, year)
 	if err != nil {
-		h.internal(c, "生成年度结转预览失败")
+		h.internal(c, "生成年度计提预览失败")
 		return
 	}
 	platform.SuccessResponse(c, result)
@@ -714,26 +759,37 @@ func (h *Handler) CreateReceipt(c *gin.Context) {
 	var outcome *CreateOutcome
 	switch req.Method {
 	case "cash":
-		// 入账科目：本次请求显式指定优先（需合法）；未指定时用应收单预设；两者皆无则报错
+		// 入账科目：本次请求显式指定优先（需合法）；未指定时用应收单预设；
+		// 两者皆无则按应收类型自动定位/创建该单位同名收入二级科目入账。
 		var catID int64
+		autoResolved := false
 		switch {
 		case req.CategoryID != nil:
 			catID = *req.CategoryID
 		case rec.IncomeCategoryID != nil:
 			catID = *rec.IncomeCategoryID
 		default:
-			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-				Code:    "INCOME_CATEGORY_REQUIRED",
-				Message: "现金收款需要收入入账科目（登记应收单时预设，或本次指定）",
-			})
-			return
+			cid, rerr := h.repo.ResolveIncomeCategory(orgID, rec.PartyID, rec.RecvKind)
+			if rerr != nil {
+				h.internal(c, "服务暂时不可用")
+				return
+			}
+			if cid == 0 {
+				platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+					Code:    "INCOME_CATEGORY_REQUIRED",
+					Message: "现金收款需要收入入账科目（登记应收单时预设，或本次指定）",
+				})
+				return
+			}
+			catID = cid
+			autoResolved = true
 		}
 		okCat, err := h.validIncomeCategory(orgID, catID)
 		if err != nil {
 			h.internal(c, "服务暂时不可用")
 			return
 		}
-		if !okCat {
+		if !okCat && !autoResolved {
 			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
 				Code: "INVALID_INCOME_CATEGORY", Message: "收款入账科目不合法，需为本组织启用中的普通二级科目",
 			})
@@ -869,6 +925,253 @@ func (h *Handler) VoidReceipt(c *gin.Context) {
 	platform.SuccessResponse(c, outcome.Receipt)
 }
 
+// ---------- 再投资去向 ----------
+
+// ListAllocations 某往来单位的再投资去向列表。
+// GET /api/parties/:id/allocations
+func (h *Handler) ListAllocations(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	partyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "往来单位 ID 不合法",
+		})
+		return
+	}
+	pty, err := h.repo.FindPartyByID(partyID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if pty == nil || pty.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "PARTY_NOT_FOUND", Message: "往来单位不存在",
+		})
+		return
+	}
+	items, err := h.repo.ListAllocations(orgID, partyID)
+	if err != nil {
+		h.internal(c, "查询再投资去向失败")
+		return
+	}
+	if items == nil {
+		items = []ReinvestAllocation{}
+	}
+	platform.SuccessResponse(c, items)
+}
+
+// CreateAllocation 新建再投资去向。
+// POST /api/parties/:id/allocations  body {targetName, targetPartyId?, amountCents, notes?}
+func (h *Handler) CreateAllocation(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	partyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "往来单位 ID 不合法",
+		})
+		return
+	}
+	pty, err := h.repo.FindPartyByID(partyID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if pty == nil || pty.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "PARTY_NOT_FOUND", Message: "往来单位不存在",
+		})
+		return
+	}
+
+	var req ReinvestAllocationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	if trimSpace(req.TargetName) == "" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "去向单位不能为空",
+		})
+		return
+	}
+	if req.AmountCents <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+		return
+	}
+	var notes *string
+	if trimSpace(req.Notes) != "" {
+		s := trimSpace(req.Notes)
+		notes = &s
+	}
+	a := &ReinvestAllocation{
+		PartyID:       partyID,
+		TargetName:    trimSpace(req.TargetName),
+		TargetPartyID: req.TargetPartyID,
+		AmountCents:   req.AmountCents,
+		Notes:         notes,
+	}
+	created, err := h.repo.CreateAllocation(orgID, a)
+	if err != nil {
+		h.internal(c, "新建再投资去向失败")
+		return
+	}
+	_ = h.clRepo.LogCreate(orgID, "reinvest_allocation", created.ID)
+	platform.SuccessResponse(c, created)
+}
+
+// DeleteAllocation 删除再投资去向。
+// DELETE /api/allocations/:id
+func (h *Handler) DeleteAllocation(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "再投资去向 ID 不合法",
+		})
+		return
+	}
+	hit, err := h.repo.DeleteAllocation(id, orgID)
+	if err != nil {
+		h.internal(c, "删除再投资去向失败")
+		return
+	}
+	if !hit {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "ALLOCATION_NOT_FOUND", Message: "再投资去向不存在",
+		})
+		return
+	}
+	_ = h.clRepo.LogChangeVoid(orgID, "reinvest_allocation", id, "delete", "normal", "deleted")
+	platform.SuccessResponse(c, gin.H{"ok": true})
+}
+
+// ---------- 全局收缴核销 ----------
+
+// CreateReceiptByReceivable 全局收缴核销：按 receivableId + amountCents 直接收款。
+// POST /api/receipts  body {receivableId, amountCents}
+// 前端不收方式/日期/科目参数 → 恒为 cash、日期取今日、入账科目取应收单预设 incomeCategoryId。
+func (h *Handler) CreateReceiptByReceivable(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
+	var req struct {
+		ReceivableID int64 `json:"receivableId"`
+		AmountCents  int64 `json:"amountCents"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	if req.AmountCents <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+		return
+	}
+
+	rec, err := h.repo.FindReceivableByID(req.ReceivableID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if rec == nil || rec.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "RECEIVABLE_NOT_FOUND", Message: "应收单不存在",
+		})
+		return
+	}
+	if rec.Status == "closed" {
+		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+			Code: "RECEIVABLE_CLOSED", Message: "该应收单已结清，不能再核销",
+		})
+		return
+	}
+
+	paid, err := h.paidSum(orgID, req.ReceivableID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if paid+req.AmountCents > rec.AmountCents {
+		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+			Code: "RECEIPT_OVER_RECEIVABLE",
+			Message: fmt.Sprintf("累计核销不能超过应收金额：已收 %.2f，应收 %.2f",
+				float64(paid)/100, float64(rec.AmountCents)/100),
+		})
+		return
+	}
+
+	var catID int64
+	if rec.IncomeCategoryID != nil {
+		catID = *rec.IncomeCategoryID
+	} else {
+		cid, rerr := h.repo.ResolveIncomeCategory(orgID, rec.PartyID, rec.RecvKind)
+		if rerr != nil {
+			h.internal(c, "服务暂时不可用")
+			return
+		}
+		if cid == 0 {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code:    "INCOME_CATEGORY_REQUIRED",
+				Message: "现金收款需要收入入账科目（登记应收单时预设，或本次指定）",
+			})
+			return
+		}
+		catID = cid
+	}
+	okCat, err := h.validIncomeCategory(orgID, catID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if !okCat {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_INCOME_CATEGORY", Message: "收款入账科目不合法，需为本组织启用中的普通二级科目",
+		})
+		return
+	}
+
+	date := time.Now().Format(dateLayout)
+	note := fmt.Sprintf("核销应收 #%d %s", rec.ID, rec.Title)
+	outcome, err := h.repo.CreateCashReceipt(orgID, rec, req.AmountCents, date, catID, &note)
+	if err != nil {
+		if errors.Is(err, ErrOverReceivable) {
+			platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+				Code: "RECEIPT_OVER_RECEIVABLE", Message: "累计核销不能超过应收金额",
+			})
+			return
+		}
+		h.internal(c, "现金核销失败")
+		return
+	}
+
+	_ = h.clRepo.LogCreate(orgID, "receipt", outcome.Receipt.ID)
+	if outcome.TxnCreated != nil {
+		_ = h.clRepo.LogCreate(orgID, "txn", *outcome.TxnCreated)
+	}
+	if outcome.ReceivableStatus != rec.Status {
+		_ = h.clRepo.LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
+	}
+	platform.SuccessResponse(c, outcome.Receipt)
+}
+
 // ---------- 校验助手 ----------
 
 // paidSum 统计应收单当前已核销金额。
@@ -918,4 +1221,91 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// ---------- 532分配 ----------
+
+// ListDistributions532 查询 532 分配方案。
+// GET /api/distributions-532?year=N → 单年方案（无则 data=null）
+// GET /api/distributions-532 → 全部年份方案数组
+func (h *Handler) ListDistributions532(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	if q := c.Query("year"); q != "" {
+		year, err := strconv.Atoi(q)
+		if err != nil {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_REQUEST", Message: "年度参数不合法",
+			})
+			return
+		}
+		d, err := h.repo.GetDistribution532ByYear(orgID, year)
+		if err != nil {
+			h.internal(c, "服务暂时不可用")
+			return
+		}
+		if d == nil {
+			platform.SuccessResponse(c, nil) // 与前端 loadDist 的 null 期望一致
+			return
+		}
+		platform.SuccessResponse(c, d)
+		return
+	}
+
+	items, err := h.repo.ListDistributions532(orgID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if items == nil {
+		items = []Distribution532{}
+	}
+	platform.SuccessResponse(c, items)
+}
+
+// SaveDistribution532 保存/更新某年 532 分配方案。
+// POST /api/distributions-532
+func (h *Handler) SaveDistribution532(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	var req SaveDistribution532Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	if req.Year <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "年度不合法",
+		})
+		return
+	}
+	if req.ReinvestCents < 0 || req.DividendCents < 0 || req.WelfareCents < 0 || req.TotalIncomeCents < 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "金额不能为负数",
+		})
+		return
+	}
+
+	d := &Distribution532{
+		OrgID: orgID, Year: int(req.Year),
+		TotalIncomeCents: req.TotalIncomeCents,
+		ReinvestCents:    req.ReinvestCents,
+		DividendCents:    req.DividendCents,
+		WelfareCents:     req.WelfareCents,
+	}
+	saved, err := h.repo.UpsertDistribution532(orgID, d)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	h.clRepo.LogCreate(orgID, "distribution_532", saved.ID)
+	platform.SuccessResponse(c, saved)
 }

@@ -10,6 +10,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
   const loading = ref(false)
   const error = ref('')
+  // 当前登录用户所属组织 id（用于引导完成标记等按组织区分的场景）
+  const orgId = ref<string | number | null>(null)
 
   // 检查是否已登录（通过 Cookie session）
   // 使用原生 fetch 绕过 http.ts 的 onUnauthorized 回调，
@@ -18,8 +20,19 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await fetch('/api/categories', { credentials: 'include' })
       isLoggedIn.value = res.ok
+      if (res.ok) {
+        try {
+          const me = await fetch('/api/me', { credentials: 'include' }).then(r => r.json())
+          orgId.value = me?.data?.orgID ?? me?.data?.orgId ?? null
+        } catch {
+          orgId.value = null
+        }
+      } else {
+        orgId.value = null
+      }
     } catch {
       isLoggedIn.value = false
+      orgId.value = null
     }
   }
 
@@ -57,5 +70,5 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = false
   }
 
-  return { isLoggedIn, loading, error, checkLogin, login, markLoggedIn, logout }
+  return { isLoggedIn, loading, error, orgId, checkLogin, login, markLoggedIn, logout }
 })

@@ -353,6 +353,8 @@ async function saveQuick() {
         .sort((a, b) => b.outstandingCents - a.outstandingCents)
       const best = matches[0]
       if (best && amount <= best.outstandingCents) {
+        // 核销应收：后端自动生成银行收入流水并入账到该单位同名收入二级科目，
+        // 应收递减，因此不再单独创建 transaction，避免重复入账。
         await api.post(`/receivables/${best.id}/receipts`, {
           amountCents: amount,
           receiptDate: quick.value.date,
@@ -364,28 +366,30 @@ async function saveQuick() {
         throw new Error(`该单位 ${recvKindLabel[recvKind]} 待收 ${formatFen(best.outstandingCents)}，不能超过`)
       }
     }
-    let categoryId: number
-    if (biz.invest) {
-      categoryId = quick.value.companyId!
-    } else if (biz.autoBuildL1) {
-      if (!quick.value.partyId) throw new Error('缺少往来单位')
-      const l2 = await ensureL2InL1(biz.autoBuildL1, partyName)
-      categoryId = l2.id
-    } else {
-      if (!biz.catName) throw new Error('模板缺少 catName')
-      const cat = findEquityCat(biz.catName)
-      if (!cat) throw new Error(`缺少科目：${biz.catName}`)
-      categoryId = cat.id
+    if (!receiptCreated) {
+      let categoryId: number
+      if (biz.invest) {
+        categoryId = quick.value.companyId!
+      } else if (biz.autoBuildL1) {
+        if (!quick.value.partyId) throw new Error('缺少往来单位')
+        const l2 = await ensureL2InL1(biz.autoBuildL1, partyName)
+        categoryId = l2.id
+      } else {
+        if (!biz.catName) throw new Error('模板缺少 catName')
+        const cat = findEquityCat(biz.catName)
+        if (!cat) throw new Error(`缺少科目：${biz.catName}`)
+        categoryId = cat.id
+      }
+      await api.post('/transactions', {
+        txnDate: quick.value.date,
+        direction: biz.dir || 'income',
+        amountCents: amount,
+        categoryId,
+        note,
+        partyId: quick.value.partyId || null,
+      })
     }
-    await api.post('/transactions', {
-      txnDate: quick.value.date,
-      direction: biz.dir || 'income',
-      amountCents: amount,
-      categoryId,
-      note,
-      partyId: quick.value.partyId || null,
-    })
-    showToast(receiptCreated ? '保存成功（已自动核销应收）' : '保存成功（已自动入账）')
+    showToast(receiptCreated ? '保存成功（已核销应收并入账）' : '保存成功（已自动入账）')
     showRecord.value = false
     emit('saved')
   } catch (e: any) {
@@ -429,16 +433,26 @@ async function saveRecord() {
   }
 }
 
-function openRecord() {
+interface OpenRecordOptions {
+  biz?: string
+  partyId?: number
+  amount?: string
+}
+
+async function openRecord(opts?: OpenRecordOptions) {
   recordMode.value = 'quick'
   record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
-  quick.value = { date: todayStr(), biz: '', companyId: null, partyId: null, amount: '' }
+  quick.value = { date: todayStr(), biz: opts?.biz || '', companyId: null, partyId: null, amount: opts?.amount || '' }
   showNewCompany.value = false
   newCompanyName.value = ''
   recordError.value = ''
   showRecord.value = true
-  void loadPartiesQuick()
+  const loadP = loadPartiesQuick()
   void loadCats()
+  if (opts?.partyId) {
+    await loadP // 等待单位列表就绪后再回填 partyId，确保单位名能正确展示
+    quick.value.partyId = opts.partyId
+  }
 }
 
 function onCatConfirm({ selectedOptions }: any) {
@@ -501,6 +515,21 @@ defineExpose({ openRecord })
   border-radius: 8px;
 }
 
+/* 本弹窗 primary 主按钮局部调浅（不影响全局 --jade 主题） */
+.mode-btn.van-button--primary,
+:deep(.record-save .van-button--primary),
+:deep(.record-save .van-button--primary:not(.van-button--disabled)) {
+  background-color: #e5f5f4;
+  border-color: #e5f5f4;
+  color: #1f5c48;
+}
+.mode-btn.van-button--primary:hover,
+:deep(.record-save .van-button--primary:hover) {
+  background-color: #d3eeee;
+  border-color: #d3eeee;
+  color: #143d30;
+}
+
 .qselect {
   flex: 1;
   width: 100%;
@@ -516,7 +545,7 @@ defineExpose({ openRecord })
 .new-company-link {
   padding: 6px 16px 2px;
   font-size: 13px;
-  color: #0f6e56;
+  color: #07c160;
   cursor: pointer;
 }
 

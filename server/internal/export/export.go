@@ -129,7 +129,7 @@ func (n *catNames) pathOf(catID int64) string {
 // txnSheet 收支流水明细。
 func (r *renderer) txnSheet(orgID int64, q ExportQuery) (*xlSheet, error) {
 	// 一次性全量拉取（页面按 200 条分页，导出不走分页语义；规模上限可接受）
-	txns, _, err := r.txn.List(orgID, q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided, 1, 1000000)
+	txns, _, err := r.txn.List(orgID, q.From, q.To, q.CategoryID, q.Keyword, "", q.MinAmount, q.MaxAmount, q.IncludeVoided, 1, 1000000)
 	if err != nil {
 		return nil, fmt.Errorf("查询流水失败: %w", err)
 	}
@@ -139,7 +139,7 @@ func (r *renderer) txnSheet(orgID int64, q ExportQuery) (*xlSheet, error) {
 	}
 	names := loadCatNames(cats)
 
-	incSum, expSum, err := r.txn.GetSummary(orgID, q.From, q.To, q.CategoryID, q.Keyword, q.MinAmount, q.MaxAmount, q.IncludeVoided)
+	incSum, expSum, err := r.txn.GetSummary(orgID, q.From, q.To, q.CategoryID, q.Keyword, "", q.MinAmount, q.MaxAmount, q.IncludeVoided)
 	if err != nil {
 		return nil, fmt.Errorf("统计收支失败: %w", err)
 	}

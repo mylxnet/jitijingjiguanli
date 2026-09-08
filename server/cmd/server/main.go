@@ -19,6 +19,7 @@ import (
 	"jititaizhang/server/internal/backup"
 	"jititaizhang/server/internal/category"
 	"jititaizhang/server/internal/changelog"
+	"jititaizhang/server/internal/contract"
 	"jititaizhang/server/internal/export"
 	"jititaizhang/server/internal/fundmove"
 	"jititaizhang/server/internal/platform"
@@ -26,7 +27,7 @@ import (
 	"jititaizhang/server/internal/settings"
 	"jititaizhang/server/internal/summary"
 	"jititaizhang/server/internal/transaction"
-	"jititaizhang/server/internal/transfer"
+	
 )
 
 // webFS 内嵌前端构建产物（scripts/build.sh 先把 web/dist 复制到 ./web）。
@@ -88,7 +89,7 @@ func buildRouter(a *app) *gin.Engine {
 	auth.NewHandler(a.authSvc).Register(r)
 
 	authed := r.Group("", auth.RequireAuth(a.authSvc))
-	authed.GET("/api/me", func(c *gin.Context) {
+	meHandler := func(c *gin.Context) {
 		id, _ := auth.CurrentUserID(c)
 		orgID, ok := auth.CurrentOrgID(c)
 		var orgName string
@@ -96,7 +97,9 @@ func buildRouter(a *app) *gin.Engine {
 			_ = a.db.QueryRow(`SELECT name FROM org WHERE id = ?`, orgID).Scan(&orgName)
 		}
 		platform.OK(c, gin.H{"userID": id, "orgID": orgID, "orgName": orgName})
-	})
+	}
+	authed.GET("/api/me", meHandler)
+	authed.GET("/api/auth/me", meHandler)
 	auth.NewHandler(a.authSvc).RegisterAuthed(authed)
 	category.NewHandler(a.db).Register(authed)
 	transaction.NewHandler(a.db).Register(authed)
@@ -125,6 +128,7 @@ func buildRouter(a *app) *gin.Engine {
 			platform.OK(c, gin.H{"ok": true, "message": "系统已重置，请重新注册"})
 		})
 	fundmove.NewHandler(a.db).Register(authed)
+	contract.NewHandler(a.db).Register(authed)
 	receivable.NewHandler(a.db).Register(authed)
 	settings.NewHandler(a.db).Register(authed)
 	changelog.NewHandler(a.db).Register(authed)

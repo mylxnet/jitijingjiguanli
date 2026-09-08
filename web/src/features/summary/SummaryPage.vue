@@ -389,7 +389,7 @@ padding-bottom: 60px;
 
 .capital-card {
   flex: 1;
-  background: #fff;
+  background: #e8f0fb;
   border-radius: 12px;
   padding: 12px;
   text-align: center;

@@ -207,12 +207,12 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 
 	// 一级分组（8 个 equity 容器）
 	l1Fund, _ := insert("本金", 1, nil, "equity", 1)
-	l1Invest, _ := insert("长期投资", 1, nil, "equity", 2)
-	l1Reinvest, _ := insert("再投资", 1, nil, "equity", 3)
+	_, _ = insert("长期投资", 1, nil, "equity", 2)
+	_, _ = insert("再投资", 1, nil, "equity", 3)
 	l1Income, _ := insert("经营收入", 1, nil, "equity", 4)
-	l1InvIncome, _ := insert("投资收益", 1, nil, "equity", 5)
-	l1Rent, _ := insert("土地流转费收入", 1, nil, "equity", 6)
-	l1Fee, _ := insert("流转管理费", 1, nil, "equity", 7)
+	_, _ = insert("投资收益", 1, nil, "equity", 5)
+	_, _ = insert("土地流转费收入", 1, nil, "equity", 6)
+	_, _ = insert("流转管理费", 1, nil, "equity", 7)
 	l1Dist, _ := insert("分配与支出", 1, nil, "equity", 8)
 
 	// 二级预设（长期投资/再投资/投资收益/土地流转费收入/流转管理费 五个 L1 留空，业务时自动建）

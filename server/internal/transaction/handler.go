@@ -158,6 +158,7 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 	from := c.Query("from")
 	to := c.Query("to")
 	keyword := c.Query("keyword")
+	direction := c.Query("direction")
 	includeVoided := c.Query("includeVoided") == "true"
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -188,7 +189,7 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 		}
 	}
 
-	items, total, err := h.repo.List(orgID, from, to, categoryID, keyword, minAmount, maxAmount, includeVoided, page, pageSize)
+	items, total, err := h.repo.List(orgID, from, to, categoryID, keyword, direction, minAmount, maxAmount, includeVoided, page, pageSize)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "查询流水失败",
@@ -196,7 +197,7 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 		return
 	}
 
-	incomeTotal, expenseTotal, err := h.repo.GetSummary(orgID, from, to, categoryID, keyword, minAmount, maxAmount, includeVoided)
+	incomeTotal, expenseTotal, err := h.repo.GetSummary(orgID, from, to, categoryID, keyword, direction, minAmount, maxAmount, includeVoided)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 			Code: "INTERNAL_ERROR", Message: "计算汇总失败",
