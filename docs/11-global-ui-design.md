@@ -57,10 +57,24 @@
 
 ---
 
-## 6. 验收要点
+## 6. 系统级时间 / 版本 / 日志 / 备份约定
+
+- **时区**：全站统一使用固定东八区（Asia/Shanghai，UTC+8）。
+  - `server/internal/platform/db.go` 的 `platform.Now()` 用 `time.FixedZone("Asia/Shanghai", +8)` 返回北京时间，作为各类 `createdAt`/`updatedAt` 的统一写入时间戳。
+  - 用 `FixedZone` 而非 `LoadLocation("Asia/Shanghai")`：静态编译 exe 通常不带时区数据库，`LoadLocation` 可能在精简环境失败。
+  - 备份文件名时间戳（`backup.go`）、操作日志「近 48 小时」过滤窗口（`changelog/handler.go`）同样按东八区生成。
+  - 前端用 `new Date(iso)` 展示时可正确换算，历史 UTC 旧数据无需迁移。
+- **版本号**：单一来源 `web/src/version.ts` 导出 `APP_VERSION`；侧边栏与设置页均 `v{{ APP_VERSION }}` 引用，禁止再各处写死。升级只改这一处（当前 `0.11.0`）。
+- **操作日志时间显示**：完整 `YYYY-MM-DD HH:MM:SS`（`formatDateTime`），导出 CSV 亦同格式（含秒）。
+- **备份删除保护**：支持删除任意备份，但**最近一份不可删除**——前端对最新一条（`i===0`）禁用删除按钮，后端 `DeleteFile` 对 `items[0]` 返回 `ErrLatestProtected`（HTTP 400）兜底，双重保护。
+
+---
+
+## 7. 验收要点
 
 - [x] 各页统计卡淡色背景、同页互异。
 - [x] 概览统计卡图标为扁平灰色线性图标（方案 C），无彩色圆底。
 - [x] 快速记账弹窗主按钮极淡青绿背景 + 深绿文字，局部覆盖不动全局主题。
 - [x] 浏览器标签页标题 = 注册组织名 + 「集体经济管理平台」；未登录仅平台名。
 - [x] 应收状态/「余」红字/按钮配色偏好符合上述约定。
+- [x] 全站时间统一东八区；操作日志显示完整年月日；版本号单一来源；备份最近一份不可删除。

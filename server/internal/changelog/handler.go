@@ -26,6 +26,22 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/changelog", h.ListChangelog)
 	r.GET("/api/operation-logs", h.ListOperationLogs)
+	r.DELETE("/api/operation-logs", h.ClearOperationLogs)
+}
+
+// ClearOperationLogs 清空当前组织的操作日志。
+// DELETE /api/operation-logs
+func (h *Handler) ClearOperationLogs(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.Fail(c, http.StatusUnauthorized, "UNAUTHORIZED", "未登录或会话已失效")
+		return
+	}
+	if err := h.repo.DeleteByOrg(orgID); err != nil {
+		platform.Fail(c, http.StatusInternalServerError, "CLEAR_LOGS_FAILED", "清空操作日志失败")
+		return
+	}
+	platform.OK(c, gin.H{"deleted": true})
 }
 
 // ListChangelog 查询变更日志。
@@ -83,7 +99,7 @@ func (h *Handler) ListOperationLogs(c *gin.Context) {
 		return
 	}
 
-	since := time.Now().UTC().Add(-48 * time.Hour)
+	since := platform.Now().Add(-48 * time.Hour)
 	rows, err := h.repo.ListRecentByOrg(orgID, since)
 	if err != nil {
 		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{

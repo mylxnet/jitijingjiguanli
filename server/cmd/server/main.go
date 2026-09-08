@@ -22,6 +22,7 @@ import (
 	"jititaizhang/server/internal/contract"
 	"jititaizhang/server/internal/export"
 	"jititaizhang/server/internal/fundmove"
+	"jititaizhang/server/internal/onboarding"
 	"jititaizhang/server/internal/platform"
 	"jititaizhang/server/internal/receivable"
 	"jititaizhang/server/internal/settings"
@@ -133,6 +134,7 @@ func buildRouter(a *app) *gin.Engine {
 	settings.NewHandler(a.db).Register(authed)
 	changelog.NewHandler(a.db).Register(authed)
 	export.NewHandler(a.db).Register(authed)
+	onboarding.NewHandler(a.db).Register(authed)
 
 	registerBackupRoutes(authed, a)
 	registerStatic(r)
@@ -209,6 +211,24 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		c.SetSameSite(http.SameSiteLaxMode)
 		c.SetCookie(auth.CookieName, "", -1, "/", "", false, true)
 		platform.OK(c, gin.H{"ok": true, "message": "恢复成功，请重新登录"})
+	})
+
+	authed.DELETE("/api/backups/:id", func(c *gin.Context) {
+		id := filepath.Base(c.Param("id"))
+		items, err := repo.List()
+		if err != nil {
+			platform.Fail(c, http.StatusInternalServerError, "BACKUP_LIST_FAILED", "读取备份列表失败")
+			return
+		}
+		if err := repo.DeleteFile(id, items); err != nil {
+			if err == backup.ErrLatestProtected {
+				platform.Fail(c, http.StatusBadRequest, "BACKUP_LATEST_PROTECTED", "最近一份备份不可删除")
+				return
+			}
+			platform.Fail(c, http.StatusInternalServerError, "BACKUP_DELETE_FAILED", err.Error())
+			return
+		}
+		platform.OK(c, gin.H{"ok": true})
 	})
 }
 

@@ -23,7 +23,11 @@ func Open(dbPath string) (*sql.DB, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// _time_format=sqlite：让 modernc.org/sqlite 用统一的 SQLite 时间文本格式
+	// （2006-01-02 15:04:05）往返序列化 time.Time，否则 DATETIME 列读出为 string，
+	// Scan 到 time.Time 会报 "unsupported Scan"（曾导致登录/会话鉴权整体失效）。
+	dsn := dbPath + "?_time_format=sqlite"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -44,7 +48,11 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Now 提供统一的写入时间戳（UTC）。
+// tzCN 固定东八区（Asia/Shanghai，无夏令时）。用 FixedZone 而非 LoadLocation，
+// 避免静态编译产物缺时区数据库时 LoadLocation 失败。
+var tzCN = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+// Now 提供统一的写入时间戳（北京时间，UTC+8）。
 func Now() time.Time {
-	return time.Now().UTC()
+	return time.Now().In(tzCN)
 }

@@ -56,12 +56,19 @@
         >立即备份</van-button>
       </div>
       <div v-if="backups.length === 0" class="backup-empty">尚无备份记录</div>
-      <van-cell v-for="b in backups" :key="b.id" :title="formatBackupTime(b.createdAt)">
+      <van-cell v-for="(b, i) in backups" :key="b.id" :title="formatBackupTime(b.createdAt)">
         <template #label>
           <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
         </template>
         <template #right-icon>
           <van-button size="mini" plain type="warning" @click="restoreBackup(b)">恢复</van-button>
+          <van-button
+            size="mini"
+            plain
+            :disabled="i === 0"
+            class="backup-del-btn"
+            @click="deleteBackup(b)"
+          >删除</van-button>
         </template>
       </van-cell>
     </van-cell-group>
@@ -100,7 +107,7 @@
       <van-button round block type="danger" @click="handleLogout">登出</van-button>
     </div>
 
-    <div class="version">v0.10.0</div>
+    <div class="version">v{{ APP_VERSION }}</div>
 
     <!-- 修改密码 -->
     <van-popup v-model:show="showPwd" :position="popupPos()" round closeable style="max-height: 90vh">
@@ -133,6 +140,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../auth/store'
+import { APP_VERSION } from '../../version'
 import { api } from '../../lib/http'
 import { formatFen } from '../../types/api'
 import type { ApiResponse } from '../../types/api'
@@ -285,6 +293,25 @@ async function restoreBackup(b: BackupItem) {
   } catch (e: any) {
     restoring.value = false
     showToast(e.message || '恢复失败')
+  }
+}
+
+async function deleteBackup(b: BackupItem) {
+  try {
+    await showDialog({
+      title: '确认删除',
+      message: `确定删除 ${formatBackupTime(b.createdAt)} 的备份吗？此操作不可恢复。`,
+      showCancelButton: true,
+    })
+  } catch {
+    return // 取消
+  }
+  try {
+    await api.del(`/backups/${encodeURIComponent(b.id)}`)
+    showToast('删除成功')
+    await loadBackups()
+  } catch (e: any) {
+    showToast(e.message || '删除失败')
   }
 }
 

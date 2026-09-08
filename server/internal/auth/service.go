@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"jititaizhang/server/internal/platform"
 )
 
 // 业务错误。
@@ -106,7 +108,7 @@ func (s *Service) RegisterOrg(orgName, username, password string) (string, time.
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	expiresAt := time.Now().UTC().Add(SessionTTL)
+	expiresAt := platform.Now().Add(SessionTTL)
 	if err := s.repo.CreateSession(token, userID, expiresAt); err != nil {
 		return "", time.Time{}, err
 	}
@@ -128,7 +130,7 @@ func (s *Service) Login(username, password string) (string, time.Time, error) {
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	expiresAt := time.Now().UTC().Add(SessionTTL)
+	expiresAt := platform.Now().Add(SessionTTL)
 	if err := s.repo.CreateSession(token, u.ID, expiresAt); err != nil {
 		return "", time.Time{}, err
 	}

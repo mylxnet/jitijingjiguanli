@@ -176,7 +176,7 @@ import { api } from '../../../lib/http'
 
 interface Receivable {
   id: number; partyId: number; partyName: string; recvYear: number;
-  kind: string; amountCents: number; paidCents: number;
+  recvKind: string; amountCents: number; paidCents: number;
   outstandingCents: number; status: 'open' | 'partial' | 'paid';
 }
 interface Transaction {
@@ -212,7 +212,7 @@ const statusLabel = (s: string) => ({ open: '未收', partial: '部分收', paid
 // ====== 土地流转费收入 ======
 
 const rentReceivables = computed(() =>
-  allReceivables.value.filter(r => r.kind === 'rent' && r.recvYear === rentYear.value)
+  allReceivables.value.filter(r => r.recvKind === 'rent' && r.recvYear === rentYear.value)
 )
 
 const rentItems = computed(() => {
@@ -231,9 +231,21 @@ const rentStats = computed(() => {
   return { total, paid, unpaid }
 })
 
-const rentFarmerExpenses = computed(() =>
-  allTransactions.value.filter(t => t.categoryId === 81 && t.direction === 'expense' && t.txnDate?.startsWith(String(rentYear.value)))
-)
+// 按名称动态解析科目 ID（科目 ID 随组织注册而变化，禁止硬编码，见 532 修复同款约定）
+function findCatId(l1Name: string, l2Name: string): number {
+  for (const l1 of allCategories.value) {
+    if (l1.name !== l1Name) continue
+    const l2 = (l1.children || []).find((c: any) => c.name === l2Name)
+    if (l2) return l2.id
+  }
+  return -1
+}
+
+const rentFarmerExpenses = computed(() => {
+  const farmerCatId = findCatId('分配与支出', '土地流转费-转付农户')
+  if (farmerCatId < 0) return []
+  return allTransactions.value.filter(t => t.categoryId === farmerCatId && t.direction === 'expense' && t.txnDate?.startsWith(String(rentYear.value)))
+})
 
 const rentFarmerExpenseTotal = computed(() =>
   rentFarmerExpenses.value.reduce((s, t) => s + t.amountCents, 0)
@@ -246,7 +258,7 @@ function onRentYearChange() {
 // ====== 流转管理费 ======
 
 const svcReceivables = computed(() =>
-  allReceivables.value.filter(r => r.kind === 'service' && r.recvYear === svcYear.value)
+  allReceivables.value.filter(r => r.recvKind === 'service' && r.recvYear === svcYear.value)
 )
 
 const svcItems = computed(() => {
@@ -265,17 +277,19 @@ const svcStats = computed(() => {
   return { total, paid, unpaid }
 })
 
-const svcExpenses = computed(() =>
-  allTransactions.value.filter(t => t.categoryId === 85 && t.direction === 'expense' && t.txnDate?.startsWith(String(svcYear.value)))
-)
+const svcExpenses = computed(() => {
+  const expCatId = findCatId('分配与支出', '管理费支出')
+  if (expCatId < 0) return []
+  return allTransactions.value.filter(t => t.categoryId === expCatId && t.direction === 'expense' && t.txnDate?.startsWith(String(svcYear.value)))
+})
 
 const svcExpenseTotal = computed(() =>
   svcExpenses.value.reduce((s, t) => s + t.amountCents, 0)
 )
 
 const svcAvailable = computed(() => {
-  // 流转管理费科目（id: 7）的余额 = 累计收入 - 累计支出
-  const mgmtFeeCat = allCategories.value.find((c: any) => c.id === 7)
+  // 流转管理费科目（L1，按名称动态解析）的余额 = 累计收入 - 累计支出
+  const mgmtFeeCat = allCategories.value.find((c: any) => c.name === '流转管理费' && c.level === 1)
   if (!mgmtFeeCat) return 0
   const childrenBalance = (mgmtFeeCat.children || []).reduce((s: number, c: any) => s + (c.balanceCents || 0), 0)
   return childrenBalance - svcExpenseTotal.value

@@ -88,6 +88,12 @@ func (r *Repo) ListRecentByOrg(orgID int64, cutoff time.Time) ([]ChangeLog, erro
 	return items, rows.Err()
 }
 
+// DeleteByOrg 清空指定组织的全部操作日志。
+func (r *Repo) DeleteByOrg(orgID int64) error {
+	_, err := r.db.Exec(`DELETE FROM change_log WHERE org_id = ?`, orgID)
+	return err
+}
+
 // parseChangedAt 兼容纳秒级 RFC3339 与标准 RFC3339。
 func parseChangedAt(s string) (time.Time, bool) {
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {

@@ -44,7 +44,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     method: options.method || 'GET',
     headers,
     credentials: 'include', // 携带 Cookie
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    body: options.body
+      ? (options.body instanceof FormData ? options.body : JSON.stringify(options.body))
+      : undefined,
   })
 
   if (res.status === 401) {

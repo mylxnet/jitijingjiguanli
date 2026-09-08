@@ -18,6 +18,12 @@ import (
 const filePrefix = "jz-backup-"
 const fileSuffix = ".db"
 
+// ErrLatestProtected 表示试图删除最近一份备份（受保护）。
+var ErrLatestProtected = fmt.Errorf("最近一份备份不可删除")
+
+// tzCN 与 platform 保持一致：备份文件名用北京时间（UTC+8）。
+var tzCN = time.FixedZone("Asia/Shanghai", 8*60*60)
+
 // BackupInfo 备份文件信息。
 type BackupInfo struct {
 	ID        string `json:"id"`
@@ -72,7 +78,7 @@ func (r *Repo) Create() (*BackupInfo, error) {
 	if err := os.MkdirAll(r.dir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建备份目录失败: %w", err)
 	}
-	name := filePrefix + time.Now().UTC().Format("20060102-150405") + fileSuffix
+	name := filePrefix + time.Now().In(tzCN).Format("20060102-150405") + fileSuffix
 	path := filepath.Join(r.dir, name)
 
 	// VACUUM INTO 参数不能走绑定占位符，路径为内部生成、不含单引号，直接拼接安全。
@@ -136,6 +142,21 @@ func (r *Repo) prune() error {
 		if err := os.Remove(filepath.Join(r.dir, it.ID)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("清理旧备份失败: %w", err)
 		}
+	}
+	return nil
+}
+
+// DeleteFile 删除指定备份文件。items 为按时间倒序的列表（最新在前），最新一条不可删除。
+func (r *Repo) DeleteFile(name string, items []BackupInfo) error {
+	if len(items) > 0 && items[0].ID == name {
+		return ErrLatestProtected
+	}
+	path := filepath.Join(r.dir, filepath.Base(name))
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("备份不存在")
+		}
+		return fmt.Errorf("删除备份失败: %w", err)
 	}
 	return nil
 }

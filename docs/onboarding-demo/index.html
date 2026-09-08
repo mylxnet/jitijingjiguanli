@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>建账引导 · 演示</title>
+<style>
+  :root{
+    --jade:#1f5c48; --jade-deep:#143d30; --jade-soft:#e5f5f4;
+    --paper:#faf8f4; --card:#ffffff; --line:#efe9dd;
+    --ink:#22312b; --ink-muted:#7c867f;
+    --blue:#2f6fb2; --blue-soft:#eaf1fa;
+    --violet:#7a5fa8; --violet-soft:#f1eafc;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:linear-gradient(180deg,#fdfaf3 0%, var(--paper) 100%);
+    color:var(--ink); min-height:100vh; padding:32px 16px 64px;
+  }
+  .shell{max-width:840px;margin:0 auto}
+
+  /* Header 引导条 */
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--jade),#2f9e77);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700}
+  .brand b{font-size:18px;letter-spacing:.5px}
+  .brand small{display:block;color:var(--ink-muted);font-weight:400;font-size:12px;margin-top:2px}
+  .head .chip{font-size:12px;color:var(--jade);background:var(--jade-soft);border-radius:20px;padding:6px 14px}
+
+  /* 模式二选一 */
+  .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
+  .mode-card{
+    background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);
+    padding:20px;cursor:pointer;position:relative;transition:.18s;
+  }
+  .mode-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(20,61,48,.08)}
+  .mode-card.selected{
+    border-color:var(--jade);box-shadow:0 0 0 3px var(--jade-soft);
+  }
+  .mode-card .ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px}
+  .mode-card.import .ic{background:var(--blue-soft)}
+  .mode-card.manual .ic{background:var(--violet-soft)}
+  .mode-card .pick{position:absolute;top:14px;right:14px;width:22px;height:22px;border-radius:50%;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff}
+  .mode-card.selected .pick{background:var(--jade);border-color:var(--jade)}
+  .mode-card h3{font-size:16px;margin-bottom:6px}
+  .mode-card p{font-size:13px;color:var(--ink-muted);line-height:1.6}
+  .mode-card .tag{display:inline-block;font-size:11px;margin-top:10px;border-radius:10px;padding:2px 9px}
+  .mode-card.import .tag{background:var(--blue-soft);color:var(--blue)}
+  .mode-card.manual .tag{background:var(--violet-soft);color:var(--violet)}
+
+  /* 步骤条 */
+  .steps{display:flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;margin-bottom:22px;flex-wrap:wrap}
+  .step{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-muted);cursor:pointer;padding:4px 6px;border-radius:8px}
+  .step .n{width:20px;height:20px;border-radius:50%;background:#f0ede7;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--ink-muted)}
+  .step.done{color:var(--jade)}
+  .step.done .n{background:var(--jade-soft);color:var(--jade)}
+  .step.active{color:var(--jade-deep);font-weight:600}
+  .step.active .n{background:var(--jade);color:#fff}
+  .step-link{color:#ddd;font-size:11px}
+
+  /* 内容卡 */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
+  .card h2{font-size:18px;margin-bottom:6px}
+  .card .sub{font-size:13px;color:var(--ink-muted);margin-bottom:18px;line-height:1.7}
+
+  /* 新手提示条 */
+  .tip{background:var(--jade-soft);border-left:4px solid var(--jade);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--ink);line-height:1.7;margin-bottom:20px}
+  .tip b{color:var(--jade-deep)}
+
+  /* 拖拽上传 */
+  .drop{border:2px dashed #cdd6cf;border-radius:14px;background:var(--paper);padding:34px 20px;text-align:center;cursor:pointer;transition:.18s;margin-bottom:14px}
+  .drop.hover{border-color:var(--jade);background:var(--jade-soft)}
+  .drop .big{font-size:36px;margin-bottom:8px}
+  .drop p{font-size:14px;font-weight:600}
+  .drop small{color:var(--ink-muted);font-size:12px;margin-top:6px;display:inline-block}
+
+  /* 模板下载 */
+  .dl{display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:20px}
+  .dl .f{font-size:26px}
+  .dl .info{flex:1}
+  .dl .info b{font-size:13px;display:block}
+  .dl .info small{color:var(--ink-muted);font-size:12px}
+  .btn{border:none;cursor:pointer;font-size:13px;border-radius:20px;padding:8px 20px;transition:.15s;white-space:nowrap}
+  .btn.primary{background:var(--jade);color:#fff}
+  .btn.primary:hover{background:var(--jade-deep)}
+  .btn.ghost{background:#fff;border:1px solid #ccc;color:var(--ink-muted)}
+  .btn.ghost:hover{border-color:var(--jade);color:var(--jade)}
+
+  /* 预览表格 */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{font-size:12px;color:var(--ink-muted);background:var(--paper);padding:10px;text-align:left}
+  td{padding:10px;border-top:1px solid var(--line)}
+  .uart{display:inline-block;font-size:11px;border-radius:10px;padding:2px 9px}
+  .uart.flow{background:var(--jade-soft);color:var(--jade)}
+  .uart.invest{background:var(--blue-soft);color:var(--blue)}
+  .uart.reinvest{background:var(--violet-soft);color:var(--violet)}
+
+  .check{margin-top:20px}
+  .check .row{display:flex;align-items:center;gap:10px;background:var(--paper);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px}
+  .check .ok{width:20px;height:20px;border-radius:50%;background:var(--jade);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .check .ok.auto{background:var(--blue)}
+
+  .footer{display:flex;justify-content:flex-end;gap:12px;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+
+  /* 手工模式分步 */
+  .unit-row{display:flex;align-items:center;justify-content:space-between;background:var(--paper);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+  .unit-row .l{display:flex;align-items:center;gap:10px}
+  .add-unit{width:100%;background:var(--paper);border:1.5px dashed #cdd6cf;border-radius:10px;padding:12px;text-align:center;color:var(--jade);font-size:13px;cursor:pointer;font-weight:600}
+  .add-unit:hover{border-color:var(--jade)}
+
+  .hidden{display:none}
+  .muted{color:var(--ink-muted)}
+  .small{font-size:12px}
+  .small-del{font-size:12px;padding:4px 10px}
+  .skip{font-size:13px;color:var(--jade);text-decoration:none;font-weight:600}
+  .skip:hover{color:var(--jade-deep)}
+  @media(max-width:640px){.mode-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- 头部引导 -->
+  <div class="head">
+    <div class="brand">
+      <div class="logo">集</div>
+      <div><b>集体经济管理平台</b><small>首次使用 · 建账引导</small></div>
+    </div>
+    <span class="chip" id="headchip">第 1 步 / 共 7 步 · 开始建账</span>
+  </div>
+
+  <!-- 模式二选一 -->
+  <div class="mode-grid">
+    <div class="mode-card import selected" data-mode="import" onclick="pickMode('import')">
+      <span class="pick">✓</span>
+      <div class="ic">📥</div>
+      <h3>导入 Excel 快速建账</h3>
+      <p>下载模板填写好往来单位，一次上传即可自动建好单位与科目，省时省心。</p>
+      <span class="tag">推荐 · 快捷</span>
+    </div>
+    <div class="mode-card manual" data-mode="manual" onclick="pickMode('manual')">
+      <span class="pick"></span>
+      <div class="ic">✍️</div>
+      <h3>手工逐条录入</h3>
+      <p>一步步手动添加单位、填期初余额，适合单位数量少的场景。</p>
+      <span class="tag">适合少量数据</span>
+    </div>
+  </div>
+
+  <!-- 步骤条（导入模式下 1-6 自动完成） -->
+  <div class="steps" id="steps"></div>
+
+  <!-- ============ 导入模式内容 ============ -->
+  <div class="card" id="view-import">
+    <h2>导入 Excel 建账</h2>
+    <div class="sub">先从模板下载表格，填好三张表（流转企业 / 投资公司 / 再投资）里的单位后上传。三类均可留空——<b>没有哪一类，就把对应 Sheet 留空</b>，系统按实际填写的类自动建账。</div>
+
+    <div class="tip">✅ 新手上路：模板里已经留好了格式和示例，照着填 <b>单位名称</b> 和 <b>金额</b> 就行，留空的列可以不加。</div>
+
+    <!-- 模板下载 -->
+    <div class="dl">
+      <div class="f">📄</div>
+      <div class="info"><b>基础数据导入模板.xlsx</b><small>含「流转企业 / 投资公司 / 再投资」三张表 + 填写说明</small></div>
+      <button class="btn ghost" onclick="tagDemo('模板将下载到本地')">下载模板</button>
+    </div>
+
+    <!-- 上传区 -->
+    <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+      <div class="big">📂</div>
+      <p>点击选择，或把 Excel 文件拖到此处</p>
+      <small>支持 .xlsx 格式 · 单次一个文件</small>
+    </div>
+    <input type="file" id="file" accept=".xlsx" class="hidden" onchange="uploaded(this)">
+
+    <div class="hidden" id="upload-ok">
+      <div class="tip" style="margin-bottom:12px">已识别到三类单位；若某类 Sheet 留空，则<b>跳过该类、不为其建账</b>，非必填。</div>
+      <table>
+        <thead><tr><th>类目</th><th>单位名称</th><th>联系方式</th><th>业务数据</th></tr></thead>
+        <tbody>
+          <tr><td><span class="uart flow">流转企业</span></td><td>蓝天农业合作社</td><td class="muted">138****1234</td><td>120 亩 · 800 元/亩</td></tr>
+          <tr><td><span class="uart invest">投资公司</span></td><td>X科技有限公司</td><td class="muted">138****2222</td><td>本金 500,000 元 · 6%</td></tr>
+          <tr><td><span class="uart reinvest">再投资</span></td><td>集体再投资基金</td><td class="muted">136****6666</td><td>本金 300,000 元 · 5%</td></tr>
+        </tbody>
+      </table>
+      <div class="check">
+        <div class="row"><span class="ok">✓</span><div><b>单位名称检查</b> <span class="muted small">· 无重复，通过</span></div></div>
+        <div class="row"><span class="ok">✓</span><div><b>金额与面积格式</b> <span class="muted small">· 均为有效数字</span></div></div>
+        <div class="row"><span class="ok auto">↯</span><div><b>自动建账</b> <span class="muted small">· 已为每类单位创建同名二级科目与期初余额</span></div></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button class="btn ghost" onclick="pickMode('manual')">改为手工录入</button>
+      <button class="btn primary" id="import-done" onclick="doneImport()">完成并继续</button>
+    </div>
+  </div>
+
+  <!-- ============ 手工模式内容（简化示意） ============ -->
+  <div class="card hidden" id="view-manual">
+    <h2>手工录入 · 第 1 步 流转企业</h2>
+    <div class="sub">逐个添加「流转企业」单位。填错了可点 <b style="color:var(--jade)">🗑 删除</b> 后重输；<b>没有流转企业可直接「跳过本步」</b>，投资公司、再投资同理，均非必填。</div>
+    <div class="unit-row"><div class="l"><span class="uart flow">流转企业</span> 蓝天农业合作社</div><button class="btn ghost small-del" onclick="delUnit(this)">🗑 删除</button></div>
+    <div class="unit-row"><div class="l"><span class="uart flow">流转企业</span> 绿源家庭农场</div><button class="btn ghost small-del" onclick="delUnit(this)">🗑 删除</button></div>
+    <div class="add-unit" onclick="tagDemo('弹出单位录入表单（演示）：填错后点右侧“删除”即可重输')">＋ 添加流转企业</div>
+    <div style="text-align:center;margin-top:14px"><a href="javascript:void(0)" class="skip" onclick="stepNext()">本类暂无单位，跳过此步 →</a></div>
+    <div class="footer">
+      <button class="btn primary" onclick="stepNext()">下一步</button>
+    </div>
+  </div>
+
+  <!-- 完成态 -->
+  <div class="card hidden" id="view-done">
+    <h2 id="doneTitle">就绪，开始使用！</h2>
+    <div class="sub" id="doneSub">基础数据已就位，接下来只差最后一点设置。</div>
+    <div class="tip">下一步会请你确认 <b>银行存款期初</b> 与 <b>预置科目期初</b>，这是最后一步，填好后即可进入系统。</div>
+    <div class="footer"><button class="btn primary" onclick="tagDemo('进入第 7 步 · 其他设置与预览（演示）')">继续到最后一步</button></div>
+  </div>
+</div>
+
+<script>
+  var STEPS=['流转企业','流转企业余额','投资公司','投资公司余额','再投资','再投资余额','其他设置'];
+  var mode='import', cur=0;
+  function renderSteps(){
+    var stepsEl=document.getElementById('steps');
+    stepsEl.style.display = mode==='import' ? 'none' : 'flex';
+    document.getElementById('headchip').textContent = mode==='import' ? '📥 导入模式 · 自动建账' : '第 '+(cur+1)+' 步 / 共 7 步 · 手工录入';
+    var el=stepsEl;el.innerHTML='';
+    STEPS.forEach(function(n,i){
+      var st=document.createElement('div');
+      var done = (mode==='import' && i<6) || (mode==='manual' && i<cur);
+      var active = (mode==='import' && i===6) || (mode==='manual' && i===cur);
+      st.className='step'+(done?' done':'')+(active?' active':'');
+      st.innerHTML='<span class="n">'+(done?'✓':(i+1))+'</span>'+n;
+      st.onclick=function(){ if(mode==='manual'){cur=i;renderSteps();renderView();} };
+      el.appendChild(st);
+      if(i<STEPS.length-1){var l=document.createElement('span');l.className='step-link';l.textContent='—';el.appendChild(l);}
+    });
+  }
+  function pickMode(m){mode=m;cur=0;
+    document.querySelector('.mode-card.import').classList.toggle('selected',m==='import');
+    document.querySelector('.mode-card.manual').classList.toggle('selected',m==='manual');
+    renderSteps();renderView();}
+  function renderView(){
+    document.getElementById('view-import').classList.toggle('hidden',mode!=='import');
+    document.getElementById('view-manual').classList.toggle('hidden',mode!=='manual');
+    document.getElementById('view-done').classList.add('hidden');
+  }
+
+  var drop=document.getElementById('drop');
+  function delUnit(btn){btn.closest('.unit-row').remove();}
+  drop.addEventListener('dragover',function(e){e.preventDefault();drop.classList.add('hover');});
+  drop.addEventListener('dragleave',function(){drop.classList.remove('hover');});
+  drop.addEventListener('drop',function(e){e.preventDefault();drop.classList.remove('hover');tagDemo('已通过拖拽选择文件');});
+  function uploaded(inp){
+    if(inp.files&&inp.files.length){
+      drop.className='drop';
+      document.getElementById('upload-ok').classList.remove('hidden');
+      document.getElementById('import-done').className='btn primary';
+      renderSteps(); renderView();
+    }
+  }
+  function doneImport(){
+    mode='import';
+    document.getElementById('view-done').classList.remove('hidden');
+    document.getElementById('view-import').style.display='none';
+    document.getElementById('doneTitle').textContent='单位与科目已自动建好！';
+    document.getElementById('doneSub').textContent='已从 Excel 导入 3 个单位，并为每类单位自动创建了同名二级科目与期初余额。';
+    renderSteps();
+  }
+  function stepNext(){cur++;renderSteps();renderView();}
+  function tagDemo(msg){alert('[演示] '+msg);}
+  renderSteps();
+</script>
+</body>
+</html>

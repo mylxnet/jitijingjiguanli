@@ -6,7 +6,10 @@
           <div class="popup-title">操作日志</div>
           <div class="oplog-hint">最近 48 小时内的操作记录</div>
         </div>
-        <van-button v-if="logs.length > 0" size="mini" plain @click="exportCsv">导出 CSV</van-button>
+        <div class="oplog-actions">
+          <van-button v-if="logs.length > 0" size="mini" plain @click="exportCsv">导出 CSV</van-button>
+          <van-button v-if="logs.length > 0" size="mini" plain class="oplog-clear-btn" @click="clearLogs">清除日志</van-button>
+        </div>
       </div>
 
       <!-- 加载中 -->
@@ -30,7 +33,7 @@
           <div class="oplog-header" @click="toggleExpand(log.id)">
             <div class="oplog-meta">
               <span class="oplog-op">{{ log.operation }}</span>
-              <span class="oplog-time">{{ formatTime(log.time) }}</span>
+              <span class="oplog-time">{{ formatDateTime(log.time) }}</span>
             </div>
             <div class="oplog-summary">{{ log.summary }}</div>
             <div class="oplog-expand-icon">{{ expandedId === log.id ? '▲' : '▼' }}</div>
@@ -61,6 +64,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { api } from '../../lib/http'
+import { showConfirmDialog } from 'vant'
 import { popupPos } from '../../composables/useScreen'
 
 interface OpLogEffect {
@@ -111,10 +115,23 @@ async function fetchLogs() {
   }
 }
 
-function formatTime(iso: string) {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return pad(d.getHours()) + ':' + pad(d.getMinutes())
+async function clearLogs() {
+  try {
+    await showConfirmDialog({
+      title: '清除日志',
+      message: '确定清空当前组织的全部操作日志吗？此操作不可恢复。',
+      confirmButtonText: '确认清除',
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await api.del('/operation-logs')
+    logs.value = []
+    expandedId.value = null
+  } catch {
+    logs.value = []
+  }
 }
 
 function formatDateTime(iso: string) {
@@ -194,6 +211,17 @@ function exportCsv() {
 .oplog-hint {
   font-size: 12px;
   color: #999;
+}
+
+.oplog-clear-btn {
+  margin-left: 8px;
+}
+
+.oplog-actions {
+  display: flex;
+  align-items: center;
+  margin-right: 40px;
+  padding-top: 22px;
 }
 
 .oplog-loading,

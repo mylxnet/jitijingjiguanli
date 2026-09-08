@@ -25,7 +25,7 @@
         <span class="side-nav-icon">🚪</span>
         <span>退出</span>
       </a>
-      <div class="side-version">v0.10.0</div>
+      <div class="side-version">v{{ APP_VERSION }}</div>
     </div>
   </nav>
 </template>
@@ -34,6 +34,7 @@
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../features/auth/store'
+import { APP_VERSION } from '../version'
 
 const route = useRoute()
 const router = useRouter()
