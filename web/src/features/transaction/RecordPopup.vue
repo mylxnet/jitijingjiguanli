@@ -129,7 +129,7 @@ const partyOptions = computed(() => {
   }
   return allParties.value.map(p => ({ text: p.name, value: p.id }))
 })
-const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, amount: '' })
+const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, recvId: null as number | null, amount: '' })
 const showNewCompany = ref(false)
 const newCompanyName = ref('')
 const creatingCompany = ref(false)
@@ -346,24 +346,44 @@ async function saveQuick() {
     const recvKind = kindMap[biz.key]
     let receiptCreated = false
     if (biz.dir === 'income' && quick.value.partyId && recvKind) {
-      const list = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', {
-        partyId: quick.value.partyId, status: 'open', pageSize: 200,
-      })
-      const matches = (list.data.items || []).filter(r => r.recvKind === recvKind && r.outstandingCents > 0)
-        .sort((a, b) => b.outstandingCents - a.outstandingCents)
-      const best = matches[0]
-      if (best && amount <= best.outstandingCents) {
-        // 核销应收：后端自动生成银行收入流水并入账到该单位同名收入二级科目，
-        // 应收递减，因此不再单独创建 transaction，避免重复入账。
-        await api.post(`/receivables/${best.id}/receipts`, {
+      if (quick.value.recvId) {
+        // 指定单张收缴（应收列表「收缴」入口）：只抵这张单，金额不能超过该单未收
+        const list = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', {
+          partyId: quick.value.partyId, pageSize: 200,
+        })
+        const target = (list.data.items || []).find(r => r.id === quick.value.recvId && r.recvKind === recvKind)
+        if (!target) throw new Error('该应收单不存在或不属于所选单位')
+        const outstanding = target.outstandingCents || 0
+        if (amount > outstanding) {
+          throw new Error(`该单 ${biz.label} 待收 ${formatFen(outstanding)}，不能超过`)
+        }
+        await api.post(`/receivables/${target.id}/receipts`, {
           amountCents: amount,
           receiptDate: quick.value.date,
           method: 'cash',
-          note: '快速记账自动核销（' + biz.label + '）',
+          note: '收缴核销（' + biz.label + '）',
         })
         receiptCreated = true
-      } else if (best && amount > best.outstandingCents) {
-        throw new Error(`该单位 ${recvKindLabel[recvKind]} 待收 ${formatFen(best.outstandingCents)}，不能超过`)
+      } else {
+        // 未指定单据：整额收款，后端按最早年度优先自动摊分核销该单位该类全部欠单并自动入账
+        const list = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', {
+          partyId: quick.value.partyId, status: 'open', pageSize: 200,
+        })
+        const matches = (list.data.items || []).filter(r => r.recvKind === recvKind && r.outstandingCents > 0)
+        if (matches.length > 0) {
+          const totalOutstanding = matches.reduce((s, r) => s + (r.outstandingCents || 0), 0)
+          if (amount > totalOutstanding) {
+            throw new Error(`该单位 ${recvKindLabel[recvKind]} 待收合计 ${formatFen(totalOutstanding)}，不能超过`)
+          }
+          await api.post('/party-collect', {
+            partyId: quick.value.partyId,
+            recvKind,
+            amountCents: amount,
+            receiptDate: quick.value.date,
+            note,
+          })
+          receiptCreated = true
+        }
       }
     }
     if (!receiptCreated) {
@@ -436,13 +456,14 @@ async function saveRecord() {
 interface OpenRecordOptions {
   biz?: string
   partyId?: number
+  recvId?: number
   amount?: string
 }
 
 async function openRecord(opts?: OpenRecordOptions) {
   recordMode.value = 'quick'
   record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
-  quick.value = { date: todayStr(), biz: opts?.biz || '', companyId: null, partyId: null, amount: opts?.amount || '' }
+  quick.value = { date: todayStr(), biz: opts?.biz || '', companyId: null, partyId: null, recvId: opts?.recvId ?? null, amount: opts?.amount || '' }
   showNewCompany.value = false
   newCompanyName.value = ''
   recordError.value = ''

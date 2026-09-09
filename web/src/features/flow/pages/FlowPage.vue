@@ -13,7 +13,7 @@
       <div class="fp-year-bar">
         <label class="fp-year-label">选择年度：</label>
         <select v-model="rentYear" class="fp-year-select" @change="onRentYearChange">
-          <option v-for="y in yearOptions" :key="y" :value="y">{{ y }} 年</option>
+          <option v-for="y in rentYearOptions" :key="y" :value="y">{{ y }} 年</option>
         </select>
       </div>
 
@@ -97,7 +97,7 @@
       <div class="fp-year-bar">
         <label class="fp-year-label">选择年度：</label>
         <select v-model="svcYear" class="fp-year-select" @change="onSvcYearChange">
-          <option v-for="y in yearOptions" :key="y" :value="y">{{ y }} 年</option>
+          <option v-for="y in svcYearOptions" :key="y" :value="y">{{ y }} 年</option>
         </select>
       </div>
 
@@ -191,16 +191,50 @@ const allReceivables = ref<Receivable[]>([])
 const allTransactions = ref<Transaction[]>([])
 const allCategories = ref<any[]>([])
 
-const START_YEAR = 2026
-const yearOptions = computed(() => {
-  const cur = new Date().getFullYear()
-  const years: number[] = []
-  for (let y = cur; y >= START_YEAR; y--) years.push(y)
-  return years
-})
+const curYear = new Date().getFullYear()
+const rentYear = ref(curYear)
+const svcYear = ref(curYear)
 
-const rentYear = ref(new Date().getFullYear())
-const svcYear = ref(new Date().getFullYear())
+// 年份选项由真实数据驱动（应收单年度 + 支出流水年度 + 当年），
+// 历年欠款补录后，对应历史年度即可在下拉中选到（不再写死从 START_YEAR 开始）。
+function uniqueDesc(arr: number[]): number[] {
+  return [...new Set(arr)].sort((a, b) => b - a)
+}
+function collectYears(recvKind: string, l1Name: string, l2Name: string): number[] {
+  const set = new Set<number>()
+  allReceivables.value.forEach(r => {
+    if (r.recvKind === recvKind && (r.recvYear || 0) > 0) set.add(r.recvYear)
+  })
+  const cid = findCatId(l1Name, l2Name)
+  if (cid > 0) {
+    allTransactions.value.forEach(t => {
+      if (t.categoryId === cid && t.direction === 'expense' && t.txnDate) {
+        const y = Number(t.txnDate.slice(0, 4))
+        if (y > 0) set.add(y)
+      }
+    })
+  }
+  return uniqueDesc([...set])
+}
+
+// 实际有数据的年份（应收/支出），用于进入页面时自动聚焦到最近有欠款或流水的年度
+const rentDataYears = computed(() => collectYears('rent', '分配与支出', '土地流转费-转付农户'))
+const svcDataYears = computed(() => collectYears('service', '分配与支出', '管理费支出'))
+// 下拉选项：当年必在，其次为数据年份
+const rentYearOptions = computed(() => uniqueDesc([curYear, ...rentDataYears.value]))
+const svcYearOptions = computed(() => uniqueDesc([curYear, ...svcDataYears.value]))
+
+let yearsAutoAdjusted = false
+function adjustYearsIfEmpty() {
+  if (yearsAutoAdjusted) return
+  yearsAutoAdjusted = true
+  if (rentDataYears.value.length && !rentDataYears.value.includes(rentYear.value)) {
+    rentYear.value = rentDataYears.value[0]
+  }
+  if (svcDataYears.value.length && !svcDataYears.value.includes(svcYear.value)) {
+    svcYear.value = svcDataYears.value[0]
+  }
+}
 
 const rentShowDetail = ref(false)
 const svcShowDetail = ref(false)
@@ -336,6 +370,7 @@ async function load() {
   } catch (e) {
     console.error('load error', e)
   }
+  adjustYearsIfEmpty()
 }
 
 onMounted(load)

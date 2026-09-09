@@ -36,6 +36,7 @@
             <th class="pl-th" v-if="!hideInvestCol">投资金额</th>
             <th class="pl-th" v-if="!hideLandCol">流转面积</th>
             <th class="pl-th">是否有合同</th>
+            <th class="pl-th pl-th-num">欠款合计</th>
             <th class="pl-th">备注</th>
             <th class="pl-th pl-th-action">操作</th>
           </tr>
@@ -59,6 +60,9 @@
               <span class="pl-has-contract" :class="{ has: contractCount(p.id) > 0 }">
                 {{ contractCount(p.id) > 0 ? '有 ' + contractCount(p.id) + ' 份' : '无' }}
               </span>
+            </td>
+            <td class="pl-td pl-th-num" :class="{ 'pl-owe': (p.outstandingCents || 0) > 0 }">
+              {{ fmtYuan(p.outstandingCents) }}
             </td>
             <td class="pl-td pl-td-note">{{ p.note || '—' }}</td>
             <td class="pl-td pl-td-action">
@@ -224,7 +228,7 @@ const detailTitle = computed(() => {
 })
 
 const recvKindLabel = (k?: string) => ({
-  dividend: '投资收益', rent: '土地流转费', service: '流转管理费', other: '其他',
+  dividend: '投资收益', reinvest_dividend: '再投资收益', rent: '土地流转费', service: '流转管理费', other: '其他',
 }[k || 'other'] || '其他')
 
 async function openDetail(p: Party) {
@@ -258,7 +262,7 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 }
 
 function exportCSV() {
-  const headers = ['单位名称', '单位类型', '联系电话', '投资金额', '流转面积', '是否有合同', '备注']
+  const headers = ['单位名称', '单位类型', '联系电话', '投资金额', '流转面积', '是否有合同', '欠款合计', '备注']
   const rows = parties.value.map(p => [
     p.name,
     partyTypeLabel(p.type),
@@ -266,6 +270,7 @@ function exportCSV() {
     (p.type === 'invest' || p.type === 'reinvest') ? fmtYuan(p.investAmountCents) : '',
     p.type === 'flow' ? ((p.landMu ?? p.areaMu ?? 0) + ' 亩') : '',
     contractCount(p.id) > 0 ? '有 ' + contractCount(p.id) + ' 份' : '无',
+    fmtYuan(p.outstandingCents),
     p.note || '',
   ])
   downloadCSV('单位列表.csv', headers, rows)
@@ -558,6 +563,8 @@ onMounted(load)
 .tag-other    { background: #f2f3f5; color: #646566; }
 .pl-na { color: #c8c9cc; }
 .pl-td-note { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #969799; }
+.pl-th-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pl-owe { color: #ee0a24; font-weight: 600; }
 .pl-has-contract { color: #c8c9cc; }
 .pl-has-contract.has { color: #07c160; font-weight: 600; }
 .empty { padding: 40px 0; }

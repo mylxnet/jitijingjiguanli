@@ -155,10 +155,13 @@ func createPartyAPI(t *testing.T, r *gin.Engine, name string) int64 {
 }
 
 // createReceivableAPI 通过 API 登记应收单，返回 id。
-func createReceivableAPI(t *testing.T, r *gin.Engine, partyID int64, kind, title string, amountCents int64, incomeCatID *int64) int64 {
+func createReceivableAPI(t *testing.T, r *gin.Engine, partyID int64, kind, title string, amountCents int64, incomeCatID *int64, years ...int) int64 {
 	t.Helper()
 	body := map[string]any{
 		"partyId": partyID, "recvKind": kind, "title": title, "amountCents": amountCents,
+	}
+	if len(years) > 0 && years[0] > 0 {
+		body["recvYear"] = years[0]
 	}
 	if incomeCatID != nil {
 		body["incomeCategoryId"] = *incomeCatID
@@ -396,7 +399,7 @@ func TestVoidReceipt(t *testing.T) {
 	}
 
 	// 抵销核销作废：分红支出流水保留，应收单退回 open
-	rec2 := createReceivableAPI(t, r, party, "rent", "2027年流转费", 80000, &incomeCat)
+	rec2 := createReceivableAPI(t, r, party, "rent", "2027年流转费", 80000, &incomeCat, 2027)
 	expenseTxn := seedTxn(t, db, "2026-09-02", "expense", 80000, expenseCat)
 	rid2, code := createReceiptAPI(t, r, rec2, 80000, "2026-09-06", "offset", map[string]any{"txnId": expenseTxn})
 	if code != http.StatusOK {
@@ -664,5 +667,205 @@ func TestPreviewAccrue(t *testing.T) {
 		if !it.Exists {
 			t.Errorf("结转后应标注已存在: %+v", it)
 		}
+	}
+}
+
+// TestCreateReceivableDuplicate 验证单笔登记防重：rent/service 同单位同类别同年度只允许一张，
+// 但历史年度可登记、非年度性类别（other）同年度可多笔。
+func TestCreateReceivableDuplicate(t *testing.T) {
+	db, r := newEnv(t)
+	incCat := seedIncomeCat(t, db, "流转费收入")
+	party := createPartyAPI(t, r, "甲公司")
+
+	// 当前年建一张 rent → 重复登记同年度 rent 应被拒绝
+	_ = createReceivableAPI(t, r, party, "rent", "2026年度土地流转费", 50000, &incCat)
+	w := doJSON(t, r, "POST", "/api/receivables", map[string]any{
+		"partyId": party, "recvKind": "rent", "title": "2026年度土地流转费", "amountCents": 50000,
+	})
+	if code := apiErr(t, w); code != "DUPLICATE_RECEIVABLE" {
+		t.Fatalf("重复登记同年 rent 应返回 DUPLICATE_RECEIVABLE，实际 %q body=%s", code, w.Body.String())
+	}
+
+	// 历史年度（2024）不冲突，应能正常登记（历年欠款补录）
+	w2 := doJSON(t, r, "POST", "/api/receivables", map[string]any{
+		"partyId": party, "recvKind": "rent", "recvYear": 2024, "title": "2024年度土地流转费", "amountCents": 40000,
+	})
+	if code := apiErr(t, w2); code != "" {
+		t.Fatalf("补录历史年度欠款应成功，实际 code=%q body=%s", code, w2.Body.String())
+	}
+
+	// other（非年度性类别）同年度允许多笔
+	doJSON(t, r, "POST", "/api/receivables", map[string]any{"partyId": party, "recvKind": "other", "title": "垫付款A", "amountCents": 10000})
+	w3 := doJSON(t, r, "POST", "/api/receivables", map[string]any{"partyId": party, "recvKind": "other", "title": "垫付款B", "amountCents": 10000})
+	if code := apiErr(t, w3); code != "" {
+		t.Fatalf("other 同年度多笔登记应放行，实际 code=%q body=%s", code, w3.Body.String())
+	}
+}
+
+// TestPartyFeeSyncStandard 验证：更新流转企业预期年费时自动同步计提标准表，
+// 使引导页填的费用可直接用于年度计提预览/结转；非 flow 单位不写标准。
+func TestPartyFeeSyncStandard(t *testing.T) {
+	_, r := newEnv(t)
+	flow := createPartyWithType(t, r, "甲公司", "flow")
+	invest := createPartyWithType(t, r, "乙公司", "invest")
+
+	// flow 单位写流转费/管理费 → 应生成 rent/service 标准
+	w := doJSON(t, r, "PUT", "/api/parties/"+itoa(flow), map[string]any{
+		"expectedLandFeeCents": 50000, "expectedMgmtFeeCents": 30000,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("更新流转企业预期费用失败: %d %s", w.Code, w.Body.String())
+	}
+	// 再改一次流转费金额 → 应更新而非重复
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(flow), map[string]any{"expectedLandFeeCents": 52000})
+	if w.Code != http.StatusOK {
+		t.Fatalf("再次更新预期费用失败: %d %s", w.Code, w.Body.String())
+	}
+	// 非 flow（invest）写流转费 → 不应生成标准
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(invest), map[string]any{"expectedLandFeeCents": 11100})
+	if w.Code != http.StatusOK {
+		t.Fatalf("更新 invest 单位预期费用失败: %d %s", w.Code, w.Body.String())
+	}
+
+	stdBy := func(kind string) map[int64]struct {
+		Amount int64 `json:"amountCents"`
+		Active bool  `json:"active"`
+	} {
+		t.Helper()
+		var out struct {
+			Data []struct {
+				PartyID     int64 `json:"partyId"`
+				RecvKind    string `json:"recvKind"`
+				AmountCents int64 `json:"amountCents"`
+				Active      bool  `json:"active"`
+			} `json:"data"`
+		}
+		w := doJSON(t, r, "GET", "/api/recv-standards?kind="+kind, nil)
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("解析计提标准失败: %v body=%s", err, w.Body.String())
+		}
+		m := map[int64]struct {
+			Amount int64 `json:"amountCents"`
+			Active bool  `json:"active"`
+		}{}
+		for _, it := range out.Data {
+			if it.RecvKind != kind {
+				continue
+			}
+			m[it.PartyID] = struct {
+				Amount int64 `json:"amountCents"`
+				Active bool  `json:"active"`
+			}{Amount: it.AmountCents, Active: it.Active}
+		}
+		return m
+	}
+
+	rent := stdBy("rent")
+	svc := stdBy("service")
+	if s, ok := rent[flow]; !ok || s.Amount != 52000 || !s.Active {
+		t.Errorf("flow 的 rent 标准应存在且金额=52000 启用，实际 %+v", rent[flow])
+	}
+	if s, ok := svc[flow]; !ok || s.Amount != 30000 || !s.Active {
+		t.Errorf("flow 的 service 标准应存在且金额=30000 启用，实际 %+v", svc[flow])
+	}
+	if _, ok := rent[invest]; ok {
+		t.Errorf("invest 单位不应生成 rent 标准")
+	}
+}
+
+// TestPartyCollectAcrossYears 验证整额跨单收款：一笔收款按最早年度优先摊分核销多张欠单，
+// 依次收 2000/3000/1000 结清 2024+2025 两张各 3000 的流转费欠款；超总额被拒、无欠单被拒。
+func TestPartyCollectAcrossYears(t *testing.T) {
+	db, r := newEnv(t)
+	// 提供收入容器 L1（自动入账定位用），ResolveIncomeCategory 会自建该单位同名收入二级
+	if _, err := db.Exec(
+		`INSERT INTO category(org_id,name,level,parent_id,status,kind,sort_order,created_at,updated_at)
+		 VALUES(1,'土地流转费收入',1,NULL,'active','equity',0,'2026-09-01','2026-09-01')`); err != nil {
+		t.Fatalf("插入收入容器 L1 失败: %v", err)
+	}
+	party := createPartyWithType(t, r, "甲公司", "flow")
+	// 2024 / 2025 各欠 3000（300000 分），无预设入账科目 → 走自动解析
+	rec2024 := createReceivableAPI(t, r, party, "rent", "2024年度土地流转费", 300000, nil, 2024)
+	rec2025 := createReceivableAPI(t, r, party, "rent", "2025年度土地流转费", 300000, nil, 2025)
+
+	collect := func(amount int64) (*httptest.ResponseRecorder, int64, int64) {
+		t.Helper()
+		w := doJSON(t, r, "POST", "/api/party-collect", map[string]any{
+			"partyId": party, "recvKind": "rent", "amountCents": amount, "receiptDate": "2026-09-10",
+		})
+		if w.Code != http.StatusOK {
+			return w, 0, 0
+		}
+		var out struct {
+			Data struct {
+				Items        []struct {
+					ReceivableID int64 `json:"receivableId"`
+					AmountCents  int64 `json:"amountCents"`
+				} `json:"items"`
+				TotalApplied int64 `json:"totalApplied"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("解析整额核销结果失败: %v body=%s", err, w.Body.String())
+		}
+		return w, int64(len(out.Data.Items)), out.Data.TotalApplied
+	}
+
+	// 第一次收 2000 → 只摊到 2024，剩 1000
+	w, n, applied := collect(200000)
+	if w.Code != http.StatusOK || n != 1 || applied != 200000 {
+		t.Fatalf("第一笔 2000 应核销 1 单 200000，实际 code=%d n=%d applied=%d body=%s", w.Code, n, applied, w.Body.String())
+	}
+	if got := receivableStatus(t, db, rec2024); got != "open" {
+		t.Errorf("收 2000 后 2024 单应 open(剩1000)，实际 %s", got)
+	}
+
+	// 超总额：当前待收 4000，收 5000 应拒绝
+	w = doJSON(t, r, "POST", "/api/party-collect", map[string]any{
+		"partyId": party, "recvKind": "rent", "amountCents": 500000, "receiptDate": "2026-09-11",
+	})
+	if code := apiErr(t, w); code != "COLLECT_OVER_TOTAL" {
+		t.Fatalf("收 5000 应返回 COLLECT_OVER_TOTAL，实际 code=%q", code)
+	}
+
+	// 第二次收 3000 → 先补清 2024(剩1000)，再抵 2025 的 2000，跨单摊分
+	w, n, applied = collect(300000)
+	if w.Code != http.StatusOK || n != 2 || applied != 300000 {
+		t.Fatalf("第二笔 3000 应摊 2 单共 300000，实际 code=%d n=%d applied=%d", w.Code, n, applied)
+	}
+	if got := receivableStatus(t, db, rec2024); got != "closed" {
+		t.Errorf("2024 单应 closed，实际 %s", got)
+	}
+	if got := receivableStatus(t, db, rec2025); got != "open" {
+		t.Errorf("2025 单应 open(剩1000)，实际 %s", got)
+	}
+
+	// 第三次收 1000 → 结清 2025
+	w, n, applied = collect(100000)
+	if w.Code != http.StatusOK || n != 1 || applied != 100000 {
+		t.Fatalf("第三笔 1000 应核销 1 单，实际 code=%d n=%d applied=%d", w.Code, n, applied)
+	}
+	if got := receivableStatus(t, db, rec2025); got != "closed" {
+		t.Errorf("2025 单应 closed，实际 %s", got)
+	}
+
+	// 全部结清后再收 → 无可核销
+	w = doJSON(t, r, "POST", "/api/party-collect", map[string]any{
+		"partyId": party, "recvKind": "rent", "amountCents": 10000, "receiptDate": "2026-09-12",
+	})
+	if code := apiErr(t, w); code != "COLLECT_NO_OPEN" {
+		t.Fatalf("结清后收款应 COLLECT_NO_OPEN，实际 code=%q", code)
+	}
+
+	// 三次整额收款共产生 4 条核销记录与 4 笔银行收入流水（金额 2000+1000+2000+1000）
+	var recCount, txnCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM receipt WHERE status='normal'`).Scan(&recCount); err != nil {
+		t.Fatalf("统计核销记录失败: %v", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM txn WHERE direction='income' AND status='normal'`).Scan(&txnCount); err != nil {
+		t.Fatalf("统计收入流水失败: %v", err)
+	}
+	if recCount != 4 || txnCount != 4 {
+		t.Errorf("应有 4 条核销记录与 4 笔收入流水，实际 rec=%d txn=%d", recCount, txnCount)
 	}
 }

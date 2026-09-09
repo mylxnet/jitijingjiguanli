@@ -12,6 +12,28 @@ import (
 // ErrOverReceivable 表示累计核销超过应收金额（服务层兜底）。
 var ErrOverReceivable = errors.New("累计核销不能超过应收金额")
 
+// ErrNoOpenReceivable 整额核销时该单位该类别没有待收的应收单。
+var ErrNoOpenReceivable = errors.New("该单位该类别暂无可核销的应收欠款")
+
+// ErrCollectOverTotal 整额核销金额超过该单位该类别待收总额。
+type ErrCollectOverTotal struct {
+	Total int64 // 该单位该类别待收合计（分）
+}
+
+func (e *ErrCollectOverTotal) Error() string {
+	return fmt.Sprintf("金额超过该单位待收总额 %s 元", fenText(e.Total))
+}
+
+// fenText 把分转元文本（负数也安全）。
+func fenText(c int64) string {
+	neg := ""
+	if c < 0 {
+		neg = "-"
+		c = -c
+	}
+	return fmt.Sprintf("%s%d.%02d", neg, c/100, c%100)
+}
+
 // Repo 封装 party / receivable / receipt 三表的 SQL。
 type Repo struct {
 	db *sql.DB
@@ -586,6 +608,128 @@ func (r *Repo) CreateOffsetReceipt(orgID int64, rec *Receivable, amount int64, d
 	return &CreateOutcome{Receipt: rc, ReceivableStatus: newStatus}, nil
 }
 
+// PartyCollectItem 整额核销结果中的一条应收核销明细。
+type PartyCollectItem struct {
+	ReceivableID int64  `json:"receivableId"`
+	Title        string `json:"title"`
+	AmountCents  int64  `json:"amountCents"`
+	ReceiptID    int64  `json:"receiptId"`
+	TxnID        *int64 `json:"txnId"`
+}
+
+// PartyCollectOutcome 整额核销结果。
+type PartyCollectOutcome struct {
+	Items        []PartyCollectItem `json:"items"`
+	TotalApplied int64              `json:"totalApplied"`
+}
+
+// CollectOpenAcrossYears 整额核销：一笔现金收款 X 元，自动按最早年度优先依次抵减
+// 该单位该类别多张未结清应收单（每单各生成一条核销记录与一笔银行收入流水）。
+// 金额超过待收总额返回 ErrCollectOverTotal；没有待收应收单返回 ErrNoOpenReceivable。
+// 单事务完成，部分失败全部回滚。
+func (r *Repo) CollectOpenAcrossYears(orgID, partyID int64, kind string, amountCents int64, date string, categoryID int64, note *string) (*PartyCollectOutcome, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	type openRec struct {
+		id     int64
+		title  string
+		amount int64
+		paid   int64
+	}
+	var recs []openRec
+	rows, err := tx.Query(
+		`SELECT r.id, r.title, r.amount_cents,
+		        COALESCE((SELECT SUM(x.amount_cents) FROM receipt x
+		                  WHERE x.receivable_id = r.id AND x.status = 'normal'), 0) AS paid
+		 FROM receivable r
+		 WHERE r.org_id = ? AND r.party_id = ? AND r.recv_kind = ? AND r.status = 'open'
+		 ORDER BY r.recv_year ASC, r.id ASC`,
+		orgID, partyID, kind,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询待收应收单失败: %w", err)
+	}
+	var totalOut int64
+	for rows.Next() {
+		var o openRec
+		if err := rows.Scan(&o.id, &o.title, &o.amount, &o.paid); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("扫描待收应收单失败: %w", err)
+		}
+		recs = append(recs, o)
+		totalOut += o.amount - o.paid
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(recs) == 0 {
+		return nil, ErrNoOpenReceivable
+	}
+	if amountCents > totalOut {
+		return nil, &ErrCollectOverTotal{Total: totalOut}
+	}
+
+	now := platform.Now()
+	outcome := &PartyCollectOutcome{Items: []PartyCollectItem{}}
+	remaining := amountCents
+	for _, o := range recs {
+		if remaining <= 0 {
+			break
+		}
+		out := o.amount - o.paid
+		if out <= 0 {
+			continue
+		}
+		alloc := out
+		if alloc > remaining {
+			alloc = remaining
+		}
+		// 银行收入流水（cash 一单一笔，作废单张核销时连带作废对应流水）
+		txnRes, err := tx.Exec(
+			`INSERT INTO txn(org_id, txn_date, direction, amount_cents, category_id, note, status, created_at, updated_at)
+			 VALUES(?, ?, 'income', ?, ?, ?, 'normal', ?, ?)`,
+			orgID, date, alloc, categoryID, note, now, now,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("生成银行收入流水失败: %w", err)
+		}
+		txnID, _ := txnRes.LastInsertId()
+
+		recRes, err := tx.Exec(
+			`INSERT INTO receipt(org_id, receivable_id, amount_cents, receipt_date, method, txn_id, note, status, created_at, updated_at)
+			 VALUES(?, ?, ?, ?, 'cash', ?, ?, 'normal', ?, ?)`,
+			orgID, o.id, alloc, date, txnID, note, now, now,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("写入核销记录失败: %w", err)
+		}
+		receiptID, _ := recRes.LastInsertId()
+
+		if o.paid+alloc >= o.amount {
+			if _, err := tx.Exec(`UPDATE receivable SET status = 'closed', updated_at = ? WHERE id = ? AND org_id = ?`, now, o.id, orgID); err != nil {
+				return nil, fmt.Errorf("更新应收单状态失败: %w", err)
+			}
+		}
+		txnIDp := txnID
+		outcome.Items = append(outcome.Items, PartyCollectItem{
+			ReceivableID: o.id, Title: o.title, AmountCents: alloc,
+			ReceiptID: receiptID, TxnID: &txnIDp,
+		})
+		outcome.TotalApplied += alloc
+		remaining -= alloc
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交整额核销事务失败: %w", err)
+	}
+	return outcome, nil
+}
+
 // VoidOutcome 是作废核销的结果（供 handler 记录留痕与状态变化）。
 type VoidOutcome struct {
 	Receipt          *Receipt
@@ -710,7 +854,7 @@ func (r *Repo) BatchCreateReceivables(orgID int64, year int, title string, items
 func (r *Repo) ListStandards(orgID int64, kind string) ([]AccrualStandard, error) {
 	where := "WHERE s.org_id = ?"
 	args := []any{orgID}
-	if kind == "rent" || kind == "dividend" || kind == "other" {
+	if kind != "" {
 		where += " AND s.recv_kind = ?"
 		args = append(args, kind)
 	}
@@ -774,9 +918,9 @@ func (r *Repo) SetStandardActive(id, orgID int64, active bool) error {
 }
 
 // AccrueFromStandards 按启用标准一键结转年度应收（存在则跳过）。
-// 只有单位类型与标准类别匹配的才结转：rent→流转企业 flow；dividend→投资公司 invest。
+// 只有单位类型与标准类别匹配的才结转：rent/service→流转企业 flow；dividend→投资公司 invest。
 func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*BatchAccrueResult, error) {
-	partyType := map[string]string{"rent": "flow", "dividend": "invest", "other": "other"}[kind]
+	partyType := map[string]string{"rent": "flow", "service": "flow", "dividend": "invest", "other": "other"}[kind]
 	if partyType == "" {
 		return &BatchAccrueResult{}, nil
 	}
@@ -811,7 +955,7 @@ func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*
 // （投资公司→投资收益=年收益；流转企业→土地流转费=总流转费、管理费=总管理费），
 // 金额可在前端修改后再确认；同年同类应收单已存在则标注 Exists（确认结转时跳过）。
 func (r *Repo) PreviewAccrueAuto(orgID int64, year int) (*PreviewAccrueResult, error) {
-	// 汇总候选条目（kind / partyID / name / amount）
+	// 汇总候选条目（启用中的计提标准，按单位类型匹配类别，与结转一致）
 	type cand struct {
 		kind   string
 		pid    int64
@@ -821,29 +965,28 @@ func (r *Repo) PreviewAccrueAuto(orgID int64, year int) (*PreviewAccrueResult, e
 	cands := []cand{}
 
 	rows, err := r.db.Query(
-		`SELECT id, name, type, expected_return_cents, expected_land_fee_cents, expected_mgmt_fee_cents
-		 FROM party WHERE org_id = ? ORDER BY name`, orgID,
+		`SELECT s.recv_kind, s.party_id, p.name, s.amount_cents
+		 FROM recv_standard s JOIN party p ON p.id = s.party_id AND p.org_id = s.org_id
+		 WHERE s.org_id = ? AND s.active = 1
+		   AND ((s.recv_kind = 'rent'    AND p.type = 'flow')
+		     OR (s.recv_kind = 'service' AND p.type = 'flow')
+		     OR (s.recv_kind = 'dividend' AND p.type = 'invest')
+		     OR (s.recv_kind = 'other'   AND p.type = 'other'))
+		 ORDER BY p.name, s.recv_kind`, orgID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("查询单位基本信息失败: %w", err)
+		return nil, fmt.Errorf("查询计提标准失败: %w", err)
 	}
 	for rows.Next() {
+		var kind string
 		var id int64
-		var name, ptype string
-		var ret, landFee, mgmtFee int64
-		if err := rows.Scan(&id, &name, &ptype, &ret, &landFee, &mgmtFee); err != nil {
+		var name string
+		var amount int64
+		if err := rows.Scan(&kind, &id, &name, &amount); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("扫描单位基本信息失败: %w", err)
+			return nil, fmt.Errorf("扫描计提标准失败: %w", err)
 		}
-		if ptype == "invest" && ret > 0 {
-			cands = append(cands, cand{"dividend", id, name, ret})
-		}
-		if ptype == "flow" && landFee > 0 {
-			cands = append(cands, cand{"rent", id, name, landFee})
-		}
-		if ptype == "flow" && mgmtFee > 0 {
-			cands = append(cands, cand{"service", id, name, mgmtFee})
-		}
+		cands = append(cands, cand{kind, id, name, amount})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {

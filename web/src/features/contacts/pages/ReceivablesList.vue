@@ -6,9 +6,46 @@
         <p class="page-sub">共 {{ rows.length }} 笔应收</p>
       </div>
       <div class="rl-header-actions">
+        <van-button type="primary" size="small" icon="plus" @click="openAddReceivable">登记欠款</van-button>
         <van-button size="small" @click="exportCSV">导出</van-button>
       </div>
     </div>
+
+    <!-- 登记欠款（选单位 + 历史年度，金额默认该单位应收标准可修改） -->
+    <van-dialog
+      v-model:show="showRecvDialog"
+      :title="pageTitle + ' - 登记欠款'"
+      class="recv-dialog"
+      :show-confirm-button="false"
+      :show-cancel-button="false"
+    >
+      <div class="recv-form">
+        <van-field label="单位">
+          <template #input>
+            <select v-model.number="recvForm.partyId" class="recv-party-select">
+              <option :value="0" disabled>请选择单位</option>
+              <option v-for="p in recvPartyOptions" :key="p.id" :value="p.id">
+                {{ p.name }}{{ p.type === 'reinvest' ? '（再投资）' : '' }}
+              </option>
+            </select>
+          </template>
+        </van-field>
+        <van-field label="年度">
+          <template #input>
+            <select v-model="recvForm.year" class="recv-year-select">
+              <option v-for="y in recvYearOptions" :key="y" :value="y">{{ y }} 年</option>
+            </select>
+          </template>
+        </van-field>
+        <van-field v-model="recvForm.title" label="事由" placeholder="留空自动生成，如：2024年度土地流转费" />
+        <van-field v-model="recvForm.amount" label="金额" type="number" placeholder="默认该单位应收标准，可修改" inputmode="decimal" />
+        <van-field v-model="recvForm.note" label="备注" placeholder="可选" />
+        <div class="recv-form-actions">
+          <van-button size="small" @click="showRecvDialog = false">取消</van-button>
+          <van-button type="primary" size="small" :loading="savingRecv" @click="saveReceivable">保存</van-button>
+        </div>
+      </div>
+    </van-dialog>
 
     <div class="rl-stats">
       <div class="rl-stat"><div class="rl-stat-label">应收合计</div><div class="rl-stat-value">{{ fmt(total) }}</div></div>
@@ -62,7 +99,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, defineProps, inject } from 'vue'
+import { ref, computed, watch, onMounted, defineProps, inject } from 'vue'
+import { showToast, showDialog } from 'vant'
 import { api } from '../../../lib/http'
 
 // 统一从 API 响应里提取数组（兼容 data / data.items / data.Items / 直接数组）
@@ -79,7 +117,14 @@ interface Receivable {
   id: number; partyId: number; kind: string; recvYear?: number;
   amountCents: number; paidCents: number; outstandingCents: number;
 }
-interface Party { id: number; name: string }
+interface Party {
+  id: number
+  name: string
+  type?: string
+  expectedLandFeeCents?: number
+  expectedMgmtFeeCents?: number
+  expectedReturnCents?: number
+}
 
 const props = defineProps<{
   kind: string[]
@@ -190,19 +235,134 @@ async function load() {
   } finally { loading.value = false }
 }
 
+// ---- 登记欠款（按本页应收类别锁定可选单位类型与 recvKind） ----
+const kindTitleOf = (k: string) => ({
+  rent: '土地流转费', service: '流转管理费',
+  dividend: '投资收益', reinvest_dividend: '再投资收益',
+}[k] || k)
+
+// 本页 kinds 中，与某单位类型匹配时对应登记的 recvKind（null=该单位不适用本页）
+function recvKindOfParty(type?: string): string | null {
+  const t = type || ''
+  const ks = props.kind
+  if (ks.includes('rent') && t === 'flow') return 'rent'
+  if (ks.includes('service') && t === 'flow') return 'service'
+  if (ks.includes('dividend') && t === 'invest') return 'dividend'
+  if (ks.includes('reinvest_dividend') && t === 'reinvest') return 'reinvest_dividend'
+  return null
+}
+
+const showRecvDialog = ref(false)
+const savingRecv = ref(false)
+const curYear = new Date().getFullYear()
+// 年度下拉：不含本年度，往前 5 年（2026 → 2025…2021），用于补录历年欠款
+const recvYearOptions = computed(() => {
+  const arr: number[] = []
+  for (let y = curYear - 1; y >= curYear - 5; y--) arr.push(y)
+  return arr
+})
+const recvForm = ref({
+  partyId: 0,
+  year: curYear - 1,
+  title: '',
+  amount: '',
+  note: '',
+})
+const recvPartyOptions = computed(() =>
+  parties.value.filter(p => recvKindOfParty(p.type) !== null)
+)
+
+// 选中单位后，金额默认带出该单位本类应收标准（元），仍可修改
+watch(() => recvForm.value.partyId, (id: number) => {
+  if (!id) return
+  const p = parties.value.find(x => x.id === id)
+  if (!p) return
+  const kind = recvKindOfParty(p.type)
+  let cents = 0
+  if (kind === 'rent') cents = p.expectedLandFeeCents || 0
+  else if (kind === 'service') cents = p.expectedMgmtFeeCents || 0
+  else if (kind === 'dividend') cents = p.expectedReturnCents || 0
+  recvForm.value.amount = cents > 0 ? (cents / 100).toFixed(2) : ''
+})
+
+function openAddReceivable() {
+  recvForm.value = {
+    partyId: 0,
+    year: curYear - 1,
+    title: '',
+    amount: '',
+    note: '',
+  }
+  showRecvDialog.value = true
+}
+
+async function saveReceivable() {
+  const party = recvPartyOptions.value.find(x => x.id === recvForm.value.partyId)
+  if (!party) {
+    showToast('请选择单位')
+    return
+  }
+  const recvKind = recvKindOfParty(party.type)
+  if (!recvKind) {
+    showToast('该单位类型不适用于本页，请重新选择')
+    return
+  }
+  const amountCents = Math.round((parseFloat(recvForm.value.amount) || 0) * 100)
+  if (amountCents <= 0) {
+    showToast('请填写正确的金额')
+    return
+  }
+  const year = Number(recvForm.value.year)
+  if (!year || year <= 0) {
+    showToast('请选择年度')
+    return
+  }
+  let title = recvForm.value.title.trim()
+  if (!title) title = `${year}年度${kindTitleOf(recvKind)}`
+  // 同单位同类别同年度防重（与后端一致：流转费/管理费按年只允许一张单）
+  if (recvKind === 'rent' || recvKind === 'service') {
+    const dup = kindRows.value.some(r =>
+      r.kind === recvKind && r.partyId === party.id && (r.recvYear || 0) === year
+    )
+    if (dup) {
+      showDialog({
+        title: '重复登记',
+        message: `${party.name} ${year} 年度已登记过${kindTitleOf(recvKind)}欠款，请勿重复登记；如需调整金额，请先作废原单再重新登记。`,
+      })
+      return
+    }
+  }
+  savingRecv.value = true
+  try {
+    const payload: Record<string, unknown> = {
+      partyId: party.id, recvKind, recvYear: year, title, amountCents,
+    }
+    if (recvForm.value.note.trim()) payload.note = recvForm.value.note.trim()
+    await api.post('/receivables', payload)
+    showToast('登记成功')
+    showRecvDialog.value = false
+    await load()
+  } catch (e: any) {
+    showDialog({ title: '登记失败', message: e.message || '登记失败，请重试' })
+  } finally {
+    savingRecv.value = false
+  }
+}
+
 async function openCollect(r: Receivable) {
-  // 统一走快速记账通道：预填对应收款业务与该单位，金额默认该单待收
+  // 统一走快速记账通道：预填对应收款业务与该单位，并指定本单做单张收缴
   const bizKey: Record<string, string> = {
     rent: 'rent', dividend: 'dividend', reinvest_dividend: 'dividend', service: 'service',
   }
   openRecord({
     biz: bizKey[r.kind] || '',
     partyId: r.partyId,
+    recvId: r.id,
     amount: (r.outstandingCents / 100).toFixed(2),
   })
 }
 
-const openRecord = inject<(opts?: { biz?: string; partyId?: number; amount?: string }) => void>('openRecord', () => {})
+const openRecord = inject<(opts?: { biz?: string; partyId?: number; recvId?: number; amount?: string }) => void>('openRecord', () => {})
 
 onMounted(load)
 </script>
@@ -212,6 +372,14 @@ onMounted(load)
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
 .page-sub   { font-size: 12px; color: #969799; margin: 4px 0 0; }
 .rl-header-actions { display: flex; gap: 8px; align-items: center; }
+.recv-dialog { width: 90vw; max-width: 460px; }
+.recv-form { padding: 4px 0 0; }
+.recv-party-select,
+.recv-year-select {
+  width: 100%; height: 28px; border: 1px solid #dcdee0; border-radius: 6px;
+  font-size: 14px; color: #1f2329; background: #fff; outline: none; padding: 0 4px;
+}
+.recv-form-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 8px 16px 16px; }
 
 .rl-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;

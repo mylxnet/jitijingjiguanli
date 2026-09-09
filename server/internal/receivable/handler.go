@@ -65,6 +65,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.DELETE("/api/allocations/:id", h.DeleteAllocation)
 
 	r.POST("/api/receipts", h.CreateReceiptByReceivable)
+	r.POST("/api/party-collect", h.CollectByParty)
 
 	r.GET("/api/distributions-532", h.ListDistributions532)
 	r.POST("/api/distributions-532", h.SaveDistribution532)
@@ -224,6 +225,13 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 
 	updates := make(map[string]any)
+	// 流转企业年费变更时同步计提标准（rent=流转费 / service=管理费），
+	// 使引导页填写的预期费用可直接用于年度计提预览与结转（recv_standard 为唯一数据源）。
+	type stdSync struct {
+		kind   string
+		amount int64
+	}
+	var syncStds []stdSync
 	// 名称/类型不可编辑：仅允许同名同值（忽略），否则拒绝
 	if req.Name != nil && trimSpace(*req.Name) != p.Name {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -274,17 +282,33 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 	if req.ExpectedLandFeeCents != nil {
 		updates["expected_land_fee_cents"] = *req.ExpectedLandFeeCents
+		if p.Type == "flow" && *req.ExpectedLandFeeCents > 0 {
+			syncStds = append(syncStds, stdSync{kind: "rent", amount: *req.ExpectedLandFeeCents})
+		}
 	}
 	if req.MgmtFeePerMuCents != nil {
 		updates["mgmt_fee_per_mu_cents"] = *req.MgmtFeePerMuCents
 	}
 	if req.ExpectedMgmtFeeCents != nil {
 		updates["expected_mgmt_fee_cents"] = *req.ExpectedMgmtFeeCents
+		if p.Type == "flow" && *req.ExpectedMgmtFeeCents > 0 {
+			syncStds = append(syncStds, stdSync{kind: "service", amount: *req.ExpectedMgmtFeeCents})
+		}
 	}
 
 	if err := h.repo.UpdateParty(id, orgID, updates); err != nil {
 		h.internal(c, "更新往来单位失败")
 		return
+	}
+
+	// 同步计提标准（recv_standard，与「年度标准」入口共用一张表）
+	for _, s := range syncStds {
+		if _, err := h.repo.UpsertStandard(orgID, &AccrualStandard{
+			PartyID: id, RecvKind: s.kind, AmountCents: s.amount, Active: true,
+		}); err != nil {
+			h.internal(c, "同步计提标准失败")
+			return
+		}
 	}
 
 	if v, ok := updates["note"]; ok {
@@ -405,6 +429,24 @@ func (h *Handler) CreateReceivable(c *gin.Context) {
 	if year == 0 {
 		year = time.Now().Year()
 	}
+
+	// 年度性费用（流转费/管理费）同一单位同一类别同一年度只允许一张应收单，
+	// 与批量计提语义一致；防止手工补录历年欠款时重复建单。
+	if req.RecvKind == "rent" || req.RecvKind == "service" {
+		dup, err := h.repo.ReceivableExists(orgID, req.PartyID, year, req.RecvKind)
+		if err != nil {
+			h.internal(c, "查重失败")
+			return
+		}
+		if dup {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code:    "DUPLICATE_RECEIVABLE",
+				Message: fmt.Sprintf("该单位 %d 年度已登记过同类应收，请勿重复登记（如需改金额请作废原单后重录）", year),
+			})
+			return
+		}
+	}
+
 	var note *string
 	if req.Note != "" {
 		note = &req.Note
@@ -579,7 +621,7 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 	}
 	var req struct {
 		Year  int    `json:"year"`
-		Kind  string `json:"kind" binding:"required,oneof=rent dividend other"`
+		Kind  string `json:"kind" binding:"required,oneof=rent dividend service other"`
 		Title string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -595,6 +637,8 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 		switch req.Kind {
 		case "rent":
 			title = fmt.Sprintf("%d年度土地流转费", year)
+		case "service":
+			title = fmt.Sprintf("%d年度管理费", year)
 		case "dividend":
 			title = fmt.Sprintf("%d年度投资收益", year)
 		default:
@@ -1170,6 +1214,104 @@ func (h *Handler) CreateReceiptByReceivable(c *gin.Context) {
 		_ = h.clRepo.LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
 	}
 	platform.SuccessResponse(c, outcome.Receipt)
+}
+
+// CollectByParty 整额跨单收款：一笔现金收款自动按最早年度优先摊分核销该单位该类
+// 多张未结清应收单。金额超过待收合计会拒绝。
+// POST /api/party-collect  body {partyId, recvKind, amountCents, receiptDate?, note?}
+func (h *Handler) CollectByParty(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
+	var req struct {
+		PartyID     int64  `json:"partyId" binding:"required"`
+		RecvKind    string `json:"recvKind" binding:"required,oneof=rent dividend service reinvest_dividend"`
+		AmountCents int64  `json:"amountCents"`
+		ReceiptDate string `json:"receiptDate"`
+		Note        string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	if req.AmountCents <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+		return
+	}
+	party, err := h.repo.FindPartyByID(req.PartyID)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if party == nil || party.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "PARTY_NOT_FOUND", Message: "往来对象不存在",
+		})
+		return
+	}
+
+	date := trimSpace(req.ReceiptDate)
+	if date == "" {
+		date = time.Now().Format(dateLayout)
+	} else if !validDate(date) {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_DATE", Message: "收款日期格式应为 YYYY-MM-DD",
+		})
+		return
+	}
+
+	// 现金入账科目：自动定位/创建该单位同名收入二级（与单张核销一致）
+	cid, err := h.repo.ResolveIncomeCategory(orgID, req.PartyID, req.RecvKind)
+	if err != nil {
+		h.internal(c, "服务暂时不可用")
+		return
+	}
+	if cid == 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INCOME_CATEGORY_REQUIRED", Message: "无法确定收款入账科目，请先为该单位建立同名收入科目",
+		})
+		return
+	}
+
+	var note *string
+	if trimSpace(req.Note) != "" {
+		s := trimSpace(req.Note)
+		note = &s
+	}
+	outcome, err := h.repo.CollectOpenAcrossYears(orgID, req.PartyID, req.RecvKind, req.AmountCents, date, cid, note)
+	if err != nil {
+		var overTotal *ErrCollectOverTotal
+		switch {
+		case errors.Is(err, ErrNoOpenReceivable):
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "COLLECT_NO_OPEN", Message: "该单位该类别暂无可核销的应收欠款",
+			})
+			return
+		case errors.As(err, &overTotal):
+			platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+				Code:    "COLLECT_OVER_TOTAL",
+				Message: fmt.Sprintf("金额超过该单位待收合计 %s 元", fenText(overTotal.Total)),
+			})
+			return
+		default:
+			h.internal(c, "整额核销失败")
+			return
+		}
+	}
+
+	for _, it := range outcome.Items {
+		_ = h.clRepo.LogCreate(orgID, "receipt", it.ReceiptID)
+		if it.TxnID != nil {
+			_ = h.clRepo.LogCreate(orgID, "txn", *it.TxnID)
+		}
+	}
+	_ = h.clRepo.LogCreate(orgID, "party_collect", req.PartyID)
+	platform.SuccessResponse(c, outcome)
 }
 
 // ---------- 校验助手 ----------
