@@ -917,6 +917,19 @@ func (r *Repo) SetStandardActive(id, orgID int64, active bool) error {
 	return nil
 }
 
+// SetPartyStandardActive 按 单位+类别 启停标准（同步清零费用时停用，避免标准残留）。
+func (r *Repo) SetPartyStandardActive(orgID, partyID int64, recvKind string, active bool) error {
+	v := 0
+	if active {
+		v = 1
+	}
+	if _, err := r.db.Exec(`UPDATE recv_standard SET active=?, updated_at=? WHERE org_id=? AND party_id=? AND recv_kind=?`,
+		v, platform.Now(), orgID, partyID, recvKind); err != nil {
+		return fmt.Errorf("更新计提标准失败: %w", err)
+	}
+	return nil
+}
+
 // AccrueFromStandards 按启用标准一键结转年度应收（存在则跳过）。
 // 只有单位类型与标准类别匹配的才结转：rent/service→流转企业 flow；dividend→投资公司 invest。
 func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*BatchAccrueResult, error) {

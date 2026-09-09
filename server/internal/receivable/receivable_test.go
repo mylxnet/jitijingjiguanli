@@ -771,6 +771,135 @@ func TestPartyFeeSyncStandard(t *testing.T) {
 	if _, ok := rent[invest]; ok {
 		t.Errorf("invest 单位不应生成 rent 标准")
 	}
+
+	// invest 单位写年收益 → 应生成 dividend 标准
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(invest), map[string]any{"expectedReturnCents": 88000})
+	if w.Code != http.StatusOK {
+		t.Fatalf("更新 invest 年收益失败: %d %s", w.Code, w.Body.String())
+	}
+	div := stdBy("dividend")
+	if s, ok := div[invest]; !ok || s.Amount != 88000 || !s.Active {
+		t.Errorf("invest 的 dividend 标准应存在且金额=88000 启用，实际 %+v", div[invest])
+	}
+}
+
+// TestCreatePartySyncStandard 验证：新建单位时若带费用/年收益，同步生成计提标准。
+func TestCreatePartySyncStandard(t *testing.T) {
+	_, r := newEnv(t)
+	// flow 单位新建即带流转费/管理费 → 应生成 rent/service 标准
+	w := doJSON(t, r, "POST", "/api/parties", map[string]any{
+		"name": "丙公司", "type": "flow",
+		"expectedLandFeeCents": 120000, "expectedMgmtFeeCents": 20000,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("新建 flow 单位失败: %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Data struct{ ID int64 `json:"id"` } `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("解析新建单位失败: %v", err)
+	}
+	pid := created.Data.ID
+
+	var out struct {
+		Data []struct {
+			PartyID  int64 `json:"partyId"`
+			RecvKind string `json:"recvKind"`
+			AmountCents int64 `json:"amountCents"`
+		} `json:"data"`
+	}
+	w = doJSON(t, r, "GET", "/api/recv-standards?kind=rent", nil)
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析 rent 标准失败: %v", err)
+	}
+	found := false
+	for _, it := range out.Data {
+		if it.PartyID == pid && it.RecvKind == "rent" && it.AmountCents == 120000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("新建 flow 单位应自动生成 rent 标准 120000，返回 %+v", out.Data)
+	}
+}
+
+// TestFeeClearAndImplicit 验证全链路：按原始量(亩×每单价)隐式建/更新标准；费用清零自动停用标准。
+func TestFeeClearAndImplicit(t *testing.T) {
+	db, r := newEnv(t)
+	// 新建时只给原始量（亩数 + 每亩单价），不传总额 → 后端兜底计算并写标准
+	w := doJSON(t, r, "POST", "/api/parties", map[string]any{
+		"name": "丁公司", "type": "flow",
+		"landMu": 10, "landFeePerMuCents": 70000,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("新建 flow 单位失败: %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Data struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("解析新建单位失败: %v", err)
+	}
+	pid := created.Data.ID
+
+	// 单位表也应写入计算后的总额（10 亩 × 700 元/亩 = 7000 元 = 700000 分）
+	var expected int64
+	if err := db.QueryRow(`SELECT expected_land_fee_cents FROM party WHERE id=?`, pid).Scan(&expected); err != nil || expected != 700000 {
+		t.Fatalf("隐式创建应落库 expected_land_fee_cents=700000，实际 %d err=%v", expected, err)
+	}
+
+	// 只改亩数 → 自动重算并更新标准（20 亩 × 700 = 14000 元 = 1400000 分）
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(pid), map[string]any{"landMu": 20})
+	if w.Code != http.StatusOK {
+		t.Fatalf("更新亩数失败: %d %s", w.Code, w.Body.String())
+	}
+	if err := db.QueryRow(`SELECT expected_land_fee_cents FROM party WHERE id=?`, pid).Scan(&expected); err != nil || expected != 1400000 {
+		t.Fatalf("更新亩数后应落库 expected_land_fee_cents=1400000，实际 %d err=%v", expected, err)
+	}
+
+	stdActive := func(kind string) (bool, int64) {
+		t.Helper()
+		var active int
+		var amt int64
+		err := db.QueryRow(`SELECT active, amount_cents FROM recv_standard WHERE org_id=1 AND party_id=? AND recv_kind=?`, pid, kind).Scan(&active, &amt)
+		if err != nil {
+			t.Fatalf("查询标准 %s 失败: %v", kind, err)
+		}
+		return active == 1, amt
+	}
+
+	active, amt := stdActive("rent")
+	if !active || amt != 1400000 {
+		t.Errorf("rent 标准应启用且=1400000，实际 active=%v amt=%d", active, amt)
+	}
+
+	// 增加管理费 → service 标准出现
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(pid), map[string]any{"expectedMgmtFeeCents": 50000})
+	if w.Code != http.StatusOK {
+		t.Fatalf("设置管理费失败: %d %s", w.Code, w.Body.String())
+	}
+	active, amt = stdActive("service")
+	if !active || amt != 50000 {
+		t.Errorf("service 标准应启用且=50000，实际 active=%v amt=%d", active, amt)
+	}
+
+	// 管理费清零 → service 标准自动停用（不再参与计提预览）
+	w = doJSON(t, r, "PUT", "/api/parties/"+itoa(pid), map[string]any{"expectedMgmtFeeCents": 0})
+	if w.Code != http.StatusOK {
+		t.Fatalf("清零管理费失败: %d %s", w.Code, w.Body.String())
+	}
+	active, _ = stdActive("service")
+	if active {
+		t.Errorf("管理费清零后 service 标准应停用")
+	}
+	// rent 标准不受影响，仍启用
+	active, _ = stdActive("rent")
+	if !active {
+		t.Errorf("清零管理费不应影响 rent 标准")
+	}
 }
 
 // TestPartyCollectAcrossYears 验证整额跨单收款：一笔收款按最早年度优先摊分核销多张欠单，

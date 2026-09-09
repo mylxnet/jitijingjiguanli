@@ -29,6 +29,16 @@
     </div>
     <div v-else class="pl-list">
       <table class="pl-table">
+        <colgroup>
+          <col class="cg-name" />
+          <col class="cg-phone" />
+          <col class="cg-money" v-if="!hideInvestCol" />
+          <col class="cg-num" v-if="!hideLandCol" />
+          <col class="cg-contract" />
+          <col class="cg-owe" />
+          <col class="cg-note" />
+          <col class="cg-action" />
+        </colgroup>
         <thead>
           <tr class="pl-tr-head">
             <th class="pl-th">单位名称</th>
@@ -36,9 +46,9 @@
             <th class="pl-th" v-if="!hideInvestCol">投资金额</th>
             <th class="pl-th" v-if="!hideLandCol">流转面积</th>
             <th class="pl-th">是否有合同</th>
-            <th class="pl-th pl-th-num">欠款合计</th>
+            <th class="pl-th">欠款合计</th>
             <th class="pl-th">备注</th>
-            <th class="pl-th pl-th-action">操作</th>
+            <th class="pl-th">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -47,21 +57,21 @@
               <span class="pl-name-link">{{ p.name }}</span>
               <span class="pl-tag" :class="'tag-' + (p.type || 'other')">{{ partyTypeLabel(p.type) }}</span>
             </td>
-            <td class="pl-td">{{ p.contactPhone || '—' }}</td>
-            <td class="pl-td" v-if="!hideInvestCol">
+            <td class="pl-td pl-td-phone">{{ p.contactPhone || '—' }}</td>
+            <td class="pl-td pl-td-money" v-if="!hideInvestCol">
               <template v-if="p.type === 'invest' || p.type === 'reinvest'">{{ fmtYuan(p.investAmountCents) }}</template>
               <span v-else class="pl-na">—</span>
             </td>
-            <td class="pl-td" v-if="!hideLandCol">
+            <td class="pl-td pl-td-num" v-if="!hideLandCol">
               <template v-if="p.type === 'flow'">{{ p.landMu ?? p.areaMu ?? 0 }} 亩</template>
               <span v-else class="pl-na">—</span>
             </td>
-            <td class="pl-td">
+            <td class="pl-td pl-td-contract">
               <span class="pl-has-contract" :class="{ has: contractCount(p.id) > 0 }">
                 {{ contractCount(p.id) > 0 ? '有 ' + contractCount(p.id) + ' 份' : '无' }}
               </span>
             </td>
-            <td class="pl-td pl-th-num" :class="{ 'pl-owe': (p.outstandingCents || 0) > 0 }">
+            <td class="pl-td pl-td-owe" :class="{ 'pl-owe': (p.outstandingCents || 0) > 0 }">
               {{ fmtYuan(p.outstandingCents) }}
             </td>
             <td class="pl-td pl-td-note">{{ p.note || '—' }}</td>
@@ -542,19 +552,33 @@ onMounted(load)
 .pl-search { padding: 0; }
 
 .pl-list { overflow-x: auto; }
-.pl-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
+.pl-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
 .pl-th {
   background: #f7f8fa; color: #969799; font-weight: 500; font-size: 11px;
-  padding: 8px 6px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ebedf0;
+  padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ebedf0;
   position: sticky; top: 0; z-index: 1;
 }
+/* 列宽由 colgroup 控制：隐藏列（投资金额/流转面积）随筛选移除后，其余列自动等比填充 */
+.pl-table col.cg-name     { width: 20%; }
+.pl-table col.cg-phone    { width: 11%; }
+.pl-table col.cg-money    { width: 11%; }
+.pl-table col.cg-num      { width: 9%; }
+.pl-table col.cg-contract { width: 9%; }
+.pl-table col.cg-owe      { width: 11%; }
+.pl-table col.cg-note     { width: 22%; }
+.pl-table col.cg-action   { width: 7%; }
 .pl-tr { cursor: pointer; transition: background .12s; }
 .pl-tr:hover { background: #f7f8fa; }
-.pl-td { padding: 8px 6px; border-bottom: 1px solid #f2f3f5; color: #1f2329; vertical-align: middle; }
-.pl-td-name { white-space: nowrap; }
+.pl-td { padding: 8px 10px; border-bottom: 1px solid #f2f3f5; color: #1f2329; vertical-align: middle; }
+.pl-th:last-child { text-align: center; }
+.pl-td-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-name-link { font-weight: 600; font-size: 13px; color: #1989fa; cursor: pointer; margin-right: 6px; }
 .pl-name-link:hover { text-decoration: underline; }
-.pl-th-action, .pl-td-action { text-align: center; width: 60px; }
+.pl-td-phone { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-td-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pl-td-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pl-td-contract { white-space: nowrap; }
+.pl-td-owe { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-name { font-weight: 600; font-size: 13px; color: #1f2329; margin-right: 6px; }
 .pl-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
 .tag-invest   { background: #e6f1ff; color: #1989fa; }
@@ -562,11 +586,11 @@ onMounted(load)
 .tag-flow     { background: #fff2e6; color: #ff6034; }
 .tag-other    { background: #f2f3f5; color: #646566; }
 .pl-na { color: #c8c9cc; }
-.pl-td-note { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #969799; }
-.pl-th-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pl-td-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #969799; }
 .pl-owe { color: #ee0a24; font-weight: 600; }
 .pl-has-contract { color: #c8c9cc; }
 .pl-has-contract.has { color: #07c160; font-weight: 600; }
+.pl-td-action { text-align: center; }
 .empty { padding: 40px 0; }
 
 /* 表单样式 */

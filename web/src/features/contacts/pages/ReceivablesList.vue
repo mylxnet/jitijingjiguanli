@@ -413,15 +413,21 @@ onMounted(load)
 
 .rl-list { margin-top: 4px; }
 .rl-row-right { display: flex; align-items: center; gap: 10px; }
-.rl-amounts { text-align: right; min-width: 118px; }
-.rl-amount { font-weight: 600; color: #1f2329; font-size: 14px; }
-.rl-progress { width: 112px; height: 9px; background: #f0f1f2; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
+.rl-row-right .van-button { min-width: 64px; }
+/* 金额区固定宽度，确保各行进度条起点与右侧按钮对齐一致 */
+.rl-amounts { text-align: right; width: 224px; flex: 0 0 auto; }
+.rl-amount { font-weight: 600; color: #1f2329; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-progress { width: 224px; height: 9px; background: #f0f1f2; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
 .rl-progress-bar { height: 100%; transition: width .3s; }
-/* 进度条按收缴状态着色：未收红 / 部分收橙 / 结清绿 */
+/* 进度条着色：未收红 / 部分收橙 / 结清绿 */
 .rl-progress-bar.st-open    { background: #ee0a24; }
 .rl-progress-bar.st-partial { background: #ff976a; }
 .rl-progress-bar.st-closed  { background: var(--jade, #07c160); }
-.rl-amount-sub { font-size: 11px; color: #969799; }
+.rl-amount-sub { font-size: 11px; color: #969799; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  .rl-amounts { width: 150px; }
+  .rl-progress { width: 150px; }
+}
 .empty { padding: 40px 0; }
 
 /* 年度计提预览弹窗 */

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -166,25 +167,92 @@ func (h *Handler) CreateParty(c *gin.Context) {
 	if req.Note != "" {
 		note = &req.Note
 	}
+	// 费用/年收益解析：显式总额优先；未提供时按原始量（亩数×每单价 / 本金×收益率）兜底计算。
+	// 仅计算为正才写入（0 不建单位同名费用、不写标准）。
+	landFee := req.ExpectedLandFeeCents
+	if landFee <= 0 && req.LandMu > 0 && req.LandFeePerMuCents > 0 {
+		landFee = int64(math.Round(req.LandMu * float64(req.LandFeePerMuCents)))
+	}
+	mgmtFee := req.ExpectedMgmtFeeCents
+	if mgmtFee <= 0 && req.LandMu > 0 && req.MgmtFeePerMuCents > 0 {
+		mgmtFee = int64(math.Round(req.LandMu * float64(req.MgmtFeePerMuCents)))
+	}
+	retFee := req.ExpectedReturnCents
+	if retFee <= 0 && req.InvestAmountCents > 0 && req.ReturnRateBps > 0 {
+		retFee = req.InvestAmountCents * int64(req.ReturnRateBps) / 10000
+	}
 	p := &Party{
 		OrgID: orgID, Name: req.Name, Type: ptype,
 		ContactPhone: trimSpace(req.ContactPhone), AreaMu: req.AreaMu, Note: note,
-		InvestAmountCents:   req.InvestAmountCents,
-		ReturnRateBps:       req.ReturnRateBps,
-		ExpectedReturnCents: req.ExpectedReturnCents,
-		LandMu:              req.LandMu,
-		LandFeePerMuCents:   req.LandFeePerMuCents,
-		ExpectedLandFeeCents: req.ExpectedLandFeeCents,
-		MgmtFeePerMuCents:   req.MgmtFeePerMuCents,
-		ExpectedMgmtFeeCents: req.ExpectedMgmtFeeCents,
+		InvestAmountCents:    req.InvestAmountCents,
+		ReturnRateBps:        req.ReturnRateBps,
+		ExpectedReturnCents:  retFee,
+		LandMu:               req.LandMu,
+		LandFeePerMuCents:    req.LandFeePerMuCents,
+		ExpectedLandFeeCents: landFee,
+		MgmtFeePerMuCents:    req.MgmtFeePerMuCents,
+		ExpectedMgmtFeeCents: mgmtFee,
 	}
 	created, err := h.repo.CreateParty(p)
 	if err != nil {
 		h.internal(c, "新建往来单位失败")
 		return
 	}
+	// 新建单位带正费用/年收益 → 同步写入计提标准（供年度计提预览与结转）
+	var landPtr, mgmtPtr, retPtr *int64
+	if landFee > 0 {
+		v := landFee
+		landPtr = &v
+	}
+	if mgmtFee > 0 {
+		v := mgmtFee
+		mgmtPtr = &v
+	}
+	if retFee > 0 {
+		v := retFee
+		retPtr = &v
+	}
+	if err := h.applyFeeStandards(orgID, created.ID, ptype, landPtr, mgmtPtr, retPtr); err != nil {
+		h.internal(c, "同步计提标准失败")
+		return
+	}
 	h.clRepo.LogCreate(orgID, "party", created.ID)
 	platform.SuccessResponse(c, created)
+}
+
+// applyFeeStandards 把单位费用/年收益同步到计提标准，pointer 语义：
+//   - nil      → 该项本次未提供，不处理
+//   - 值 > 0   → upsert 标准并启用（flow→rent/service；invest/reinvest→dividend）
+//   - 值 == 0  → 停用对应标准（费用清零时避免标准残留）
+func (h *Handler) applyFeeStandards(orgID, partyID int64, ptype string, land, mgmt, ret *int64) error {
+	type target struct {
+		kind string
+		v    *int64
+	}
+	var list []target
+	if ptype == "flow" {
+		list = append(list, target{"rent", land}, target{"service", mgmt})
+	}
+	if ptype == "invest" || ptype == "reinvest" {
+		list = append(list, target{"dividend", ret})
+	}
+	for _, t := range list {
+		if t.v == nil {
+			continue
+		}
+		if *t.v > 0 {
+			if _, err := h.repo.UpsertStandard(orgID, &AccrualStandard{
+				PartyID: partyID, RecvKind: t.kind, AmountCents: *t.v, Active: true,
+			}); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := h.repo.SetPartyStandardActive(orgID, partyID, t.kind, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdateParty 更新往来单位（名称/备注）。
@@ -225,13 +293,6 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 
 	updates := make(map[string]any)
-	// 流转企业年费变更时同步计提标准（rent=流转费 / service=管理费），
-	// 使引导页填写的预期费用可直接用于年度计提预览与结转（recv_standard 为唯一数据源）。
-	type stdSync struct {
-		kind   string
-		amount int64
-	}
-	var syncStds []stdSync
 	// 名称/类型不可编辑：仅允许同名同值（忽略），否则拒绝
 	if req.Name != nil && trimSpace(*req.Name) != p.Name {
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
@@ -282,18 +343,63 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 	}
 	if req.ExpectedLandFeeCents != nil {
 		updates["expected_land_fee_cents"] = *req.ExpectedLandFeeCents
-		if p.Type == "flow" && *req.ExpectedLandFeeCents > 0 {
-			syncStds = append(syncStds, stdSync{kind: "rent", amount: *req.ExpectedLandFeeCents})
-		}
 	}
 	if req.MgmtFeePerMuCents != nil {
 		updates["mgmt_fee_per_mu_cents"] = *req.MgmtFeePerMuCents
 	}
 	if req.ExpectedMgmtFeeCents != nil {
 		updates["expected_mgmt_fee_cents"] = *req.ExpectedMgmtFeeCents
-		if p.Type == "flow" && *req.ExpectedMgmtFeeCents > 0 {
-			syncStds = append(syncStds, stdSync{kind: "service", amount: *req.ExpectedMgmtFeeCents})
+	}
+
+	// ---- 费用/年收益 → 计提标准解析：显式总额优先；未显式时按原始量（亩×每单价 / 本金×收益率）兜底计算 ----
+	var landPtr, mgmtPtr, retPtr *int64
+	if req.ExpectedLandFeeCents != nil {
+		v := *req.ExpectedLandFeeCents
+		landPtr = &v
+	} else if req.LandMu != nil || req.LandFeePerMuCents != nil {
+		mu := p.LandMu
+		if req.LandMu != nil {
+			mu = *req.LandMu
 		}
+		fee := p.LandFeePerMuCents
+		if req.LandFeePerMuCents != nil {
+			fee = *req.LandFeePerMuCents
+		}
+		v := int64(math.Round(mu * float64(fee)))
+		updates["expected_land_fee_cents"] = v
+		landPtr = &v
+	}
+	if req.ExpectedMgmtFeeCents != nil {
+		v := *req.ExpectedMgmtFeeCents
+		mgmtPtr = &v
+	} else if req.MgmtFeePerMuCents != nil {
+		mu := p.LandMu
+		if req.LandMu != nil {
+			mu = *req.LandMu
+		}
+		fee := p.MgmtFeePerMuCents
+		if req.MgmtFeePerMuCents != nil {
+			fee = *req.MgmtFeePerMuCents
+		}
+		v := int64(math.Round(mu * float64(fee)))
+		updates["expected_mgmt_fee_cents"] = v
+		mgmtPtr = &v
+	}
+	if req.ExpectedReturnCents != nil {
+		v := *req.ExpectedReturnCents
+		retPtr = &v
+	} else if req.InvestAmountCents != nil || req.ReturnRateBps != nil {
+		amt := p.InvestAmountCents
+		if req.InvestAmountCents != nil {
+			amt = *req.InvestAmountCents
+		}
+		bps := p.ReturnRateBps
+		if req.ReturnRateBps != nil {
+			bps = *req.ReturnRateBps
+		}
+		v := amt * int64(bps) / 10000
+		updates["expected_return_cents"] = v
+		retPtr = &v
 	}
 
 	if err := h.repo.UpdateParty(id, orgID, updates); err != nil {
@@ -301,14 +407,10 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 		return
 	}
 
-	// 同步计提标准（recv_standard，与「年度标准」入口共用一张表）
-	for _, s := range syncStds {
-		if _, err := h.repo.UpsertStandard(orgID, &AccrualStandard{
-			PartyID: id, RecvKind: s.kind, AmountCents: s.amount, Active: true,
-		}); err != nil {
-			h.internal(c, "同步计提标准失败")
-			return
-		}
+	// 同步计提标准：>0 启用/更新；0 停用对应类别
+	if err := h.applyFeeStandards(orgID, id, p.Type, landPtr, mgmtPtr, retPtr); err != nil {
+		h.internal(c, "同步计提标准失败")
+		return
 	}
 
 	if v, ok := updates["note"]; ok {

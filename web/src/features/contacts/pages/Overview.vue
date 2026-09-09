@@ -113,12 +113,14 @@ function extractList(r: any) {
 }
 
 interface Party { id: number; name: string; type: string }
-interface Receivable { kind: string; amountCents: number; paidCents: number }
+interface Receivable { kind: string; recvYear?: number; amountCents: number; paidCents: number }
 interface Contract { id: number }
 
 const parties = ref<Party[]>([])
 const receivables = ref<Receivable[]>([])
 const contracts = ref<Contract[]>([])
+
+const curYear = new Date().getFullYear()
 
 onMounted(async () => {
   try {
@@ -128,18 +130,24 @@ onMounted(async () => {
       api.get<any>('/contracts'),
     ])
     parties.value = extractList(p)
-    receivables.value = extractList(r)
+    // 后端字段为 recvKind，前端统一归一化为 kind 使用
+    receivables.value = (extractList(r) || []).map((it: any) => ({ ...it, kind: it.recvKind }))
     contracts.value = extractList(c)
   } catch {}
 })
 
 const fmtYuan = (cents: number) => '¥' + (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2 })
 
-const totalReceivable = computed(() => receivables.value.reduce((s, r) => s + r.amountCents, 0))
-const totalPaid       = computed(() => receivables.value.reduce((s, r) => s + r.paidCents, 0))
-const dividendCount   = computed(() => receivables.value.filter(r => r.kind === 'dividend' || r.kind === 'reinvest_dividend').length)
-const rentCount       = computed(() => receivables.value.filter(r => r.kind === 'rent').length)
-const serviceCount    = computed(() => receivables.value.filter(r => r.kind === 'service').length)
+// 概览金额与笔数一律按「本年度」计提/应收口径，不计历史年度欠款
+const yearReceivables = computed(() =>
+  receivables.value.filter(r => (r.recvYear || 0) === curYear)
+)
+
+const totalReceivable = computed(() => yearReceivables.value.reduce((s, r) => s + r.amountCents, 0))
+const totalPaid       = computed(() => yearReceivables.value.reduce((s, r) => s + r.paidCents, 0))
+const dividendCount   = computed(() => yearReceivables.value.filter(r => r.kind === 'dividend' || r.kind === 'reinvest_dividend').length)
+const rentCount       = computed(() => yearReceivables.value.filter(r => r.kind === 'rent').length)
+const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind === 'service').length)
 </script>
 
 <style scoped>
