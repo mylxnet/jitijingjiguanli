@@ -14,6 +14,12 @@
       >
         <span class="side-nav-icon">{{ item.iconChar }}</span>
         <span>{{ item.label }}</span>
+        <span
+          v-if="item.path === '/contacts' && issueCount > 0"
+          class="side-badge"
+          :title="'有 ' + issueCount + ' 个单位数据缺失，点击查看'"
+          @click.stop="showIssues = true"
+        >{{ badgeText }}</span>
       </a>
     </div>
     <div class="side-foot">
@@ -27,13 +33,18 @@
       </a>
       <div class="side-version">v{{ APP_VERSION }}</div>
     </div>
+
+    <!-- 往来单位数据缺失清单（仅桌面，点击角标打开） -->
+    <ContactIssuesDialog v-model:show="showIssues" />
   </nav>
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../features/auth/store'
+import { useContactIssues } from '../features/contacts/useContactIssues'
+import ContactIssuesDialog from '../features/contacts/ContactIssuesDialog.vue'
 import { APP_VERSION } from '../version'
 
 const route = useRoute()
@@ -41,6 +52,14 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const openRecord = inject<() => void>('openRecord', () => {})
+
+// 往来单位「数据缺失」角标：进入应用与每次路由切换后刷新
+const { issueCount, refresh: refreshIssues } = useContactIssues()
+const showIssues = ref(false)
+const badgeText = computed(() => (issueCount.value > 99 ? '99+' : String(issueCount.value)))
+
+onMounted(refreshIssues)
+watch(() => route.path, refreshIssues)
 
 const orgName = computed(() => localStorage.getItem('jt_org_name') || '组织')
 
@@ -151,6 +170,28 @@ async function onLogout() {
   flex-shrink: 0;
   background: rgba(255, 255, 255, .1);
   border-radius: 6px;
+}
+
+/* 往来单位「数据缺失」角标（点击打开缺失清单） */
+.side-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ee0a24;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.side-badge:hover {
+  background: #d80a1f;
 }
 
 .side-link.active .side-nav-icon {

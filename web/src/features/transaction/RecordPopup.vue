@@ -97,7 +97,11 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../../lib/http'
 import { formatFen, todayStr, recvKindLabel } from '../../types/api'
 import { showToast } from 'vant'
+import { useContactIssues } from '../contacts/useContactIssues'
 import type { Category, Party, Receivable, ReceivableListResponse, RecvKind, ApiResponse, Transaction } from '../../types/api'
+
+// 记账会改动单位投资本金，同步刷新侧边栏「数据缺失」角标
+const { refresh: refreshIssues } = useContactIssues()
 
 const emit = defineEmits<{
   saved: []
@@ -325,6 +329,7 @@ async function syncInvestedAmount(amountCents: number) {
     const p = list.find(x => x.name === compName && ((x.types && x.types.includes('invest')) || x.type === 'invest'))
     if (!p) return
     await api.put(`/parties/${p.id}`, { investAmountCents: (p.investAmountCents || 0) + amountCents })
+    refreshIssues()
   } catch {
     // 投资额同步失败不阻断记账（科目余额为权威口径）
   }

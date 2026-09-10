@@ -176,8 +176,14 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../../../lib/http'
 import { showToast, showDialog } from 'vant'
+import { useContactIssues } from '../useContactIssues'
+
+const route = useRoute()
+const router = useRouter()
+const { refresh: refreshIssues } = useContactIssues()
 
 // 统一从 API 响应里提取数组（兼容 data / data.items / 直接数组）
 function extractList(r: any) {
@@ -490,6 +496,7 @@ async function saveParty() {
     }
     showPartyDialog.value = false
     await load()
+    refreshIssues()
   } catch (e: any) {
     showDialog({ title: '保存失败', message: e.message || '保存失败，请重试' })
   }
@@ -533,7 +540,22 @@ async function handleInlineUpload(e: Event) {
   }
 }
 
-onMounted(load)
+// 从「数据缺失」清单跳进来（?editParty=<id>）时，自动打开该单位编辑弹窗，并定位到「年度数据」页
+function handleEditQuery() {
+  const id = Number(route.query.editParty || 0)
+  if (id <= 0) return
+  const p = parties.value.find(x => x.id === id)
+  if (!p) return
+  openEdit(p)
+  formTab.value = 'data'
+  router.replace({ path: '/contacts/parties' })
+}
+
+onMounted(async () => {
+  await load()
+  handleEditQuery()
+})
+watch(() => route.query.editParty, handleEditQuery)
 </script>
 
 <style scoped>
