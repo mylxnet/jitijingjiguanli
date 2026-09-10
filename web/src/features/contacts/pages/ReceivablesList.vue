@@ -281,7 +281,7 @@ watch(() => recvForm.value.partyId, (id: number) => {
   let cents = 0
   if (kind === 'rent') cents = p.expectedLandFeeCents || 0
   else if (kind === 'service') cents = p.expectedMgmtFeeCents || 0
-  else if (kind === 'dividend') cents = p.expectedReturnCents || 0
+  else if (kind === 'dividend' || kind === 'reinvest_dividend') cents = p.expectedReturnCents || 0
   recvForm.value.amount = cents > 0 ? (cents / 100).toFixed(2) : ''
 })
 

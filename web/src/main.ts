@@ -17,7 +17,8 @@ app.use(Vant)
 
 setOnUnauthorized(() => {
   const auth = useAuthStore(pinia)
-  auth.isLoggedIn = false
+  // 会话失效：同时清掉 orgId，避免重新登录后被旧组织的引导标记判定影响
+  auth.clearAuth()
   router.push('/login')
 })
 

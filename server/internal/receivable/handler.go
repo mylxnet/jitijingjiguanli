@@ -233,8 +233,12 @@ func (h *Handler) applyFeeStandards(orgID, partyID int64, ptype string, land, mg
 	if ptype == "flow" {
 		list = append(list, target{"rent", land}, target{"service", mgmt})
 	}
-	if ptype == "invest" || ptype == "reinvest" {
+	// 长期投资 → dividend（投资收益）；再投资 → reinvest_dividend（再投资收益），两者独立口径
+	if ptype == "invest" {
 		list = append(list, target{"dividend", ret})
+	}
+	if ptype == "reinvest" {
+		list = append(list, target{"reinvest_dividend", ret})
 	}
 	for _, t := range list {
 		if t.v == nil {
@@ -723,7 +727,7 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 	}
 	var req struct {
 		Year  int    `json:"year"`
-		Kind  string `json:"kind" binding:"required,oneof=rent dividend service other"`
+		Kind  string `json:"kind" binding:"required,oneof=rent dividend reinvest_dividend service other"`
 		Title string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -743,6 +747,8 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 			title = fmt.Sprintf("%d年度管理费", year)
 		case "dividend":
 			title = fmt.Sprintf("%d年度投资收益", year)
+		case "reinvest_dividend":
+			title = fmt.Sprintf("%d年度再投资收益", year)
 		default:
 			title = fmt.Sprintf("%d年度计提", year)
 		}

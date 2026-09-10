@@ -1,7 +1,7 @@
 <!--
   年度计提 · 引导式分步向导
-  分四步：①土地流转费 → ②投资收益 → ③管理费 → ④确认汇总
-  每一步从单位基本信息自动带出建议金额，可修改、可跳过，最后汇总一次提交。
+  分五步：①土地流转费 → ②投资收益 → ③再投资收益 → ④管理费 → ⑤确认汇总
+  每一步从单位计提标准自动带出建议金额，可修改、可跳过，最后汇总一次提交。
 -->
 <template>
   <div class="aw-page">
@@ -17,8 +17,8 @@
     <div class="aw-body">
       <van-loading v-if="loading" />
 
-      <!-- 前 3 步：某分类的单位明细 -->
-      <template v-else-if="step < 3 && currentGroup">
+      <!-- 分类步骤：某分类的单位明细 -->
+      <template v-else-if="step < groups.length && currentGroup">
         <div class="aw-group-head">
           <span class="aw-group-label">{{ currentGroup.label }}</span>
           <span class="aw-group-count">共 {{ currentGroup.items.length }} 条 · 待计提 {{ pendingOf(currentGroup).length }} 条</span>
@@ -76,7 +76,7 @@
     <div class="aw-footer">
       <van-button v-if="step > 0" size="small" @click="step--">上一步</van-button>
       <van-button
-        v-if="step < 3"
+        v-if="step < groups.length"
         type="primary" plain size="small" style="margin-left:auto"
         @click="step++">下一步</van-button>
       <van-button
@@ -96,7 +96,7 @@ import { api } from '../../../lib/http'
 interface It { kind: string; title: string; partyId: number; partyName: string; amountCents: number; exists: boolean; _amountCents: number }
 interface Group { key: string; label: string; items: It[] }
 
-const STEPS = ['土地流转费', '投资收益', '管理费', '确认汇总']
+const STEPS = ['土地流转费', '投资收益', '再投资收益', '管理费', '确认汇总']
 const year = new Date().getFullYear()
 
 const step = ref(0)
@@ -104,12 +104,13 @@ const loading = ref(true)
 const submitting = ref(false)
 
 const groups = ref<Group[]>([
-  { key: 'rent',     label: '土地流转费', items: [] },
-  { key: 'dividend', label: '投资收益',   items: [] },
-  { key: 'service',  label: '管理费',     items: [] },
+  { key: 'rent',               label: '土地流转费', items: [] },
+  { key: 'dividend',           label: '投资收益',   items: [] },
+  { key: 'reinvest_dividend',  label: '再投资收益', items: [] },
+  { key: 'service',            label: '管理费',     items: [] },
 ])
 
-const currentGroup = computed(() => step.value < 3 ? groups.value[step.value] : null)
+const currentGroup = computed(() => step.value < groups.value.length ? groups.value[step.value] : null)
 
 async function load() {
   loading.value = true

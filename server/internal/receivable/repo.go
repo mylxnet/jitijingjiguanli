@@ -285,7 +285,7 @@ func (r *Repo) ListReceivables(orgID int64, partyID *int64, year int, kind, stat
 		where += " AND r.recv_year = ?"
 		args = append(args, year)
 	}
-	if kind == "rent" || kind == "dividend" || kind == "other" {
+	if kind != "" {
 		where += " AND r.recv_kind = ?"
 		args = append(args, kind)
 	}
@@ -931,9 +931,10 @@ func (r *Repo) SetPartyStandardActive(orgID, partyID int64, recvKind string, act
 }
 
 // AccrueFromStandards 按启用标准一键结转年度应收（存在则跳过）。
-// 只有单位类型与标准类别匹配的才结转：rent/service→流转企业 flow；dividend→投资公司 invest。
+// 只有单位类型与标准类别匹配的才结转：rent/service→流转企业 flow；dividend→投资公司 invest；
+// reinvest_dividend→再投资单位 reinvest；other→其他单位。
 func (r *Repo) AccrueFromStandards(orgID int64, year int, kind, title string) (*BatchAccrueResult, error) {
-	partyType := map[string]string{"rent": "flow", "service": "flow", "dividend": "invest", "other": "other"}[kind]
+	partyType := map[string]string{"rent": "flow", "service": "flow", "dividend": "invest", "reinvest_dividend": "reinvest", "other": "other"}[kind]
 	if partyType == "" {
 		return &BatchAccrueResult{}, nil
 	}
@@ -984,6 +985,7 @@ func (r *Repo) PreviewAccrueAuto(orgID int64, year int) (*PreviewAccrueResult, e
 		   AND ((s.recv_kind = 'rent'    AND p.type = 'flow')
 		     OR (s.recv_kind = 'service' AND p.type = 'flow')
 		     OR (s.recv_kind = 'dividend' AND p.type = 'invest')
+		     OR (s.recv_kind = 'reinvest_dividend' AND p.type = 'reinvest')
 		     OR (s.recv_kind = 'other'   AND p.type = 'other'))
 		 ORDER BY p.name, s.recv_kind`, orgID,
 	)
@@ -1036,6 +1038,8 @@ func (r *Repo) PreviewAccrueAuto(orgID int64, year int) (*PreviewAccrueResult, e
 			title = fmt.Sprintf("%d年度土地流转费", year)
 		case "dividend":
 			title = fmt.Sprintf("%d年度投资收益", year)
+		case "reinvest_dividend":
+			title = fmt.Sprintf("%d年度再投资收益", year)
 		case "service":
 			title = fmt.Sprintf("%d年度管理费", year)
 		}

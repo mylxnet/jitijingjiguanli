@@ -209,21 +209,36 @@
                 <td>50%</td>
                 <td class="num">{{ fmt(distData.reinvestCents) }}</td>
                 <td class="num">{{ distPct(distData.reinvestCents) }}%</td>
-                <td><van-button size="mini" plain @click="recordDistExpense('再投资')">记账</van-button></td>
+                <td>
+                  <van-button size="mini" plain :disabled="reinvestStat.remain <= 0"
+                    @click="recordDistExpense('再投资')">
+                    {{ reinvestStat.remain <= 0 ? '已分配完' : '记账' }}
+                  </van-button>
+                </td>
               </tr>
               <tr>
                 <td>成员分红/福利</td>
                 <td>30%</td>
                 <td class="num">{{ fmt(distData.dividendCents) }}</td>
                 <td class="num">{{ distPct(distData.dividendCents) }}%</td>
-                <td><van-button size="mini" plain @click="recordDistExpense('成员分红')">记账</van-button></td>
+                <td>
+                  <van-button size="mini" plain :disabled="dividendStat.remain <= 0"
+                    @click="recordDistExpense('成员分红')">
+                    {{ dividendStat.remain <= 0 ? '已分配完' : '记账' }}
+                  </van-button>
+                </td>
               </tr>
               <tr>
                 <td>管理公益支出</td>
                 <td>20%</td>
                 <td class="num">{{ fmt(distData.welfareCents) }}</td>
                 <td class="num">{{ distPct(distData.welfareCents) }}%</td>
-                <td><van-button size="mini" plain @click="recordDistExpense('公益支出')">记账</van-button></td>
+                <td>
+                  <van-button size="mini" plain :disabled="welfareStat.remain <= 0"
+                    @click="recordDistExpense('公益支出')">
+                    {{ welfareStat.remain <= 0 ? '已分配完' : '记账' }}
+                  </van-button>
+                </td>
               </tr>
             </template>
           </tbody>
@@ -234,7 +249,7 @@
       <div class="ip-table-wrap">
         <table class="ip-table">
           <thead><tr>
-            <th>支出项目</th><th>类别</th><th class="num">金额</th><th>日期</th>
+            <th>时间</th><th>支出项目</th><th>类别</th><th class="num">金额</th>
           </tr></thead>
           <tbody>
             <tr v-if="!distData">
@@ -242,10 +257,10 @@
             </tr>
             <template v-if="distData">
               <tr v-for="e in distExpenses" :key="e.id">
+                <td>{{ e.date }}</td>
                 <td>{{ e.itemName }}</td>
                 <td>{{ e.category }}</td>
                 <td class="num">{{ fmt(e.amountCents) }}</td>
-                <td>{{ e.date }}</td>
               </tr>
               <tr v-if="distExpenses.length === 0">
                 <td colspan="4" class="empty-cell">暂无支出记录</td>
@@ -386,10 +401,12 @@ function buildItems(catName: string) {
   return cat.children.map(c => {
     const p = matchParty(c.name)
     const rateBps = p?.returnRateBps || 0
-    const expectedReturn = p?.expectedReturnCents || Math.round((c.balanceCents || 0) * rateBps / 10000)
+    // 长期投资科目按"支出"记账，余额为负；展示统一取投出口径（绝对值）
+    const balanceCents = Math.abs(c.balanceCents || 0)
+    const expectedReturn = p?.expectedReturnCents || Math.round(balanceCents * rateBps / 10000)
     return {
       id: c.id, name: c.name,
-      balanceCents: c.balanceCents || 0,
+      balanceCents,
       ratePct: (rateBps / 100).toFixed(2), rateBps,
       expectedReturnCents: expectedReturn,
     }
@@ -487,18 +504,22 @@ const distInvested = reactive({ reinvest: 0, dividend: 0, welfare: 0 })
 async function loadDistInvested() {
   distInvested.reinvest = 0
   distInvested.dividend = 0
-  // welfare 直接复用 distExpenses（公益支出一级/二级归口流水），无需重复请求
-  distInvested.welfare = distExpenses.value.reduce((s, e) => s + e.amountCents, 0)
+  // welfare 复用已按年度加载的支出记录（仅公益支出类别）
+  distInvested.welfare = distExpenses.value
+    .filter(e => e.category === '公益支出')
+    .reduce((s, e) => s + e.amountCents, 0)
   const reinvestL1 = categories.value.find(c => c.name === '再投资' && c.level === 1)
   const divCat = findEquityCat('成员分红')
   await Promise.all([
-    reinvestL1 ? loadCatSpent(reinvestL1.id, 'reinvest') : Promise.resolve(),
-    divCat ? loadCatSpent(divCat.id, 'dividend') : Promise.resolve(),
+    reinvestL1 ? loadCatSpent(reinvestL1.id, 'reinvest', distYear.value) : Promise.resolve(),
+    divCat ? loadCatSpent(divCat.id, 'dividend', distYear.value) : Promise.resolve(),
   ])
 }
-async function loadCatSpent(catId: number, key: 'reinvest' | 'dividend') {
+async function loadCatSpent(catId: number, key: 'reinvest' | 'dividend', year: number) {
   try {
-    const r = await api.get<any>(`/transactions?categoryId=${catId}&direction=expense&pageSize=10000`)
+    const from = `${year}-01-01`
+    const to = `${year}-12-31`
+    const r = await api.get<any>(`/transactions?categoryId=${catId}&direction=expense&from=${from}&to=${to}&pageSize=10000`)
     const items = r?.data?.items || r?.items || (Array.isArray(r?.data) ? r?.data : []) || []
     distInvested[key] = (items as any[]).reduce((s, t) => s + (t.amountCents || 0), 0)
   } catch { /* 忽略单个类别统计失败 */ }
@@ -523,27 +544,43 @@ const welfareStat = computed(() => ({
 
 async function loadDist(year: number) {
   try {
-    const wCat = findEquityCat('公益支出')
-    const txnPath = wCat ? `/transactions?categoryId=${wCat.id}&direction=expense` : '/transactions?direction=expense'
-    const [distR, allR, txnR] = await Promise.all([
+    const from = `${year}-01-01`
+    const to = `${year}-12-31`
+    const reinvestL1 = findCat('再投资')
+    const divCat = findEquityCat('成员分红')
+    const welCat = findEquityCat('公益支出')
+    const sources = [
+      { id: reinvestL1?.id as number | undefined, label: '再投资' },
+      { id: divCat?.id as number | undefined, label: '成员分红' },
+      { id: welCat?.id as number | undefined, label: '公益支出' },
+    ].filter(s => !!s.id)
+
+    const [distR, allR, ...expR] = await Promise.all([
       api.get<any>('/distributions-532?year=' + year),
       api.get<any>('/distributions-532'),
-      api.get<any>(txnPath),
+      ...sources.map(s => api.get<any>(
+        `/transactions?categoryId=${s.id}&direction=expense&from=${from}&to=${to}&pageSize=10000`
+      )),
     ])
     const payload = distR?.data !== undefined ? distR.data : distR
     distData.value = payload || null
     // 加载所有年份分配记录，用于计算已分配总和
     const allRaw = Array.isArray(allR) ? allR : (allR?.data || allR?.items || [])
     allDistributions.value = Array.isArray(allRaw) ? allRaw : []
-    // 支出记录 = 公益支出流水
-    const txnItems = (txnR?.data?.items || txnR?.items || [])
-    distExpenses.value = txnItems.map((t: any) => ({
-      id: t.id,
-      itemName: t.note || '公益支出',
-      category: '公益支出',
-      amountCents: t.amountCents || 0,
-      date: t.txnDate || '',
-    }))
+    // 年度支出记录 = 532 三类（再投资 / 成员分红 / 公益支出）在本年度的全部支出
+    const rows: DistExpense[] = []
+    sources.forEach((s, i) => {
+      const items = (expR[i]?.data?.items || expR[i]?.items || [])
+      items.forEach((t: any) => rows.push({
+        id: t.id,
+        itemName: t.note || s.label,
+        category: s.label,
+        amountCents: t.amountCents || 0,
+        date: t.txnDate || '',
+      }))
+    })
+    rows.sort((a, b) => (a.date === b.date ? b.id - a.id : (a.date < b.date ? 1 : -1)))
+    distExpenses.value = rows
     await loadDistInvested()
   } catch (e) { distData.value = null; allDistributions.value = []; distExpenses.value = [] }
 }
@@ -660,6 +697,14 @@ async function ensureL2InL1(l1Name: string, l2Name: string) {
 }
 
 function recordDistExpense(cat: string) {
+  // 已全部支出完毕的项目不允许再记账
+  const stat = cat === '再投资' ? reinvestStat.value
+    : cat === '成员分红' ? dividendStat.value
+    : welfareStat.value
+  if (stat.remain <= 0) {
+    alert('该项目本年度已全部支出完毕，不能再记账')
+    return
+  }
   recordForm.value = { category: cat, amount: 0, date: todayStr(), note: RECORD_DEFAULT_NOTES[cat] || cat, partyId: null }
   showRecordDialog.value = true
 }
@@ -669,6 +714,11 @@ function onReinvestPartyChange() {
 }
 async function confirmRecord() {
   if (!recordForm.value.amount || recordForm.value.amount <= 0) { alert('请输入有效金额'); return }
+
+  const catStat = recordForm.value.category === '再投资' ? reinvestStat.value
+    : recordForm.value.category === '成员分红' ? dividendStat.value
+    : welfareStat.value
+  if (catStat.remain <= 0) { alert('该项目本年度已全部支出完毕，不能再记账'); return }
 
   const isReinvest = recordForm.value.category === '再投资'
   if (isReinvest && !recordForm.value.partyId) { alert('请选择往来单位'); return }
@@ -738,7 +788,7 @@ function exportCSV(tab: string) {
       [['再投资（扩大再生产）', '50%', fmt(distData.value.reinvestCents), distPct(distData.value.reinvestCents) + '%'],
        ['成员分红/福利', '30%', fmt(distData.value.dividendCents), distPct(distData.value.dividendCents) + '%'],
        ['管理公益支出', '20%', fmt(distData.value.welfareCents), distPct(distData.value.welfareCents) + '%'],
-       ...distExpenses.value.map(e => [e.itemName, e.category, fmt(e.amountCents), ''])])
+       ...distExpenses.value.map(e => [e.date, e.itemName, e.category, fmt(e.amountCents)])])
   }
 }
 

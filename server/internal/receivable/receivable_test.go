@@ -902,6 +902,75 @@ func TestFeeClearAndImplicit(t *testing.T) {
 	}
 }
 
+// TestReinvestDividendAccrual 验证再投资收益全链路：年收益→reinvest_dividend 标准→预览→结转→应收→收款核销。
+func TestReinvestDividendAccrual(t *testing.T) {
+	db, r := newEnv(t)
+	// 收入容器「再投资」L1（自动入账与标准结转定位用）
+	if _, err := db.Exec(
+		`INSERT INTO category(org_id,name,level,parent_id,status,kind,sort_order,created_at,updated_at)
+		 VALUES(1,'再投资',1,NULL,'active','equity',0,'2026-09-01','2026-09-01')`); err != nil {
+		t.Fatalf("插入再投资 L1 失败: %v", err)
+	}
+	party := createPartyWithType(t, r, "戊公司", "reinvest")
+
+	// 年收益 → 应生成 reinvest_dividend 标准（而非 dividend）
+	w := doJSON(t, r, "PUT", "/api/parties/"+itoa(party), map[string]any{"expectedReturnCents": 60000})
+	if w.Code != http.StatusOK {
+		t.Fatalf("设置再投资年收益失败: %d %s", w.Code, w.Body.String())
+	}
+	var kindCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM recv_standard WHERE org_id=1 AND party_id=? AND recv_kind='reinvest_dividend' AND active=1`, party).Scan(&kindCount); err != nil || kindCount != 1 {
+		t.Fatalf("应存在 1 条启用中的 reinvest_dividend 标准，实际 %d err=%v", kindCount, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM recv_standard WHERE org_id=1 AND party_id=? AND recv_kind='dividend'`, party).Scan(&kindCount); err != nil || kindCount != 0 {
+		t.Fatalf("再投资单位不应有 dividend 标准，实际 %d err=%v", kindCount, err)
+	}
+
+	// 预览应带出 reinvest_dividend 行
+	var pv struct {
+		Data struct {
+			Items []struct {
+				Kind      string `json:"kind"`
+				PartyID   int64  `json:"partyId"`
+				AmountCents int64 `json:"amountCents"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	w = doJSON(t, r, "GET", "/api/recv-standards/preview?year=2026", nil)
+	if err := json.Unmarshal(w.Body.Bytes(), &pv); err != nil {
+		t.Fatalf("解析预览失败: %v", err)
+	}
+	found := false
+	for _, it := range pv.Data.Items {
+		if it.Kind == "reinvest_dividend" && it.PartyID == party && it.AmountCents == 60000 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("预览应含再投资收益行，实际 %+v", pv.Data.Items)
+	}
+
+	// 按标准一键结转（reinvest_dividend）
+	w = doJSON(t, r, "POST", "/api/recv-standards/accrue", map[string]any{"year": 2026, "kind": "reinvest_dividend"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("结转再投资收益失败: %d %s", w.Code, w.Body.String())
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM receivable WHERE org_id=1 AND party_id=? AND recv_year=2026 AND recv_kind='reinvest_dividend'`, party).Scan(&kindCount); err != nil || kindCount != 1 {
+		t.Fatalf("应生成 1 张 reinvest_dividend 应收单，实际 %d err=%v", kindCount, err)
+	}
+
+	// 收款核销（整额）
+	w = doJSON(t, r, "POST", "/api/party-collect", map[string]any{
+		"partyId": party, "recvKind": "reinvest_dividend", "amountCents": 60000, "receiptDate": "2026-09-10",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("再投资收益收款失败: %d %s", w.Code, w.Body.String())
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM receivable WHERE org_id=1 AND party_id=? AND recv_kind='reinvest_dividend' AND status='closed'`, party).Scan(&kindCount); err != nil || kindCount != 1 {
+		t.Fatalf("全额收款后应收单应 closed，实际 closed 数=%d err=%v", kindCount, err)
+	}
+}
+
 // TestPartyCollectAcrossYears 验证整额跨单收款：一笔收款按最早年度优先摊分核销多张欠单，
 // 依次收 2000/3000/1000 结清 2024+2025 两张各 3000 的流转费欠款；超总额被拒、无欠单被拒。
 func TestPartyCollectAcrossYears(t *testing.T) {

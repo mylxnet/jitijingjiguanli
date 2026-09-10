@@ -86,6 +86,7 @@ async function handleRegister() {
     if (res.data.user) {
       localStorage.setItem(ORG_NAME_KEY, orgName.value.trim())
       auth.markLoggedIn()
+      await auth.refreshOrg() // 填充 orgId，保证引导标记与守卫判定使用同一组织键
       showToast('注册成功，已自动登录')
       router.push('/onboarding')
     }

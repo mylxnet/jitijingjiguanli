@@ -7,9 +7,10 @@
 
     <!-- 资产快览 -->
     <div class="cards">
-      <div class="dash-card">
+      <div class="dash-card clickable" @click="goTransactions">
         <div class="dash-label">银行存款</div>
         <div class="dash-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
+        <div class="dash-more">查看流水 ›</div>
       </div>
       <div v-if="(capital?.assetTotalCents ?? 0) !== 0" class="dash-card asset">
         <div class="dash-label">长期投资（在外）</div>
@@ -262,6 +263,19 @@ function goCategories() {
 
 .dash-card.asset {
   background: #fdf3e3;
+}
+
+.dash-card.clickable {
+  cursor: pointer;
+  transition: box-shadow .15s;
+}
+.dash-card.clickable:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
+}
+.dash-more {
+  font-size: 11px;
+  color: #1989fa;
+  margin-top: 2px;
 }
 
 .dash-card.owe {

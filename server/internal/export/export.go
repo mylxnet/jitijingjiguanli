@@ -325,7 +325,10 @@ func (r *renderer) receivableSheet(orgID int64) (*xlSheet, error) {
 		NumCols: []int{5, 6, 7},
 		Header:  []string{"单位名称", "类型", "年度", "类别", "事由", "应收(元)", "已收(元)", "未收(元)", "状态"},
 	}
-	kindLabel := map[string]string{"rent": "流转费", "dividend": "投资收益", "other": "其他"}
+	kindLabel := map[string]string{
+		"rent": "流转费", "dividend": "投资收益", "reinvest_dividend": "再投资收益",
+		"service": "管理费", "other": "其他",
+	}
 	for _, it := range items {
 		status := "未结清"
 		if it.Status == "closed" {

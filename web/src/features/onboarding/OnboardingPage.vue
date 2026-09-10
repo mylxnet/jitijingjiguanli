@@ -7,9 +7,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
+import { useAuthStore } from '../auth/store'
 import type { ApiResponse, Category, Party } from '../../types/api'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 // ========== 步骤定义 ==========
 type StepType = 'add-party' | 'fill-balance' | 'final'
@@ -251,11 +253,13 @@ async function onConfirm() {
         await api.put(`/categories/${idStr}`, { openingBalanceCents: Math.round(yuan * 100) })
       }
     }
-    // 3. 写 localStorage 标记完成
-    const me = await api.get<ApiResponse<any>>('/auth/me')
-    // 后端返回 orgID（大写 D），兼容旧字段 orgId
-    const orgId: any = (me.data?.orgID ?? me.data?.orgId ?? 'default')
-    localStorage.setItem(`jt_onboarding_done_${orgId}`, '1')
+    // 4. 写引导完成标记（与路由守卫使用同一套 key，确保 orgId 可确认）
+    if (!auth.orgId) await auth.refreshOrg()
+    if (!auth.orgId) {
+      alert('无法确认组织信息，请刷新页面后重试')
+      return
+    }
+    auth.markOnboarded()
     router.push('/')
   } catch (e: any) {
     alert('保存失败：' + (e?.message || e) + (e?.response?.message ? '（' + e.response.message + '）' : ''))
@@ -266,11 +270,13 @@ async function onConfirm() {
 function nextStep() { skipThisStep.value = false; step.value++ }
 function prevStep() { skipThisStep.value = false; step.value-- }
 async function skipToHome() {
-  try {
-    const me = await api.get<ApiResponse<any>>('/auth/me')
-    const orgId: any = (me.data?.orgID ?? me.data?.orgId ?? 'default')
-    localStorage.setItem(`jt_onboarding_done_${orgId}`, '1')
-  } catch { /* ignore */ }
+  // 跳过引导也必须可靠落标记，否则后续任意导航都会被守卫打回引导页
+  if (!auth.orgId) await auth.refreshOrg()
+  if (!auth.orgId) {
+    alert('无法确认组织信息，请刷新页面后重试')
+    return
+  }
+  auth.markOnboarded()
   router.push('/')
 }
 

@@ -314,6 +314,34 @@ async function handleCreateCompany() {
   }
 }
 
+// 长期投资给公司：累计该单位的投资本金（与投资页"投资金额"口径一致，便于对账）
+async function syncInvestedAmount(amountCents: number) {
+  const opt = investCompanyOptions.value.find(o => o.value === quick.value.companyId)
+  const compName = (opt?.text || '').replace(/（.*$/, '').trim()
+  if (!compName) return
+  try {
+    const res = await api.get<ApiResponse<Party[]>>('/parties')
+    const list = res.data || []
+    const p = list.find(x => x.name === compName && ((x.types && x.types.includes('invest')) || x.type === 'invest'))
+    if (!p) return
+    await api.put(`/parties/${p.id}`, { investAmountCents: (p.investAmountCents || 0) + amountCents })
+  } catch {
+    // 投资额同步失败不阻断记账（科目余额为权威口径）
+  }
+}
+
+// 业务 → 应收类别：收益类按所选单位类型区分（再投资单位 → 再投资收益）
+function resolveRecvKind(bizKey: string): RecvKind | '' {
+  if (bizKey === 'rent') return 'rent'
+  if (bizKey === 'service') return 'service'
+  if (bizKey === 'dividend') {
+    const p = allParties.value.find(x => x.id === quick.value.partyId)
+    const types = p?.types && p.types.length ? p.types : (p?.type ? [p.type] : [])
+    return types.includes('reinvest') ? 'reinvest_dividend' : 'dividend'
+  }
+  return ''
+}
+
 async function saveQuick() {
   const amount = Math.round(parseFloat(quick.value.amount || '0') * 100)
   const biz = quickBusinesses.find(x => x.key === quick.value.biz)
@@ -338,12 +366,7 @@ async function saveQuick() {
   saving.value = true
   recordError.value = ''
   try {
-    const kindMap: Record<string, RecvKind> = {
-      rent: 'rent',
-      service: 'service',
-      dividend: 'dividend',
-    }
-    const recvKind = kindMap[biz.key]
+    const recvKind = resolveRecvKind(biz.key)
     let receiptCreated = false
     if (biz.dir === 'income' && quick.value.partyId && recvKind) {
       if (quick.value.recvId) {
@@ -408,6 +431,10 @@ async function saveQuick() {
         note,
         partyId: quick.value.partyId || null,
       })
+      // 长期投资给公司：累计该单位投资本金
+      if (biz.invest) {
+        await syncInvestedAmount(amount)
+      }
     }
     showToast(receiptCreated ? '保存成功（已核销应收并入账）' : '保存成功（已自动入账）')
     showRecord.value = false
