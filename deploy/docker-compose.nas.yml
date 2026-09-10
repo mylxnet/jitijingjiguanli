@@ -20,7 +20,7 @@ services:
   jititaizhang:
     # 本地已加载的镜像（不使用 build，避免每次联网拉取）
     # 升级到新版本：先 docker load -i jititaizhang-docker-vX.Y.Z.tar，再把下面 tag 改为对应版本号
-    image: jititaizhang:v0.14.0
+    image: registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:latest
     container_name: jititaizhang
     restart: unless-stopped
     ports:

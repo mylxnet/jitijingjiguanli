@@ -8,10 +8,12 @@ package onboarding
 import (
 	"bytes"
 	"database/sql"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
 
+	"jititaizhang/server/internal/auth"
 	"jititaizhang/server/internal/changelog"
 	"jititaizhang/server/internal/platform"
 	"jititaizhang/server/internal/receivable"
@@ -44,6 +46,24 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/onboarding/template", h.DownloadTemplate)
 	r.POST("/api/onboarding/import", h.Import)
+	r.POST("/api/onboarding/complete", h.Complete)
+}
+
+// Complete 标记当前组织已完成（或已跳过）引导。
+// 该标记是"是否已建账"的权威来源：/api/me 返回，前端守卫据此决定是否跳引导页。
+// POST /api/onboarding/complete
+func (h *Handler) Complete(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		platform.Fail(c, http.StatusUnauthorized, "UNAUTHORIZED", "未登录或登录已过期")
+		return
+	}
+	if _, err := h.db.Exec(
+		`UPDATE org SET onboarded = 1, updated_at = ? WHERE id = ?`, platform.Now(), orgID); err != nil {
+		platform.Fail(c, http.StatusInternalServerError, "ONBOARDING_COMPLETE_FAILED", "保存引导完成状态失败")
+		return
+	}
+	platform.OK(c, gin.H{"onboarded": true})
 }
 
 // ============ sheet 与列定义（生成模板与解析共用） ============

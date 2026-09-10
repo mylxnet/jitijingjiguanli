@@ -93,16 +93,13 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
   // 引导入口：已登录用户首次进入主流程页且未完成引导时，转到引导页。
-  // 判定前先做老组织兼容检查（已有业务数据则视为已建账并补写标记），避免已在
-  // 使用的组织被反复拉进引导页；orgId 由 store 统一维护（登录/刷新后均可用）。
+  // 「是否已完成引导」以服务端 org.onboarded 为准（由 /api/me 返回，见 store.refreshOrg）；
+  // 取不到组织信息时（orgId 为空）直接放行，避免请求异常被误判为未建账而跳引导页。
   const noOnboardPaths = ['/login', '/register', '/reset-password', '/onboarding']
   if (to.meta.requiresAuth && !noOnboardPaths.includes(to.path) && auth.orgId) {
     if (!auth.isOnboarded()) {
-      await auth.ensureOnboarded()
-      if (!auth.isOnboarded()) {
-        next('/onboarding')
-        return
-      }
+      next('/onboarding')
+      return
     }
   }
   next()

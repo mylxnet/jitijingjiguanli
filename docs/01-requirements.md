@@ -513,16 +513,18 @@ A: **月底一键导出月度收支汇总表，且不需要手工加工。**
 
 ## v0.11 变更（2026-09-09）· 部署与交付方式变更
 
-### D13 · 交付管线：不再推 Docker Hub，改本地 WSL 构建 + 用户上传 NAS
+### D13 · 交付管线：构建即推送阿里云镜像仓库（ACR）
+（2026-09-11 更新：原 v0.11 决策「不再推 Docker Hub，改本地 tar + 用户手动上传 NAS」已作废，改为下述 ACR 方案；亦见 `.trae/rules/project_rules.md`。）
 
 | 项 | 内容 |
 |---|---|
-| 决策 | **后续版本不再推送 Docker Hub**。弃用 Gitee Go 的「build-and-push → Docker Hub」自动发布流水线。 |
-| 构建 | 改由本地 **WSL 环境执行 `docker build`**，产出**镜像 tar/**或本地镜像。 |
-| 交付 | 构建产物由**用户手动上传 NAS** 完成部署（用户掌握上传与发布时机）。 |
-| 约束 | 发布不再自动触发，交付以用户确认为准；本地构建需遵循既有镜像代理配置（国内网络 Go/Docker 走镜像源）。 |
-| 关联 | 原 `.gitee/workflows/build-and-push.yml`（main push 推 Docker Hub）与 `release-tag.yml`（v* tag 推 Docker Hub）不应再作为正式发布入口；如需保留用于其他目的须先经用户确认。 |
-| 验收 | 任何新版本交付均不产生对 Docker Hub 的自动推送；部署镜像由 WSL 构建后经用户上传 NAS。 |
+| 决策 | **镜像构建后一并推送到阿里云容器镜像服务（ACR）**：`registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli`。弃用 Docker Hub。 |
+| 触发 | **只有用户明确指令「打包镜像」时**才构建并推送；未获指令一律不构建、不推送（不允许只构不推 / 只推不构）。 |
+| 构建 | 本地 **WSL（`lxsyzd`）** 执行 `docker build -f deploy/Dockerfile.local`，标签 `<当前版本号>` + `latest`。 |
+| 约束 | 必须加 `--provenance=false --sbom=false`：否则 BuildKit 产出带 attestation 的 manifest list，ACR 报 `unknown manifest class for application/vnd.oci.empty.v1+json`。推送前先 `docker login registry.cn-hangzhou.aliyuncs.com`。 |
+| 交付 | NAS 用 `docker compose -f deploy/docker-compose.nas.yml pull && up -d` 升级；该 compose 的 `image` 指向 ACR（当前用 `latest`）。仓库为**公开**，拉取无需登录，推送需登录。 |
+| 关联 | 原 Docker Hub 入口（`.gitee/workflows/build-and-push.yml`、`release-tag.yml`、`scripts/docker-push.sh`）**已废弃**，不再作为发布入口。 |
+| 验收 | 一次「打包镜像」= WSL 构建 + 推送 ACR 的 `<版本>` 与 `latest` 两个标签；NAS 从 ACR 拉取即可运行。 |
 
 ### D14 · 测试与验收基准：一律真实 Go 环境，杜绝功能丢失
 
@@ -567,9 +569,9 @@ A: **月底一键导出月度收支汇总表，且不需要手工加工。**
 > 处理清单与逐条分析见 **docs/14-change-requests-plan.md**。
 
 - **再投资收益（reinvest_dividend）全链闭环**：迁移 016 放行标准类别并迁移再投资单位既有标准；写标准/预览/结转/应收过滤/导出/收款核销全部支持；年度计提向导增加"再投资收益"步骤。
-- **引导页跳转修复**：统一引导完成标记读写（去除 `_default` 兜底键）、登录/注册后统一刷新 orgId、登出/401 清空 orgId；对"已有业务数据的老组织"自动补写标记，杜绝"提交数据时偶尔跳引导页"。
+- **引导页跳转修复（服务端权威标记）**：迁移 017 给 `org` 加 `onboarded` 字段并回填"已有业务数据"的既有组织；`/api/me` 返回该标记，新增 `POST /api/onboarding/complete`；前端不再依赖 localStorage 标记与 `/api/parties` 探测（探测失败会被误判为未建账），杜绝"提交数据时偶尔跳引导页"。
 - **投资一致性（A 级）**：长期投资金额按投出口径（绝对值）展示；保存"长期投资给公司"时累计该单位投资额，与投资页口径一致。
-- **看板**：银行存款卡可点击跳转流水页。
+- **看板**：银行存款卡可点击，弹窗（桌面端居中、移动端底部）展示流水（日期 / 收入 / 支出 / 余额）。
 - **532 分配**：已支出完毕的项目禁用"记账"按钮（含二次校验）；年度支出记录改为三类（再投资/成员分红/公益支出）并按年度过滤，时间列提前到首列。
 
 ---
@@ -588,6 +590,7 @@ A: **月底一键导出月度收支汇总表，且不需要手工加工。**
 | 2026-09-03 | 记账页表单字段顺序改为 日期 → 摘要 → 科目 → 金额（用户决策）。 |
 | 2026-09-03 | **v0.3 结构性升级**：多组织独立记账（自助注册、完全隔离，D9）；资产型科目与资金划转（D10）；应收/欠款模块与往来页（D11）；预置科目五件套（D12）；资金构成口径升级；旧测试库作废。 |
 | 2026-09-09 | **v0.11 交付管线变更（D13）**：不再推送 Docker Hub；改用本地 WSL docker 构建镜像，由用户手动上传 NAS 部署；发布不再自动触发。 |
+| 2026-09-11 | **D13 更新**：改为「构建即推送阿里云镜像仓库（ACR）」，NAS 从 ACR 拉取升级（详见上文 D13）；Docker Hub 与本地 tar 方案作废。 |
 | 2026-09-09 | **测试基准（D14）**：一律在真实 Go 后端环境运行测试，每次认真逐项审核，杜绝 mock 造成功能丢失。 |
 | 2026-09-09 | **v0.12（D15/D16）**：引导页 Excel 导入建账、硬编码科目 ID 改按名称解析、东八区时间统一、版本号单源。 |
 | 2026-09-10 | **v0.13**：历年欠款分年度补录与展示、整额跨单自动核销（最早年度优先）、计提标准放行 service 并修复预览、单位列表欠款合计列。 |

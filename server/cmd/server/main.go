@@ -94,10 +94,11 @@ func buildRouter(a *app) *gin.Engine {
 		id, _ := auth.CurrentUserID(c)
 		orgID, ok := auth.CurrentOrgID(c)
 		var orgName string
+		var onboarded int
 		if ok {
-			_ = a.db.QueryRow(`SELECT name FROM org WHERE id = ?`, orgID).Scan(&orgName)
+			_ = a.db.QueryRow(`SELECT name, onboarded FROM org WHERE id = ?`, orgID).Scan(&orgName, &onboarded)
 		}
-		platform.OK(c, gin.H{"userID": id, "orgID": orgID, "orgName": orgName})
+		platform.OK(c, gin.H{"userID": id, "orgID": orgID, "orgName": orgName, "onboarded": onboarded == 1})
 	}
 	authed.GET("/api/me", meHandler)
 	authed.GET("/api/auth/me", meHandler)

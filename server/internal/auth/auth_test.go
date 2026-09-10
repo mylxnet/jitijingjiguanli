@@ -39,7 +39,7 @@ func newTestEnv(t *testing.T) (*Service, *gin.Engine) {
 	return svc, r
 }
 
-// TestRegisterOrg 自助注册：建组织 + 管理员账号 + 预置科目（v0.3 F8）。
+// TestRegisterOrg 自助注册：建组织 + 管理员账号 + 预置科目；单用户部署下禁止重复注册。
 func TestRegisterOrg(t *testing.T) {
 	svc, _ := newTestEnv(t)
 
@@ -59,20 +59,18 @@ func TestRegisterOrg(t *testing.T) {
 		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", userID, orgID)
 	}
 
-	// 预置科目（4 一级 + 10 二级，preset=1）
-	var presetCount int
+	// 预置科目（8 一级 + 9 二级 = 17，preset=1）
+	var presetCount, l1Count, l2Count int
 	if err := svc.repo.db.QueryRow(
 		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
 		t.Fatalf("统计预置科目失败: %v", err)
 	}
-	if presetCount != 14 {
-		t.Errorf("预置科目应为 14 个（4 一级 + 10 二级），实际 %d", presetCount)
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 1`, orgID).Scan(&l1Count)
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 2`, orgID).Scan(&l2Count)
+	if presetCount != 17 || l1Count != 8 || l2Count != 9 {
+		t.Errorf("预置科目应为 17 个（8 一级 + 9 二级），实际 总数%d（一级%d 二级%d）", presetCount, l1Count, l2Count)
 	}
 
-	// 重复账号名 → 友好错误
-	if _, _, err := svc.RegisterOrg("乙村", "admin", "whatever"); err != ErrUsernameTaken {
-		t.Errorf("重复用户名应报 ErrUsernameTaken，实际 %v", err)
-	}
 	// 密码过短
 	if _, _, err := svc.RegisterOrg("乙村", "village2", "123"); err != ErrInvalidPassword {
 		t.Errorf("短密码应报 ErrInvalidPassword，实际 %v", err)
@@ -82,17 +80,15 @@ func TestRegisterOrg(t *testing.T) {
 		t.Errorf("空组织名应报 ErrInvalidOrgName，实际 %v", err)
 	}
 
-	// 两组织科目相互隔离
-	var org2ID int64
-	_, _, err = svc.RegisterOrg("乙村", "village2", "s3cret2")
-	if err != nil {
-		t.Fatalf("第二个组织注册失败: %v", err)
+	// 单用户部署：已有用户后禁止重复注册（用户名可用性检查因此不再触发）
+	if _, _, err := svc.RegisterOrg("乙村", "village2", "s3cret2"); err != ErrRegistrationClosed {
+		t.Errorf("已有用户后再次注册应报 ErrRegistrationClosed，实际 %v", err)
 	}
-	if err := svc.repo.db.QueryRow(`SELECT org_id FROM user WHERE username='village2'`).Scan(&org2ID); err != nil {
-		t.Fatalf("查询组织失败: %v", err)
-	}
-	if org2ID == orgID {
-		t.Error("两个组织应各自独立 org_id")
+	var users, orgs int
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM user`).Scan(&users)
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM org`).Scan(&orgs)
+	if users != 1 || orgs != 1 {
+		t.Errorf("重复注册被拒后应仍为 1 用户 1 组织，实际 users=%d orgs=%d", users, orgs)
 	}
 }
 

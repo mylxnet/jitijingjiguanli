@@ -184,3 +184,31 @@ func TestImportInvalidFile(t *testing.T) {
 		t.Fatalf("非法文件应返回 400，实际 %d", w.Code)
 	}
 }
+
+// TestCompleteOnboarding 完成引导接口：把 org.onboarded 置 1，且重复调用幂等。
+func TestCompleteOnboarding(t *testing.T) {
+	db, r := newEnv(t)
+
+	var n int
+	if err := db.QueryRow(`SELECT onboarded FROM org WHERE id=1`).Scan(&n); err != nil {
+		t.Fatalf("读取 onboarded 失败: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("新组织 onboarded 应为 0，实际 %d", n)
+	}
+
+	for i := 0; i < 2; i++ { // 幂等：重复调用仍返回 200 且保持 1
+		req := httptest.NewRequest(http.MethodPost, "/api/onboarding/complete", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != 200 {
+			t.Fatalf("第 %d 次调用返回 %d: %s", i+1, w.Code, w.Body.String())
+		}
+		if err := db.QueryRow(`SELECT onboarded FROM org WHERE id=1`).Scan(&n); err != nil {
+			t.Fatalf("读取 onboarded 失败: %v", err)
+		}
+		if n != 1 {
+			t.Fatalf("完成后 onboarded 应为 1，实际 %d", n)
+		}
+	}
+}

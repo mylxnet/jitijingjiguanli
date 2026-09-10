@@ -1,7 +1,7 @@
 <!--
   引导页（Onboarding）— 对齐 demo 原型（docs/onboarding-demo/index.html）
   模式：导入 Excel 快速建账 / 手工逐条录入（7 步：流转企业 → 流转企业余额 → 投资 → 余额 → 再投资 → 余额 → 其他设置+预览）
-  完成后写 localStorage: jt_onboarding_done_{orgId}
+  完成后写服务端 org.onboarded=1（POST /api/onboarding/complete）
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
@@ -253,13 +253,13 @@ async function onConfirm() {
         await api.put(`/categories/${idStr}`, { openingBalanceCents: Math.round(yuan * 100) })
       }
     }
-    // 4. 写引导完成标记（与路由守卫使用同一套 key，确保 orgId 可确认）
-    if (!auth.orgId) await auth.refreshOrg()
-    if (!auth.orgId) {
-      alert('无法确认组织信息，请刷新页面后重试')
+    // 4. 标记引导完成（写服务端 org.onboarded，成功后守卫才放行）
+    try {
+      await auth.markOnboarded()
+    } catch (e: any) {
+      alert('引导状态保存失败：' + (e?.message || e) + '，请稍后重试')
       return
     }
-    auth.markOnboarded()
     router.push('/')
   } catch (e: any) {
     alert('保存失败：' + (e?.message || e) + (e?.response?.message ? '（' + e.response.message + '）' : ''))
@@ -270,13 +270,13 @@ async function onConfirm() {
 function nextStep() { skipThisStep.value = false; step.value++ }
 function prevStep() { skipThisStep.value = false; step.value-- }
 async function skipToHome() {
-  // 跳过引导也必须可靠落标记，否则后续任意导航都会被守卫打回引导页
-  if (!auth.orgId) await auth.refreshOrg()
-  if (!auth.orgId) {
-    alert('无法确认组织信息，请刷新页面后重试')
+  // 跳过引导也必须可靠落标记（写服务端），否则后续任意导航都会被守卫打回引导页
+  try {
+    await auth.markOnboarded()
+  } catch (e: any) {
+    alert('引导状态保存失败：' + (e?.message || e) + '，请稍后重试')
     return
   }
-  auth.markOnboarded()
   router.push('/')
 }
 

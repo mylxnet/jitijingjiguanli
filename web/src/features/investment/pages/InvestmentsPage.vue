@@ -129,7 +129,7 @@
       <div class="ip-table-wrap">
         <table class="ip-table">
           <thead><tr>
-            <th>收益项目</th><th class="num">金额</th>
+            <th>已收收益</th><th class="num">金额</th>
           </tr></thead>
           <tbody>
             <tr v-for="item in retFiltered" :key="item.id">
@@ -150,7 +150,7 @@
           <p class="page-sub">年度收益按 50% 再投资 · 30% 分红福利 · 20% 管理公益 分配</p>
         </div>
         <div class="ip-header-actions">
-          <van-button size="small" type="primary" plain @click="openDistDialog">分配数据</van-button>
+          <van-button size="small" type="primary" plain @click="openDistDialog">确定分配</van-button>
           <van-button size="small" @click="exportCSV('dist532')">导出</van-button>
         </div>
       </div>
@@ -201,7 +201,7 @@
           </tr></thead>
           <tbody>
             <tr v-if="!distData">
-              <td colspan="5" class="empty-cell">未分配 — 请点击"分配数据"按钮进行年度532分配</td>
+              <td colspan="5" class="empty-cell">未分配 — 请点击"确定分配"按钮进行年度532分配</td>
             </tr>
             <template v-if="distData">
               <tr>

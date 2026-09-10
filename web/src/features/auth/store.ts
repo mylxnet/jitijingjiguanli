@@ -6,27 +6,25 @@ import type { ApiResponse } from '../../types/api'
 // 本机记住的组织名（登录页大字展示）
 export const ORG_NAME_KEY = 'jt_org_name'
 
-// 引导完成标记：读/写必须走同一套 key，避免出现 `_default` 之类不匹配的键
-export function onboardingKey(id: string | number) {
-  return `jt_onboarding_done_${id}`
-}
-
 export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = ref(false)
   const loading = ref(false)
   const error = ref('')
-  // 当前登录用户所属组织 id（用于引导完成标记等按组织区分的场景）
+  // 当前登录用户所属组织 id（用于组织维度场景）
   const orgId = ref<string | number | null>(null)
-  // 已确认「有业务数据并补写标记」的组织，避免每次导航重复请求
-  const onboardChecked = ref<string | number | null>(null)
+  // 是否已完成（或已跳过）引导——以服务端 org.onboarded 为唯一权威来源，
+  // 不再依赖 localStorage 标记，避免清缓存/换浏览器/换访问地址被误判为未建账。
+  const onboarded = ref(false)
 
-  // 拉取当前组织信息（登录/注册/首屏后统一调用，保证 orgId 始终可用）
+  // 拉取当前组织信息（登录/注册/首屏后统一调用，保证 orgId/onboarded 始终可用）
   async function refreshOrg() {
     try {
       const me = await fetch('/api/me', { credentials: 'include' }).then(r => r.json())
       orgId.value = me?.data?.orgID ?? me?.data?.orgId ?? null
+      onboarded.value = !!me?.data?.onboarded
     } catch {
       orgId.value = null
+      onboarded.value = false
     }
   }
 
@@ -41,40 +39,27 @@ export const useAuthStore = defineStore('auth', () => {
         await refreshOrg()
       } else {
         orgId.value = null
+        onboarded.value = false
       }
     } catch {
       isLoggedIn.value = false
       orgId.value = null
+      onboarded.value = false
     }
   }
 
-  // 是否已完成引导（当前组织）
+  // 是否已完成引导（当前组织）。服务端权威：取不到组织信息时为 false，
+  // 而路由守卫要求 orgId 有值才判定，因此请求异常时不会误跳引导页。
   function isOnboarded() {
-    return !!orgId.value && !!localStorage.getItem(onboardingKey(orgId.value))
+    return !!orgId.value && onboarded.value
   }
 
-  // 标记当前组织已完成引导
-  function markOnboarded() {
-    if (orgId.value) localStorage.setItem(onboardingKey(orgId.value), '1')
-  }
-
-  // 老组织兼容：无标记但该组织已有业务数据（存在往来单位）→ 视为已建账，补写标记，
-  // 避免"已在使用的老组织登录后被反复拉进引导页"。
-  async function ensureOnboarded() {
-    if (!orgId.value || isOnboarded() || onboardChecked.value === orgId.value) return
-    try {
-      const res = await fetch('/api/parties', { credentials: 'include' })
-      if (res.ok) {
-        const j = await res.json()
-        const list = j?.data ?? j ?? []
-        if (Array.isArray(list) && list.length > 0) {
-          localStorage.setItem(onboardingKey(orgId.value), '1')
-          onboardChecked.value = orgId.value
-        }
-      }
-    } catch {
-      // 忽略：查询失败时保持原判定
-    }
+  // 标记当前组织已完成（或已跳过）引导：写服务端，成功后才置位
+  async function markOnboarded() {
+    if (!orgId.value) await refreshOrg()
+    if (!orgId.value) throw new Error('无法确认组织信息')
+    await api.post('/api/onboarding/complete')
+    onboarded.value = true
   }
 
   async function login(username: string, password: string) {
@@ -103,10 +88,11 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = true
   }
 
-  // 会话失效/登出：同时清掉组织 id，避免跨会话/跨组织串用
+  // 会话失效/登出：同时清掉组织信息，避免跨会话/跨组织串用
   function clearAuth() {
     isLoggedIn.value = false
     orgId.value = null
+    onboarded.value = false
   }
 
   async function logout() {
@@ -119,8 +105,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    isLoggedIn, loading, error, orgId,
-    checkLogin, refreshOrg, isOnboarded, markOnboarded, ensureOnboarded,
+    isLoggedIn, loading, error, orgId, onboarded,
+    checkLogin, refreshOrg, isOnboarded, markOnboarded,
     login, markLoggedIn, clearAuth, logout,
   }
 })

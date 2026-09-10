@@ -61,14 +61,24 @@
 3. **写标记被业务失败连累**：`onConfirm` 把"业务写入 + 写标记"放同一 try，任一失败则不写标记；`skipToHome` 的 `/auth/me` 失败被静默吞掉却仍跳首页（[OnboardingPage.vue L204-L275](file:///e:/traework/jizhang/web/src/features/onboarding/OnboardingPage.vue#L204-L275)）→ 造成"假完成"，之后每次导航都被打回引导页。
 4. 系统重置会清空所有标记（[SettingsPage.vue L357-L365](file:///e:/traework/jizhang/web/src/features/settings/SettingsPage.vue#L357-L365)），属预期，但会与上面问题叠加。
 
-### 方案
+### 首次修复（v0.14.0，仍不足）
 1. **统一引导完成标记的读写**（抽 `onboardingKey(orgId)` helper，去掉 `'default'` 兜底；取不到 orgId 就不写并给出明确提示）；
 2. **修正 orgId 生命周期**：`login()`/`markLoggedIn()`/注册成功后统一拉一次 `/api/me` 填充 `orgId`（或注册接口直接返回 orgID）；`logout()`/401 时清空，避免跨组织串用；
 3. **写标记与业务解耦**：`skipToHome` 必须写标记（失败要显式提示而非静默）；`onConfirm` 业务失败仍留在引导页，但提供"跳过引导"出口必须可靠；
 4. **老组织兼容**：对"已有业务数据但无标记"的组织，登录后不应被强制引导。方案：前端在判定前先看该组织是否已有数据（如 `/parties` 非空视为已建账），有则自动补写标记；或后端在组织上存 `onboarded` 标记（改动稍大）。
 
+### 最终修复（服务端权威标记）
+v0.14.0 的前端修复后仍偶发，因为判定仍依赖两个不稳定来源：
+- **localStorage 标记**按「浏览器 + 站点来源」存储 → 清缓存 / 换浏览器 / 换访问地址即丢失；
+- 兜底探测 `GET /api/parties` 的**失败被静默吞掉** → 标记丢失后那次恰好失败，就被误判为"未建账"。
+
+已实施：
+1. **迁移 017**：`org` 加 `onboarded`（默认 0），并把"已有业务数据"的既有组织回填为 1（party / txn / receivable / contract / fund_move / 银行期初 / 科目期初 任一非空）；
+2. **`/api/me` 返回 `onboarded`**；新增 **`POST /api/onboarding/complete`** 置 1；
+3. **前端**：store 以 `/api/me().onboarded` 为准，移除 localStorage 标记与 `/api/parties` 探测；守卫仅在 `orgId` 有值且未完成时跳转 → 请求异常不再误跳。
+
 ### 影响面
-前端 auth store、路由守卫、引导页、注册/登录、设置重置；若采用"组织 onboarded 落库"则加一次迁移。
+后端：迁移 017、`/api/me`、`onboarding` 包新增接口；前端：auth store、路由守卫、引导页、设置重置。
 
 ---
 
@@ -170,8 +180,8 @@
 | 意见 | 状态 |
 |---|---|
 | 一（投资一致性，A 级） | ✅ 投资页金额按投出口径展示；保存投资累计单位投资额 |
-| 二（看板银行流水入口） | ✅ 银行存款卡点击跳转流水页 |
-| 三（引导页偶发跳转） | ✅ 标记读写统一、orgId 生命周期修正、老组织自动补标记 |
+| 二（看板银行流水入口） | ✅ 银行存款卡点击打开弹窗，展示 日期/收入/支出/余额（余额 = 【设置】的银行存款期初 + 逐笔收/支累计）；桌面端为居中弹窗，移动端为底部弹层 |
+| 三（引导页偶发跳转） | ✅ 改为服务端权威标记（迁移 017 `org.onboarded` + `/api/me` 返回 + `POST /api/onboarding/complete`），移除 localStorage 标记与 `/api/parties` 探测兜底 |
 | 四（应收投资含两类收益） | ✅ 由第五条链路打通后自然包含 |
 | 五（再投资收益计提） | ✅ 迁移 016 + 后端全链 + 向导新增步骤 |
 | 六（532 已支完禁用记账） | ✅ 按钮禁用 + 二次校验 |

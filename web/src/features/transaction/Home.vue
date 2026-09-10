@@ -7,7 +7,7 @@
 
     <!-- 资产快览 -->
     <div class="cards">
-      <div class="dash-card clickable" @click="goTransactions">
+      <div class="dash-card clickable" @click="openBankFlow">
         <div class="dash-label">银行存款</div>
         <div class="dash-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
         <div class="dash-more">查看流水 ›</div>
@@ -73,6 +73,38 @@
       <van-button size="small" type="primary" @click="goCategories">去建科目</van-button>
     </div>
 
+    <!-- 银行存款流水弹窗：日期 / 收入 / 支出 / 余额 -->
+    <van-popup v-model:show="showBankFlow" :position="popupPos()" round :style="{ maxHeight: '80vh' }">
+      <div class="bf-popup">
+        <div class="bf-head">
+          <span class="bf-title">银行存款流水</span>
+          <van-icon name="cross" class="bf-close" @click="showBankFlow = false" />
+        </div>
+        <van-loading v-if="bankFlowLoading" class="bf-loading" />
+        <div v-else-if="bankFlowRows.length === 0" class="bf-empty">暂无流水</div>
+        <div v-else class="bf-table-wrap">
+          <table class="bf-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th class="num">收入</th>
+                <th class="num">支出</th>
+                <th class="num">余额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in bankFlowRows" :key="r.id">
+                <td>{{ r.date }}</td>
+                <td class="num income">{{ r.incomeCents ? formatFen(r.incomeCents) : '—' }}</td>
+                <td class="num expense">{{ r.expenseCents ? formatFen(r.expenseCents) : '—' }}</td>
+                <td class="num balance">{{ formatFen(r.balanceCents) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </van-popup>
+
     <!-- 记一笔（悬浮于底部） -->
     <div class="quick-record" @click="openRecord">
       <van-icon name="plus" class="quick-icon" />
@@ -85,6 +117,7 @@
 import { ref, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
+import { popupPos } from '../../composables/useScreen'
 import { formatFen, todayStr, recvKindLabel } from '../../types/api'
 import type { Category, Receivable, ReceivableListResponse, RecvKind, Transaction } from '../../types/api'
 
@@ -217,6 +250,44 @@ function goTransactions() {
 function goCategories() {
   router.push('/categories')
 }
+
+// ---- 银行存款流水弹窗（日期 / 收入 / 支出 / 余额）----
+interface BankFlowRow { id: number; date: string; incomeCents: number; expenseCents: number; balanceCents: number }
+const showBankFlow = ref(false)
+const bankFlowLoading = ref(false)
+const bankFlowRows = ref<BankFlowRow[]>([])
+
+async function openBankFlow() {
+  showBankFlow.value = true
+  if (bankFlowRows.value.length > 0) return
+  bankFlowLoading.value = true
+  try {
+    // 起点 = 设置里填写的银行存款期初余额
+    let opening = 0
+    try {
+      const setRes = await api.get<ApiResponse<{ bankOpeningBalanceCents: number }>>('/settings')
+      opening = setRes.data.bankOpeningBalanceCents || 0
+    } catch {
+      opening = 0
+    }
+    const res = await api.get<ApiResponse<{ items: Transaction[] }>>('/transactions', { pageSize: 10000 })
+    const list = (res.data.items || []).slice()
+    // 按时间升序（同日按 id），以银行期初为起点逐笔增减
+    list.sort((a, b) => (a.txnDate === b.txnDate ? a.id - b.id : (a.txnDate < b.txnDate ? -1 : 1)))
+    let running = opening
+    const asc: BankFlowRow[] = list.map(t => {
+      const income = t.direction === 'income' ? t.amountCents : 0
+      const expense = t.direction === 'expense' ? t.amountCents : 0
+      running += income - expense
+      return { id: t.id, date: t.txnDate, incomeCents: income, expenseCents: expense, balanceCents: running }
+    })
+    bankFlowRows.value = asc.reverse() // 最新在上
+  } catch {
+    bankFlowRows.value = []
+  } finally {
+    bankFlowLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -277,6 +348,26 @@ function goCategories() {
   color: #1989fa;
   margin-top: 2px;
 }
+
+/* 银行存款流水弹窗 */
+.bf-popup { padding: 14px 12px 18px; }
+.bf-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.bf-title { font-size: 15px; font-weight: 600; color: #1f2329; }
+.bf-close { font-size: 18px; color: #969799; cursor: pointer; padding: 2px; }
+.bf-loading, .bf-empty { padding: 40px 0; text-align: center; color: #969799; font-size: 13px; }
+.bf-table-wrap { max-height: 62vh; overflow-y: auto; border: 1px solid #f0f1f2; border-radius: 8px; }
+.bf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bf-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: #f7f8fa; color: #969799; font-weight: 500; font-size: 11px;
+  padding: 8px 8px; text-align: left; border-bottom: 1px solid #ebedf0; white-space: nowrap;
+}
+.bf-table td { padding: 8px 8px; border-bottom: 1px solid #f2f3f5; color: #1f2329; white-space: nowrap; }
+.bf-table tr:last-child td { border-bottom: none; }
+.bf-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bf-table td.income { color: #07c160; }
+.bf-table td.expense { color: #ee0a24; }
+.bf-table td.balance { font-weight: 600; }
 
 .dash-card.owe {
   background: #fcebeb;

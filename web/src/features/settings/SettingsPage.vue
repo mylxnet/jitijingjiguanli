@@ -356,10 +356,7 @@ async function handleReset() {
   resetting.value = true
   try {
     await api.post('/system/reset')
-	    // 清除本地引导标记，确保重置后重新注册时再次显示引导页
-	    for (const key of Object.keys(localStorage)) {
-	      if (key.startsWith('jt_onboarding_done_')) localStorage.removeItem(key)
-	    }
+	    // 重置会删除组织行，重新注册的组织 onboarded 默认为 0，会再次进入引导页
 	    showToast('系统已重置，即将跳转到注册页')
 	    await auth.logout()
 	    router.push('/register')
