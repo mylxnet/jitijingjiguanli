@@ -31,7 +31,7 @@
         <span class="side-nav-icon">🚪</span>
         <span>退出</span>
       </a>
-      <div class="side-version">v{{ APP_VERSION }}</div>
+      <div class="side-version">v{{ APP_VERSION }}&nbsp;&nbsp;By Mr Lin</div>
     </div>
 
     <!-- 往来单位数据缺失清单（仅桌面，点击角标打开） -->
