@@ -30,6 +30,7 @@ const router = createRouter({
         { path: 'receivables/dividend', name: 'ContactsDividend', component: () => import('../features/contacts/pages/ReceivablesList.vue'), props: { kind: ['dividend','reinvest_dividend'], theme: 'blue',  pageTitle: '应收投资收益' } },
         { path: 'receivables/rent',     name: 'ContactsRent',     component: () => import('../features/contacts/pages/ReceivablesList.vue'), props: { kind: ['rent'],                      theme: 'orange', pageTitle: '应收土地流转费' } },
         { path: 'receivables/service',  name: 'ContactsService',  component: () => import('../features/contacts/pages/ReceivablesList.vue'), props: { kind: ['service'],                   theme: 'purple', pageTitle: '应收管理费' } },
+        { path: 'receivables/bad-debt', name: 'ContactsBadDebt',  component: () => import('../features/contacts/pages/BadDebtList.vue') },
         { path: 'contracts',   name: 'ContactsContracts',component: () => import('../features/contacts/pages/ContractsPage.vue') },
         { path: 'accrue',      name: 'ContactsAccrue',    component: () => import('../features/contacts/pages/AccrueWizard.vue') },
       ],

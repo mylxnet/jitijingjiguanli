@@ -92,11 +92,12 @@
           <div class="di-head">
             <span class="di-title">{{ r.title }}</span>
             <span class="di-kind" :class="r.recvKind">{{ recvKindLabel(r.recvKind) }}</span>
-            <span class="di-status" :class="r.status">{{ r.status === 'open' ? '未结清' : '已结清' }}</span>
+            <span class="di-status" :class="(r.writeoffCents || 0) > 0 ? 'writeoff' : r.status">{{ (r.writeoffCents || 0) > 0 ? '坏账' : (r.status === 'open' ? '未结清' : '已结清') }}</span>
           </div>
           <div class="di-amounts">
             <span class="di-amt">应收 <strong>{{ fmtYuan(r.amountCents) }}</strong></span>
-            <span class="di-amt di-paid">已收 <strong>{{ fmtYuan(r.paidCents) }}</strong></span>
+            <span class="di-amt di-paid">已收 <strong>{{ fmtYuan(cashPaidOf(r)) }}</strong></span>
+            <span v-if="(r.writeoffCents || 0) > 0" class="di-amt di-bad">坏账 <strong>{{ fmtYuan(r.writeoffCents) }}</strong></span>
             <span class="di-amt di-owe">未收 <strong>{{ fmtYuan(r.outstandingCents) }}</strong></span>
           </div>
         </div>
@@ -237,6 +238,8 @@ const showDetailDialog = ref(false)
 const detailCurrentParty = ref<Party | null>(null)
 const detailLoading = ref(false)
 const detailItems = ref<any[]>([])
+// 已收（现金口径）= 全部核销 − 坏账
+const cashPaidOf = (r: any) => Math.max(0, (r.paidCents || 0) - (r.writeoffCents || 0))
 
 const detailTitle = computed(() => {
   const p = detailCurrentParty.value
@@ -255,7 +258,10 @@ async function openDetail(p: Party) {
   try {
     const r = await api.get<any>('/receivables')
     const list = extractList(r)
-    detailItems.value = list.filter((item: any) => item.partyId === p.id)
+    detailItems.value = list.filter((item: any) =>
+      item.partyId === p.id &&
+      ((item.writeoffCents || 0) === 0 || ((item.paidCents || 0) - (item.writeoffCents || 0)) > 0)
+    )
   } catch {
     detailItems.value = []
   } finally { detailLoading.value = false }
@@ -645,8 +651,10 @@ watch(() => route.query.editParty, handleEditQuery)
 .di-status { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
 .di-status.open { background: #fffbe6; color: #d4a017; }
 .di-status.closed { background: #e6f7e6; color: #07c160; }
+.di-status.writeoff { background: #fdf3e3; color: #b8860b; }
 .di-amounts { display: flex; gap: 12px; font-size: 12px; color: #646566; }
 .di-amt strong { font-weight: 600; color: #1f2329; margin-left: 2px; }
 .di-paid strong { color: #07c160; }
 .di-owe strong { color: #ee0a24; }
+.di-bad strong { color: #b8860b; }
 </style>

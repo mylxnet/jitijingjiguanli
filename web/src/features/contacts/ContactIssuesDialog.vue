@@ -1,5 +1,12 @@
 <template>
-  <van-popup v-model:show="visible" :position="popupPos()" round closeable style="max-height: 70vh">
+  <van-popup
+    v-model:show="visible"
+    :position="popupPos()"
+    round
+    closeable
+    teleport="body"
+    style="max-height: 70vh"
+  >
     <div class="ci-popup">
       <div class="ci-head">数据缺失（{{ issueCount }} 个单位）</div>
       <div v-if="issueCount === 0" class="ci-empty">各单位数据齐全</div>

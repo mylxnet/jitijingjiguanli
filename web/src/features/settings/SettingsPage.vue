@@ -4,38 +4,9 @@
       <h3>设置</h3>
     </div>
 
-    <!-- 资金账户 -->
+    <!-- 账号 -->
     <van-cell-group inset>
-      <div class="section-label">资金账户</div>
-      <van-field
-        v-model="bankBalance"
-        label="银行存款期初余额"
-        type="number"
-        placeholder="0.00"
-        :disabled="saving"
-      />
-      <div v-if="currentBankBalance !== null" class="current-balance">
-        当前银行存款余额：{{ formatFen(currentBankBalance) }}
-      </div>
-      <div style="margin: 12px 16px">
-        <van-button
-          round
-          block
-          type="primary"
-          size="small"
-          :loading="saving"
-          @click="saveBankBalance"
-        >保存</van-button>
-      </div>
-    </van-cell-group>
-
-    <!-- 账号与科目 -->
-    <van-cell-group inset style="margin-top: 16px">
-      <div class="section-label">查询</div>
-      <van-cell title="流水清单" is-link to="/transactions" />
-      <van-cell title="科目汇总" is-link to="/summary" />
       <div class="section-label">账号</div>
-      <van-cell title="科目管理" is-link to="/categories" />
       <van-cell title="修改密码" is-link @click="openPwdDialog" />
     </van-cell-group>
 
@@ -86,21 +57,69 @@
       </div>
     </van-cell-group>
 
-    <!-- 系统重置 -->
+    <!-- 高级设置（默认收起） -->
     <van-cell-group inset style="margin-top: 16px">
-      <div class="section-label danger">危险操作</div>
-      <div style="margin: 4px 16px 8px">
-        <van-button
-          round
-          block
-          size="small"
-          :loading="resetting"
-          @click="handleReset"
-        >系统重置</van-button>
+      <div class="adv-head" @click="showAdvanced = !showAdvanced">
+        <span class="section-label adv-title">高级设置</span>
+        <van-icon :name="showAdvanced ? 'arrow-up' : 'arrow-down'" class="adv-arrow" />
       </div>
-      <div class="reset-tip">
-        清空所有业务数据，保留预置科目结构。重置后需重新注册。
-      </div>
+
+      <template v-if="showAdvanced">
+        <!-- 银行存款 -->
+        <div class="section-label">银行存款</div>
+        <van-field
+          v-model="bankBalance"
+          label="银行存款期初余额"
+          type="number"
+          placeholder="0.00"
+          :disabled="saving"
+        />
+        <div v-if="currentBankBalance !== null" class="current-balance">
+          当前银行存款余额：{{ formatFen(currentBankBalance) }}
+        </div>
+        <div style="margin: 12px 16px">
+          <van-button
+            round
+            block
+            type="primary"
+            size="small"
+            :loading="saving"
+            @click="saveBankBalance"
+          >保存</van-button>
+        </div>
+
+        <!-- 查询 -->
+        <div class="section-label">查询</div>
+        <van-cell title="流水清单" is-link to="/transactions" />
+        <van-cell title="科目汇总" is-link to="/summary" />
+
+        <!-- 账号 -->
+        <div class="section-label">账号</div>
+        <van-cell title="科目管理" is-link to="/categories" />
+
+        <!-- 应收管理 -->
+        <div class="section-label">应收管理</div>
+        <van-cell title="坏账核销" is-link @click="showBadDebt = true" />
+
+        <!-- 往来单位 -->
+        <div class="section-label">往来单位</div>
+        <van-cell title="删除单位" is-link @click="showDelParty = true" />
+
+        <!-- 危险操作 -->
+        <div class="section-label danger">危险操作</div>
+        <div style="margin: 4px 16px 8px">
+          <van-button
+            round
+            block
+            size="small"
+            :loading="resetting"
+            @click="handleReset"
+          >系统重置</van-button>
+        </div>
+        <div class="reset-tip">
+          清空所有业务数据，保留预置科目结构。重置后需重新注册。
+        </div>
+      </template>
     </van-cell-group>
 
     <div style="margin: 16px; padding: 0 16px">
@@ -133,6 +152,12 @@
 
     <!-- 操作日志 -->
     <OperationLogDialog v-model:show="showOpLog" />
+
+    <!-- 坏账核销 -->
+    <BadDebtDialog v-model:show="showBadDebt" />
+
+    <!-- 删除往来单位 -->
+    <DeletePartyDialog v-model:show="showDelParty" />
   </div>
 </template>
 
@@ -148,6 +173,8 @@ import { showToast, showDialog } from 'vant'
 
 import { popupPos } from '../../composables/useScreen';
 import OperationLogDialog from './OperationLogDialog.vue'
+import BadDebtDialog from './BadDebtDialog.vue'
+import DeletePartyDialog from './DeletePartyDialog.vue'
 interface Settings {
   bankOpeningBalanceCents: number
 }
@@ -170,6 +197,9 @@ const backingUp = ref(false)
 const backups = ref<BackupItem[]>([])
 const restoring = ref(false)
 const showOpLog = ref(false)
+const showBadDebt = ref(false)
+const showDelParty = ref(false)
+const showAdvanced = ref(false)
 
 const showPwd = ref(false)
 const savingPwd = ref(false)
@@ -396,6 +426,25 @@ padding-bottom: 60px;
 .section-label.danger {
   color: var(--expense, #e74c3c);
   font-weight: 600;
+}
+
+/* 高级设置折叠头 */
+.adv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.adv-head .adv-title {
+  padding: 0;
+  font-size: 13px;
+  color: var(--ink-900, #1f2329);
+}
+.adv-arrow {
+  color: var(--ink-muted, #969799);
+  font-size: 14px;
 }
 
 .current-balance {

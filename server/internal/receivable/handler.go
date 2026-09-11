@@ -46,6 +46,7 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/parties", h.ListParties)
 	r.POST("/api/parties", h.CreateParty)
 	r.PUT("/api/parties/:id", h.UpdateParty)
+	r.DELETE("/api/parties/:id", h.DeleteParty)
 
 	r.GET("/api/receivables", h.ListReceivables)
 	r.POST("/api/receivables", h.CreateReceivable)
@@ -431,6 +432,47 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 
 	updated, _ := h.repo.FindPartyByID(id)
 	platform.SuccessResponse(c, updated)
+}
+
+// DeleteParty 删除往来单位（方案 A）。
+// DELETE /api/parties/:id
+// 校验：无欠款（含坏账核销已结清）、名下科目余额为 0、未被其它单位应收单引用；
+// 通过则：历史流水改挂「历史归档」→ 真删单位科目 → 连带清理应收/核销/计提标准/合同/再投资去向 → 删单位。
+func (h *Handler) DeleteParty(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "单位 ID 不合法",
+		})
+		return
+	}
+
+	out, err := h.repo.DeleteParty(orgID, id)
+	if err != nil {
+		var blocked *PartyDeleteBlocked
+		if errors.As(err, &blocked) {
+			platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+				Code: blocked.Code, Message: blocked.Message,
+			})
+			return
+		}
+		h.internal(c, "删除往来单位失败")
+		return
+	}
+	if out == nil {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "PARTY_NOT_FOUND", Message: "往来单位不存在",
+		})
+		return
+	}
+
+	_ = h.clRepo.LogChangeVoid(orgID, "party", id, "delete", "normal", "deleted")
+	platform.SuccessResponse(c, out)
 }
 
 // ---------- 应收单 ----------
@@ -835,7 +877,7 @@ func (h *Handler) VoidReceivable(c *gin.Context) {
 
 // ---------- 核销 ----------
 
-// CreateReceipt 收款核销（cash 自动入银行收入；offset 关联支出流水抵销）。
+// CreateReceipt 收款核销（cash 自动入银行收入；offset 关联支出流水抵销；writeoff 坏账全额清零）。
 // POST /api/receivables/:id/receipts
 func (h *Handler) CreateReceipt(c *gin.Context) {
 	orgID, ok := auth.CurrentOrgID(c)
@@ -871,7 +913,8 @@ func (h *Handler) CreateReceipt(c *gin.Context) {
 		})
 		return
 	}
-	if req.AmountCents <= 0 {
+	// 坏账核销按「剩余待收」全额清零，不要求前端传金额；其余方式金额必填为正。
+	if req.Method != "writeoff" && req.AmountCents <= 0 {
 		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
 		return
 	}
@@ -888,19 +931,21 @@ func (h *Handler) CreateReceipt(c *gin.Context) {
 		return
 	}
 
-	// 超收预检（repo 事务内再兜底一次）
-	paid, err := h.paidSum(orgID, recID)
-	if err != nil {
-		h.internal(c, "服务暂时不可用")
-		return
-	}
-	if paid+req.AmountCents > rec.AmountCents {
-		platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
-			Code: "RECEIPT_OVER_RECEIVABLE",
-			Message: fmt.Sprintf("累计核销不能超过应收金额：已收 %.2f，应收 %.2f",
-				float64(paid)/100, float64(rec.AmountCents)/100),
-		})
-		return
+	// 超收预检（repo 事务内再兜底一次）；坏账核销按剩余待收计算，无需此预检。
+	if req.Method != "writeoff" {
+		paid, err := h.paidSum(orgID, recID)
+		if err != nil {
+			h.internal(c, "服务暂时不可用")
+			return
+		}
+		if paid+req.AmountCents > rec.AmountCents {
+			platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+				Code: "RECEIPT_OVER_RECEIVABLE",
+				Message: fmt.Sprintf("累计核销不能超过应收金额：已收 %.2f，应收 %.2f",
+					float64(paid)/100, float64(rec.AmountCents)/100),
+			})
+			return
+		}
 	}
 
 	var note *string
@@ -993,9 +1038,38 @@ func (h *Handler) CreateReceipt(c *gin.Context) {
 			h.internal(c, "抵销核销失败")
 			return
 		}
+	case "writeoff":
+		// 坏账核销：仅限「本年度以前」的应收（往年，或未填年度=0）；本年度及以后不可核销。
+		// 坏账把该单剩余待收全额清零，不生成任何流水（银行/科目/汇总不受影响）；原因必填。
+		curYear := platform.Now().Year()
+		if rec.RecvYear != 0 && rec.RecvYear >= curYear {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code:    "BAD_DEBT_YEAR_NOT_ALLOWED",
+				Message: fmt.Sprintf("坏账核销仅限本年度以前的应收（该单归属 %d 年）", rec.RecvYear),
+			})
+			return
+		}
+		reason := trimSpace(req.Note)
+		if reason == "" {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "BAD_DEBT_NOTE_REQUIRED", Message: "坏账核销需填写原因",
+			})
+			return
+		}
+		outcome, err = h.repo.CreateWriteoffReceipt(orgID, rec, req.ReceiptDate, &reason)
+		if err != nil {
+			if errors.Is(err, ErrOverReceivable) {
+				platform.ErrResponse(c, http.StatusConflict, &platform.AppError{
+					Code: "RECEIVABLE_CLOSED", Message: "该应收单已无待收余额，无法核销坏账",
+				})
+				return
+			}
+			h.internal(c, "坏账核销失败")
+			return
+		}
 	default:
 		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
-			Code: "INVALID_REQUEST", Message: "核销方式不合法（cash/offset）",
+			Code: "INVALID_REQUEST", Message: "核销方式不合法（cash/offset/writeoff）",
 		})
 		return
 	}

@@ -17,6 +17,8 @@ type Party struct {
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 	OutstandingCents  int64     `json:"outstandingCents"`   // 欠款合计
+	Deletable         bool      `json:"deletable"`          // 是否可删除（无欠款 + 科目余额0 + 未被引用）
+	DeleteBlockReason string    `json:"deleteBlockReason"`  // 不可删除原因（可删时为空）
 
 	// --- 投资/再投资专属字段（invest / reinvest 类型用）---
 	InvestAmountCents    int64  `json:"investAmountCents"`    // 投资本金
@@ -51,8 +53,12 @@ type Receivable struct {
 	Note             *string   `json:"note"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
-	PaidCents        int64     `json:"paidCents"`        // 已核销（normal receipts 合计）
-	OutstandingCents int64     `json:"outstandingCents"` // 未收 = amount - paid
+	PaidCents         int64   `json:"paidCents"`         // 已核销合计（全部 normal receipts，含坏账）
+	WriteoffCents     int64   `json:"writeoffCents"`     // 其中坏账核销（method=writeoff）合计
+	WriteoffDate      *string `json:"writeoffDate"`      // 坏账核销日期（存在坏账时才有）
+	WriteoffNote      *string `json:"writeoffNote"`      // 坏账原因（存在坏账时才有）
+	WriteoffReceiptID *int64  `json:"writeoffReceiptId"` // 坏账核销记录 id（供撤销）
+	OutstandingCents  int64   `json:"outstandingCents"`  // 未收 = amount - paid
 }
 
 // Receivable 创建请求（v0.4 支持年度批量计提）。
@@ -205,13 +211,14 @@ type ReinvestAllocationRequest struct {
 	Notes         string `json:"notes"`
 }
 
-// CreateReceiptRequest 收款核销。
+// CreateReceiptRequest 核销请求。
 // method=cash：现金收款，自动生成银行收入流水（科目 = 应收单预设 incomeCategoryId，未预设时用 categoryId 必传）；
-// method=offset：抵销，关联一条已存在的发放支出流水（txnId 必传），不产生现金流水。
+// method=offset：抵销，关联一条已存在的发放支出流水（txnId 必传），不产生现金流水；
+// method=writeoff：坏账核销，把应收单剩余待收全额清零（不生成流水、不需科目/流水，note 必填）。
 type CreateReceiptRequest struct {
 	AmountCents int64  `json:"amountCents"`
 	ReceiptDate string `json:"receiptDate" binding:"required"`
-	Method      string `json:"method" binding:"required,oneof=cash offset"`
+	Method      string `json:"method" binding:"required,oneof=cash offset writeoff"`
 	CategoryID  *int64 `json:"categoryId"`
 	TxnID       *int64 `json:"txnId"`
 	Note        string `json:"note"`

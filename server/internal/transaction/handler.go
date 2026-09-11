@@ -42,6 +42,7 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/transactions", h.ListTransactions)
 	r.POST("/api/transactions", h.CreateTransaction)
+	r.POST("/api/transactions/transfer", h.CreateTransfer)
 	r.PUT("/api/transactions/:id", h.UpdateTransaction)
 }
 
@@ -145,6 +146,109 @@ func (h *Handler) unauthorized(c *gin.Context) {
 	platform.ErrResponse(c, http.StatusUnauthorized, &platform.AppError{
 		Code: "UNAUTHORIZED", Message: "未登录或登录已过期",
 	})
+}
+
+// CreateTransfer 创建一笔权益科目间结转（1 转出 → N 转入）。
+// POST /api/transactions/transfer
+func (h *Handler) CreateTransfer(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+
+	var req CreateTransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	if !validDate(req.TxnDate) {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_DATE", Message: "日期格式不合法，应为 YYYY-MM-DD",
+		})
+		return
+	}
+	if req.SourceCategoryID <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrCategoryNotFound)
+		return
+	}
+	src, err := h.catRepo.FindByID(req.SourceCategoryID)
+	if err != nil || src == nil || src.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrCategoryNotFound)
+		return
+	}
+	if src.Level != 2 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrCategoryLevel2Only)
+		return
+	}
+	if src.Status != "active" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "CATEGORY_INACTIVE", Message: "转出科目已停用",
+		})
+		return
+	}
+	if src.Kind != "equity" {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "TRANSFER_EQUITY_ONLY", Message: "只能结转权益类科目",
+		})
+		return
+	}
+	if req.AmountCents <= 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+		return
+	}
+	if len(req.Legs) == 0 {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "TRANSFER_NO_LEG", Message: "结转至少需要一个转入科目",
+		})
+		return
+	}
+	var total int64
+	for _, leg := range req.Legs {
+		if leg.AmountCents <= 0 {
+			platform.ErrResponse(c, http.StatusBadRequest, platform.ErrInvalidAmount)
+			return
+		}
+		total += leg.AmountCents
+		l, err := h.catRepo.FindByID(leg.CategoryID)
+		if err != nil || l == nil || l.OrgID != orgID {
+			platform.ErrResponse(c, http.StatusBadRequest, platform.ErrCategoryNotFound)
+			return
+		}
+		if l.Level != 2 {
+			platform.ErrResponse(c, http.StatusBadRequest, platform.ErrCategoryLevel2Only)
+			return
+		}
+		if l.Status != "active" {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "CATEGORY_INACTIVE", Message: "转入科目已停用",
+			})
+			return
+		}
+		if l.Kind != "equity" {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "TRANSFER_EQUITY_ONLY", Message: "只能结转至权益类科目",
+			})
+			return
+		}
+	}
+	if total != req.AmountCents {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "TRANSFER_BALANCE", Message: "转入合计必须等于转出金额",
+		})
+		return
+	}
+
+	id, err := h.repo.CreateTransfer(orgID, req)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
+			Code: "INTERNAL_ERROR", Message: "创建结转失败",
+		})
+		return
+	}
+	platform.SuccessResponse(c, gin.H{"id": id, "ok": true})
 }
 
 // ListTransactions 流水列表 + 筛选。
@@ -346,7 +450,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		return
 	}
 
-	// 记录变更日志
+	// 记录变更日志；作废/恢复流水时联动机动结转状态
 	if req.Status != nil && *req.Status != txn.Status {
 		action := "void"
 		if *req.Status == "normal" {
@@ -355,6 +459,12 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		field := "status"
 		old, new := txn.Status, *req.Status
 		_ = h.clRepo.LogChange(orgID, "transaction", id, action, &field, &old, &new)
+		if err := h.repo.SetTransferStatusByTxn(orgID, txn.ID, *req.Status); err != nil {
+			platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
+				Code: "INTERNAL_ERROR", Message: "同步结转状态失败",
+			})
+			return
+		}
 	}
 	if req.Date != nil && *req.Date != txn.TxnDate {
 		h.clRepo.LogUpdateField(orgID, "transaction", id, "txn_date", txn.TxnDate, *req.Date)

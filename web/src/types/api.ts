@@ -50,6 +50,8 @@ export interface Party {
   createdAt: string
   updatedAt: string
   outstandingCents: number
+  deletable?: boolean // 是否可删除（无欠款 + 科目余额0 + 未被引用）
+  deleteBlockReason?: string // 不可删除原因（可删时为空）
 
   // 投资/再投资专属字段（invest / reinvest 类型用）
   investAmountCents: number // 投资本金
@@ -134,6 +136,10 @@ export interface Receivable {
   createdAt: string
   updatedAt: string
   paidCents: number
+  writeoffCents: number
+  writeoffDate?: string | null
+  writeoffNote?: string | null
+  writeoffReceiptId?: number | null
   outstandingCents: number
 }
 
@@ -148,7 +154,7 @@ export interface Receipt {
   receivableId: number
   amountCents: number
   receiptDate: string
-  method: 'cash' | 'offset'
+  method: 'cash' | 'offset' | 'writeoff'
   txnId: number | null
   note: string | null
   status: 'normal' | 'voided'

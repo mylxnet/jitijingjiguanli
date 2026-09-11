@@ -145,12 +145,12 @@
         <div class="detail-block">
           <div class="section-title">应收记录</div>
           <div v-if="detailLoading" class="loading-state"><van-skeleton title :row="4" /></div>
-        <div v-else-if="receivableItems.length === 0" class="empty-state">
+        <div v-else-if="receivableDisplay.length === 0" class="empty-state">
           <p>该单位暂无应收记录</p>
         </div>
 
         <div v-else class="recv-list">
-          <div v-for="r in receivableItems" :key="r.id" class="recv-card">
+          <div v-for="r in receivableDisplay" :key="r.id" class="recv-card">
             <div class="recv-head" @click="toggleReceipts(r)">
               <div class="recv-title-wrap">
                 <span class="recv-title">{{ r.title }}</span>
@@ -161,7 +161,8 @@
             </div>
             <div class="recv-amounts">
               <div class="amount-cell"><span class="amount-label">应收</span>{{ formatFen(r.amountCents) }}</div>
-              <div class="amount-cell"><span class="amount-label">已收</span>{{ formatFen(r.paidCents) }}</div>
+              <div class="amount-cell"><span class="amount-label">已收</span>{{ formatFen(cashPaid(r)) }}</div>
+              <div v-if="r.writeoffCents > 0" class="amount-cell"><span class="amount-label">坏账</span>{{ formatFen(r.writeoffCents) }}</div>
               <div class="amount-cell strong"><span class="amount-label">未收</span>{{ formatFen(r.outstandingCents) }}</div>
             </div>
             <div class="recv-actions">
@@ -173,8 +174,8 @@
             <div v-if="expandedReceipts[r.id]" class="receipt-list">
               <div v-if="!receiptsByRec[r.id] || receiptsByRec[r.id].length === 0" class="receipt-empty">暂无核销记录</div>
               <div v-for="rc in receiptsByRec[r.id] || []" :key="rc.id" class="receipt-row" :class="{ voided: rc.status === 'voided' }">
-                <span class="receipt-method" :class="rc.method">{{ rc.method === 'cash' ? '现金' : '抵销' }}</span>
-                <span class="receipt-amount">{{ rc.method === 'cash' ? '+' : '抵' }}{{ formatFen(rc.amountCents) }}</span>
+                <span class="receipt-method" :class="rc.method">{{ receiptMethodLabel(rc.method) }}</span>
+                <span class="receipt-amount">{{ rc.method === 'cash' ? '+' : rc.method === 'offset' ? '抵' : '坏' }}{{ formatFen(rc.amountCents) }}</span>
                 <span class="receipt-date">{{ rc.receiptDate }}</span>
                 <span v-if="rc.status === 'voided'" class="l2-chip stopped">已作废</span>
                 <van-button
@@ -595,7 +596,7 @@ function exportContactsExcel(targetParties: Party[]): void {
       related.filter(r => r.recvKind === kind).reduce((s, r) => s + (r.outstandingCents || 0), 0)
     )
     const paidSum = fenToYuan(
-      related.reduce((s, r) => s + (r.paidCents || 0), 0)
+      related.reduce((s, r) => s + cashPaid(r), 0)
     )
     const outstandingTotal = fenToYuan(p.outstandingCents)
     return [
@@ -624,7 +625,7 @@ function exportContactsExcel(targetParties: Party[]): void {
       return s + related.reduce((ss, r) => ss + (r.outstandingCents || 0), 0)
     }, 0)),
     fenToYuan(0),
-    fenToYuan(targetParties.reduce((s, p) => s + (receivableItems.value.filter(r => r.partyId === p.id).reduce((ss, r) => ss + (r.paidCents || 0), 0)), 0)),
+    fenToYuan(targetParties.reduce((s, p) => s + (receivableItems.value.filter(r => r.partyId === p.id).reduce((ss, r) => ss + cashPaid(r), 0)), 0)),
     fenToYuan(targetParties.reduce((s, p) => s + p.outstandingCents, 0)),
   ]
   const wsRecv = XLSX.utils.aoa_to_sheet([recvHeaders, ...recvRows, totalRow])
@@ -645,6 +646,14 @@ const currentParty = ref<Party | null>(null)
 const receivableItems = ref<Receivable[]>([])
 const receiptsByRec = ref<Record<number, Receipt[]>>({})
 const expandedReceipts = ref<Record<number, boolean>>({})
+
+// 已收 = 全部核销 − 坏账（坏账不是真实收款，展示口径须剔除）
+const cashPaid = (r: Receivable) => Math.max(0, (r.paidCents || 0) - (r.writeoffCents || 0))
+const receiptMethodLabel = (m: string) => m === 'cash' ? '现金' : m === 'offset' ? '抵销' : '坏账'
+// 应收明细展示：非坏账单，或坏账单但「实际已收 > 0」；全额坏账完全剔除（只在坏账清单页归档）
+const receivableDisplay = computed(() => receivableItems.value.filter(
+  r => (r.writeoffCents || 0) === 0 || cashPaid(r) > 0
+))
 
 const showAddParty = ref(false)
 const editParty = ref(false)
@@ -1247,6 +1256,7 @@ async function openDetail(p: Party) {
   void loadAllocations(p.id)
   try {
     const res = await api.get<ApiResponse<ReceivableListResponse>>('/receivables', { partyId: p.id, pageSize: 200 })
+    // 保留全部（含坏账单）：合计/导出口径不因隐藏而缩水（已收的钱仍计入）
     receivableItems.value = res.data.items || []
     for (const r of receivableItems.value) {
       if (r.status === 'open' || r.paidCents > 0) {

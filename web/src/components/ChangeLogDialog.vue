@@ -132,6 +132,7 @@ function statusText(s: string | null): string {
     unit: '单位',
     cash: '现金',
     offset: '抵销',
+    writeoff: '坏账',
     invest: '投资',
     recover: '收回',
     income: '收入',

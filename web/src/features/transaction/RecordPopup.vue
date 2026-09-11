@@ -20,7 +20,7 @@
           <van-button :type="record.direction === 'expense' ? 'primary' : 'default'" size="small" @click="record.direction = 'expense'">支出</van-button>
         </div>
         <van-field v-model="record.date" label="日期" placeholder="YYYY-MM-DD" />
-        <van-field v-model="record.note" label="摘要" placeholder="买了什么、给了谁（可选）" />
+        <van-field v-model="record.note" label="摘要" placeholder="收到某某公司的什么款" />
         <van-field
           :model-value="record.categoryName || '请选择科目'"
           is-link readonly label="科目"
@@ -74,6 +74,7 @@
             </select>
           </template>
         </van-field>
+        <van-field v-if="quickManualNote" v-model="quick.note" label="摘要" placeholder="请输入摘要" />
         <van-field v-model="quick.amount" label="金额" type="number" placeholder="0.00" inputmode="decimal" />
       </template>
 
@@ -133,7 +134,7 @@ const partyOptions = computed(() => {
   }
   return allParties.value.map(p => ({ text: p.name, value: p.id }))
 })
-const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, recvId: null as number | null, amount: '' })
+const quick = ref({ date: todayStr(), biz: '', companyId: null as number | null, partyId: null as number | null, recvId: null as number | null, amount: '', note: '' })
 const showNewCompany = ref(false)
 const newCompanyName = ref('')
 const creatingCompany = ref(false)
@@ -149,11 +150,18 @@ interface QuickBiz {
   defaultNote?: string
   partyTypesFilter?: ('flow' | 'invest' | 'reinvest' | 'other')[]
   group?: string
+  // 投资模板：主流水直接记入「待投资」科目（银行存款、待投资同步减少），而非计入该公司科目，
+  // 公司投资额由往来单位投资额字段展示，不涉科目结转。
+  recordToPool?: boolean
+  // 快速记账需要用户输入摘要（弹窗显示「摘要」输入框，默认值 = defaultNote）。
+  manualNote?: boolean
 }
 const quickBusinesses: QuickBiz[] = [
   // 资金类
   { key: 'grant', label: '收上级财政补助', dir: 'income', catName: '上级补助', defaultNote: '收上级财政补助', group: '资金类' },
+  { key: 'otherFinance', label: '收到其他财政性收入', dir: 'income', catName: '待投资', defaultNote: '收到其他财政性收入', group: '资金类' },
   { key: 'invest', label: '长期投资给公司', invest: true, dir: 'expense', group: '资金类' },
+  { key: 'otherInvest', label: '其他财政性收入投资给公司', invest: true, dir: 'expense', catName: '待投资', recordToPool: true, defaultNote: '其他财政性收入投资给公司', group: '资金类' },
   { key: 'dividend', label: '收到投资收益/分红', dir: 'income', needParty: true, autoBuildL1: '投资收益', defaultNote: '收到 {party} 投资收益', partyTypesFilter: ['invest', 'reinvest'], group: '资金类' },
   { key: 'recover', label: '收回投资', dir: 'income', needParty: true, catName: '待投资', defaultNote: '收回 {party} 投资', partyTypesFilter: ['invest', 'reinvest'], group: '资金类' },
   { key: 'reinvest', label: '532-再投资', dir: 'expense', needParty: true, autoBuildL1: '再投资', defaultNote: '532再投资给 {party}', partyTypesFilter: ['invest', 'reinvest'], group: '资金类' },
@@ -165,6 +173,8 @@ const quickBusinesses: QuickBiz[] = [
   { key: 'toHousehold', label: '拨付流转费给农户', dir: 'expense', catName: '土地流转费-转付农户', defaultNote: '拨付流转费给农户', group: '流转类' },
   { key: 'mgmtFee', label: '支出管理费', dir: 'expense', catName: '管理费支出', defaultNote: '管理费支出', group: '流转类' },
   // 其他
+  { key: 'otherIncome', label: '收到其他收入', dir: 'income', catName: '其他收入', defaultNote: '收到其他收入', manualNote: true, group: '其他' },
+  { key: 'otherPay', label: '拨出其他收入', dir: 'expense', catName: '其他收入', defaultNote: '拨付其他收入', manualNote: true, group: '其他' },
   { key: 'interest', label: '银行存款利息', dir: 'income', catName: '其他收入', defaultNote: '银行存款利息', group: '其他' },
 ]
 
@@ -176,12 +186,19 @@ const quickNeedParty = computed(() => {
   const b = quickBusinesses.find(x => x.key === quick.value.biz)
   return !!(b && b.needParty)
 })
+const quickManualNote = computed(() => {
+  const b = quickBusinesses.find(x => x.key === quick.value.biz)
+  return !!(b && b.manualNote)
+})
 
 function onQuickBizChange() {
   quick.value.companyId = null
   quick.value.partyId = null
   showNewCompany.value = false
   newCompanyName.value = ''
+  // 需要手动摘要的业务：默认填入模板预设摘要
+  const b = quickBusinesses.find(x => x.key === quick.value.biz)
+  if (b?.manualNote) quick.value.note = b.defaultNote || b.label
 }
 
 function partyNameById(id: number | null | undefined): string {
@@ -367,7 +384,10 @@ async function saveQuick() {
     return
   }
   const partyName = partyNameById(quick.value.partyId)
-  const note = fillNote(biz.defaultNote || biz.label, partyName)
+  // 可手动输入摘要的业务优先用用户输入，空则回退模板默认
+  const note = biz.manualNote
+    ? (quick.value.note.trim() || fillNote(biz.defaultNote || biz.label, partyName))
+    : fillNote(biz.defaultNote || biz.label, partyName)
   saving.value = true
   recordError.value = ''
   try {
@@ -416,7 +436,13 @@ async function saveQuick() {
     }
     if (!receiptCreated) {
       let categoryId: number
-      if (biz.invest) {
+      if (biz.recordToPool) {
+        // 投资给公司但直接计入「待投资」：银行存款、待投资同步减少，公司投资额由往来单位字段展示
+        if (!biz.catName) throw new Error('模板缺少 catName')
+        const pool = findEquityCat(biz.catName)
+        if (!pool) throw new Error(`缺少科目：${biz.catName}`)
+        categoryId = pool.id
+      } else if (biz.invest) {
         categoryId = quick.value.companyId!
       } else if (biz.autoBuildL1) {
         if (!quick.value.partyId) throw new Error('缺少往来单位')
@@ -428,6 +454,7 @@ async function saveQuick() {
         if (!cat) throw new Error(`缺少科目：${biz.catName}`)
         categoryId = cat.id
       }
+      // 投资给公司：累计该单位投资本金
       await api.post('/transactions', {
         txnDate: quick.value.date,
         direction: biz.dir || 'income',
@@ -436,7 +463,6 @@ async function saveQuick() {
         note,
         partyId: quick.value.partyId || null,
       })
-      // 长期投资给公司：累计该单位投资本金
       if (biz.invest) {
         await syncInvestedAmount(amount)
       }
@@ -495,7 +521,9 @@ interface OpenRecordOptions {
 async function openRecord(opts?: OpenRecordOptions) {
   recordMode.value = 'quick'
   record.value = { date: todayStr(), note: '', categoryName: '', categoryId: null, amount: '', direction: 'expense' }
-  quick.value = { date: todayStr(), biz: opts?.biz || '', companyId: null, partyId: null, recvId: opts?.recvId ?? null, amount: opts?.amount || '' }
+  quick.value = { date: todayStr(), biz: opts?.biz || '', companyId: null, partyId: null, recvId: opts?.recvId ?? null, amount: opts?.amount || '', note: '' }
+  const initialBiz = quickBusinesses.find(x => x.key === quick.value.biz)
+  if (initialBiz?.manualNote) quick.value.note = initialBiz.defaultNote || initialBiz.label
   showNewCompany.value = false
   newCompanyName.value = ''
   recordError.value = ''

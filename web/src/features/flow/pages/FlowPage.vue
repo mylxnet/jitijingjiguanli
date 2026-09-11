@@ -31,6 +31,10 @@
           <div class="fp-stat-value" style="color:#ee0a24">{{ fmt(rentStats.unpaid) }}</div>
         </div>
         <div class="fp-stat">
+          <div class="fp-stat-label">坏账</div>
+          <div class="fp-stat-value" style="color:#b8860b">{{ fmt(rentStats.writeoff) }}</div>
+        </div>
+        <div class="fp-stat">
           <div class="fp-stat-label">转付农户支出</div>
           <div class="fp-stat-value" style="color:#ff6034">{{ fmt(rentFarmerExpenseTotal) }}</div>
         </div>
@@ -51,10 +55,10 @@
               <tr v-for="item in rentItems" :key="item.partyId">
                 <td>{{ item.partyName }}</td>
                 <td class="num">{{ fmt(item.amountCents) }}</td>
-                <td class="num">{{ fmt(item.paidCents) }}</td>
+                <td class="num">{{ fmt(cashPaidOf(item)) }}</td>
                 <td class="num">{{ fmt(item.outstandingCents) }}</td>
                 <td>
-                  <span class="fp-status" :class="item.status">{{ statusLabel(item.status) }}</span>
+                  <span class="fp-status" :class="rowStatusClass(item)">{{ rowStatusLabel(item) }}</span>
                 </td>
               </tr>
               <tr v-if="rentItems.length === 0"><td colspan="5" class="empty-cell">暂无数据</td></tr>
@@ -111,6 +115,10 @@
           <div class="fp-stat-value" style="color:#07c160">{{ fmt(svcStats.paid) }}</div>
         </div>
         <div class="fp-stat">
+          <div class="fp-stat-label">坏账</div>
+          <div class="fp-stat-value" style="color:#b8860b">{{ fmt(svcStats.writeoff) }}</div>
+        </div>
+        <div class="fp-stat">
           <div class="fp-stat-label">已支出</div>
           <div class="fp-stat-value" style="color:#ff6034">{{ fmt(svcExpenseTotal) }}</div>
         </div>
@@ -135,10 +143,10 @@
               <tr v-for="item in svcItems" :key="item.partyId">
                 <td>{{ item.partyName }}</td>
                 <td class="num">{{ fmt(item.amountCents) }}</td>
-                <td class="num">{{ fmt(item.paidCents) }}</td>
+                <td class="num">{{ fmt(cashPaidOf(item)) }}</td>
                 <td class="num">{{ fmt(item.outstandingCents) }}</td>
                 <td>
-                  <span class="fp-status" :class="item.status">{{ statusLabel(item.status) }}</span>
+                  <span class="fp-status" :class="rowStatusClass(item)">{{ rowStatusLabel(item) }}</span>
                 </td>
               </tr>
               <tr v-if="svcItems.length === 0"><td colspan="5" class="empty-cell">暂无数据</td></tr>
@@ -176,7 +184,7 @@ import { api } from '../../../lib/http'
 
 interface Receivable {
   id: number; partyId: number; partyName: string; recvYear: number;
-  recvKind: string; amountCents: number; paidCents: number;
+  recvKind: string; amountCents: number; paidCents: number; writeoffCents?: number;
   outstandingCents: number; status: 'open' | 'partial' | 'paid';
 }
 interface Transaction {
@@ -242,27 +250,37 @@ const svcShowDetail = ref(false)
 const fmt = (c: number) => '¥' + (c / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2 })
 
 const statusLabel = (s: string) => ({ open: '未收', partial: '部分收', paid: '已收清' }[s] || s)
+// 坏账单行：状态显示为「坏账」
+const rowStatusLabel = (r: Receivable) => (r.writeoffCents || 0) > 0 ? '坏账' : statusLabel(r.status)
+const rowStatusClass = (r: Receivable) => (r.writeoffCents || 0) > 0 ? 'writeoff' : r.status
 
 // ====== 土地流转费收入 ======
 
-const rentReceivables = computed(() =>
-  allReceivables.value.filter(r => r.recvKind === 'rent' && r.recvYear === rentYear.value)
+// 已收 = 全部核销 − 坏账（坏账非真实收款）
+const cashPaidOf = (r: Receivable) => Math.max(0, (r.paidCents || 0) - (r.writeoffCents || 0))
+// 正常页面可见：非坏账单，或坏账单但「实际已收 > 0」；全额坏账完全剔除
+const visRecv = (r: Receivable) => (r.writeoffCents || 0) === 0 || cashPaidOf(r) > 0
+
+// 显示集：明细与统计共用同一集合
+const rentAll = computed(() =>
+  allReceivables.value.filter(r => r.recvKind === 'rent' && r.recvYear === rentYear.value && visRecv(r))
 )
 
 const rentItems = computed(() => {
   const map = new Map<number, Receivable>()
-  for (const r of rentReceivables.value) {
+  for (const r of rentAll.value) {
     map.set(r.partyId, r)
   }
   return Array.from(map.values())
 })
 
 const rentStats = computed(() => {
-  const items = rentReceivables.value
+  const items = rentAll.value
   const total = items.reduce((s, r) => s + r.amountCents, 0)
-  const paid = items.reduce((s, r) => s + r.paidCents, 0)
+  const paid = items.reduce((s, r) => s + cashPaidOf(r), 0)
   const unpaid = items.reduce((s, r) => s + r.outstandingCents, 0)
-  return { total, paid, unpaid }
+  const writeoff = items.reduce((s, r) => s + (r.writeoffCents || 0), 0)
+  return { total, paid, unpaid, writeoff }
 })
 
 // 按名称动态解析科目 ID（科目 ID 随组织注册而变化，禁止硬编码，见 532 修复同款约定）
@@ -291,24 +309,26 @@ function onRentYearChange() {
 
 // ====== 流转管理费 ======
 
-const svcReceivables = computed(() =>
-  allReceivables.value.filter(r => r.recvKind === 'service' && r.recvYear === svcYear.value)
+// 显示集：明细与统计共用同一集合
+const svcAll = computed(() =>
+  allReceivables.value.filter(r => r.recvKind === 'service' && r.recvYear === svcYear.value && visRecv(r))
 )
 
 const svcItems = computed(() => {
   const map = new Map<number, Receivable>()
-  for (const r of svcReceivables.value) {
+  for (const r of svcAll.value) {
     map.set(r.partyId, r)
   }
   return Array.from(map.values())
 })
 
 const svcStats = computed(() => {
-  const items = svcReceivables.value
+  const items = svcAll.value
   const total = items.reduce((s, r) => s + r.amountCents, 0)
-  const paid = items.reduce((s, r) => s + r.paidCents, 0)
+  const paid = items.reduce((s, r) => s + cashPaidOf(r), 0)
   const unpaid = items.reduce((s, r) => s + r.outstandingCents, 0)
-  return { total, paid, unpaid }
+  const writeoff = items.reduce((s, r) => s + (r.writeoffCents || 0), 0)
+  return { total, paid, unpaid, writeoff }
 })
 
 const svcExpenses = computed(() => {
@@ -390,7 +410,7 @@ onMounted(load)
 .fp-year-select:focus { border-color: #1989fa; }
 
 .fp-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px;
 }
 .fp-stat {
   background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; padding: 10px 12px;
@@ -434,6 +454,7 @@ onMounted(load)
 .fp-status.open { background: #fff1f0; color: #ee0a24; }
 .fp-status.partial { background: #fff7e6; color: #fa8c16; }
 .fp-status.paid { background: #e8f8e8; color: #07c160; }
+.fp-status.writeoff { background: #fdf3e3; color: #b8860b; }
 
 @media (max-width: 600px) {
   .fp-stats { grid-template-columns: repeat(2, 1fr); }

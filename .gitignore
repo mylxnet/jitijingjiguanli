@@ -14,6 +14,9 @@ data/
 # 测试/临时数据统一目录（测试产物、调试转储、临时脚本一律放这里，不入库）
 _scratch/
 
+# 临时原型/演示（不入库）
+demo/
+
 # 前端
 web/node_modules/
 web/dist*/

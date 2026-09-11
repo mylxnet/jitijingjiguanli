@@ -209,8 +209,19 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 		items = append(items, p)
 	}
 	if err := rows.Err(); err != nil {
-			return nil, err
+		return nil, err
+	}
+	rows.Close() // 释放唯一连接（SetMaxOpenConns(1)），供下方"可否删除"判定查询使用
+
+	// 追加"可否删除"判定（口径与删除接口 assessDeletable 共用）
+	for i := range items {
+		code, reason, aerr := r.assessDeletable(r.db, orgID, items[i].ID, items[i].Name, items[i].Type)
+		if aerr != nil {
+			return nil, aerr
 		}
+		items[i].Deletable = code == ""
+		items[i].DeleteBlockReason = reason
+	}
 	return items, nil
 }
 
@@ -232,6 +243,357 @@ func (r *Repo) UpdateParty(id, orgID int64, updates map[string]any) error {
 		return fmt.Errorf("更新往来单位失败: %w", err)
 	}
 	return nil
+}
+
+// ---------- 删除往来单位（方案 A） ----------
+
+// partyCategoryL1 单位类型 → 可能承载其同名二级科目的容器 L1。
+// 覆盖两条来源：建单位联动（typeToL1）与收款时动态建科目（recvKindToL1）。
+var partyCategoryL1 = map[string][]string{
+	"flow":     {"土地流转费收入", "流转管理费"},
+	"invest":   {"长期投资", "投资收益", "再投资"},
+	"reinvest": {"再投资", "投资收益"},
+}
+
+// 删除单位时，其科目上的历史流水改挂到此归档容器，科目本身真删（流水一条不丢）。
+const (
+	archiveL1Name = "历史归档"
+	archiveL2Name = "已删除单位"
+)
+
+// PartyDeleteBlocked 表示单位不满足删除条件（带原因码，供接口 409 返回）。
+type PartyDeleteBlocked struct {
+	Code    string
+	Message string
+}
+
+func (e *PartyDeleteBlocked) Error() string { return e.Message }
+
+// DeletePartyOutcome 单位删除结果（清理计数，供留痕与前端提示）。
+type DeletePartyOutcome struct {
+	PartyName          string `json:"partyName"`
+	CategoriesDeleted  int    `json:"categoriesDeleted"`
+	TxnsMigrated       int    `json:"txnsMigrated"`
+	ReceivablesDeleted int    `json:"receivablesDeleted"`
+	ReceiptsDeleted    int    `json:"receiptsDeleted"`
+	StandardsDeleted   int    `json:"standardsDeleted"`
+	ContractsDeleted   int    `json:"contractsDeleted"`
+	AllocationsDeleted int    `json:"allocationsDeleted"`
+}
+
+// DeleteParty 删除往来单位（方案 A）。单事务：
+//  1. 判定：无未结清应收（含坏账核销，已 closed）→ 否则 PARTY_HAS_DEBT；
+//     其同名二级科目余额全为 0 → 否则 PARTY_HAS_BALANCE；
+//     科目未被其它单位应收单引用 → 否则 PARTY_CATEGORY_REFERENCED。
+//  2. 其科目上的历史流水改挂「历史归档 / 已删除单位」（流水保留）。
+//  3. 真删该单位科目；连带清理应收/核销/计提标准/合同/再投资去向；最后删单位。
+// 返回 (nil, nil) 表示单位不存在。
+func (r *Repo) DeleteParty(orgID, partyID int64) (*DeletePartyOutcome, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启删除单位事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	var pName, pType string
+	if err := tx.QueryRow(`SELECT name, type FROM party WHERE id=? AND org_id=?`, partyID, orgID).
+		Scan(&pName, &pType); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("查询往来单位失败: %w", err)
+	}
+
+	// 判定（口径与列表 assessDeletable 共用）
+	code, reason, err := r.assessDeletable(tx, orgID, partyID, pName, pType)
+	if err != nil {
+		return nil, err
+	}
+	if code != "" {
+		return nil, &PartyDeleteBlocked{Code: code, Message: reason}
+	}
+
+	// 该单位的同名二级科目（按类型限定容器 L1，避免误伤同名异类型单位）
+	catIDs, err := r.partyCategoryIDs(tx, orgID, pName, pType)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &DeletePartyOutcome{PartyName: pName}
+
+	// 历史流水改挂「历史归档」（科目真删、流水不丢）；无流水则无需归档
+	if len(catIDs) > 0 {
+		refCnt, err := countCategoryRefs(tx, orgID, catIDs)
+		if err != nil {
+			return nil, err
+		}
+		if refCnt > 0 {
+			archiveID, err := ensureArchiveCategoryTx(tx, orgID)
+			if err != nil {
+				return nil, err
+			}
+			in := placeholders(len(catIDs))
+			res, err := tx.Exec(`UPDATE txn SET category_id=? WHERE org_id=? AND category_id IN (`+in+`)`,
+				catArgs([]any{archiveID, orgID}, catIDs)...)
+			if err != nil {
+				return nil, fmt.Errorf("迁移流水失败: %w", err)
+			}
+			if n, _ := res.RowsAffected(); n > 0 {
+				out.TxnsMigrated = int(n)
+			}
+			if _, err := tx.Exec(`UPDATE transfer SET source_category_id=? WHERE org_id=? AND source_category_id IN (`+in+`)`,
+				catArgs([]any{archiveID, orgID}, catIDs)...); err != nil {
+				return nil, fmt.Errorf("迁移转账失败: %w", err)
+			}
+			if _, err := tx.Exec(`UPDATE transfer_leg SET category_id=? WHERE org_id=? AND category_id IN (`+in+`)`,
+				catArgs([]any{archiveID, orgID}, catIDs)...); err != nil {
+				return nil, fmt.Errorf("迁移转账明细失败: %w", err)
+			}
+		}
+	}
+
+	// 连带清理（先核销记录，再应收单）
+	res, err := tx.Exec(
+		`DELETE FROM receipt WHERE org_id=? AND receivable_id IN (SELECT id FROM receivable WHERE org_id=? AND party_id=?)`,
+		orgID, orgID, partyID)
+	if err != nil {
+		return nil, fmt.Errorf("删除核销记录失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		out.ReceiptsDeleted = int(n)
+	}
+
+	res, err = tx.Exec(`DELETE FROM receivable WHERE org_id=? AND party_id=?`, orgID, partyID)
+	if err != nil {
+		return nil, fmt.Errorf("删除应收单失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		out.ReceivablesDeleted = int(n)
+	}
+
+	res, err = tx.Exec(`DELETE FROM recv_standard WHERE org_id=? AND party_id=?`, orgID, partyID)
+	if err != nil {
+		return nil, fmt.Errorf("删除计提标准失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		out.StandardsDeleted = int(n)
+	}
+
+	res, err = tx.Exec(`DELETE FROM contract WHERE org_id=? AND party_id=?`, orgID, partyID)
+	if err != nil {
+		return nil, fmt.Errorf("删除合同失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		out.ContractsDeleted = int(n)
+	}
+
+	res, err = tx.Exec(`DELETE FROM reinvest_allocation WHERE org_id=? AND (party_id=? OR target_party_id=?)`,
+		orgID, partyID, partyID)
+	if err != nil {
+		return nil, fmt.Errorf("删除再投资去向失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		out.AllocationsDeleted = int(n)
+	}
+
+	// 真删单位科目
+	if len(catIDs) > 0 {
+		res, err = tx.Exec(`DELETE FROM category WHERE org_id=? AND id IN (`+placeholders(len(catIDs))+`)`,
+			catArgs([]any{orgID}, catIDs)...)
+		if err != nil {
+			return nil, fmt.Errorf("删除单位科目失败: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			out.CategoriesDeleted = int(n)
+		}
+	}
+
+	// 删单位
+	if _, err := tx.Exec(`DELETE FROM party WHERE id=? AND org_id=?`, partyID, orgID); err != nil {
+		return nil, fmt.Errorf("删除往来单位失败: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交删除单位事务失败: %w", err)
+	}
+	return out, nil
+}
+
+// queryer 抽象 *sql.DB 与 *sql.Tx 的查询能力（判定逻辑在删除接口与列表两处共用）。
+type queryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// assessDeletable 判定单位可否删除（口径唯一来源，供删除接口与列表共用）。
+// 返回 (blockCode, blockReason)：blockCode 非空即不可删。
+func (r *Repo) assessDeletable(q queryer, orgID, partyID int64, name, ptype string) (string, string, error) {
+	var openCnt int
+	if err := q.QueryRow(
+		`SELECT COUNT(*) FROM receivable WHERE org_id=? AND party_id=? AND status='open'`,
+		orgID, partyID).Scan(&openCnt); err != nil {
+		return "", "", fmt.Errorf("查询欠款失败: %w", err)
+	}
+	if openCnt > 0 {
+		return "PARTY_HAS_DEBT", fmt.Sprintf("该单位还有 %d 张未结清应收，不能删除", openCnt), nil
+	}
+
+	catIDs, err := r.partyCategoryIDs(q, orgID, name, ptype)
+	if err != nil {
+		return "", "", err
+	}
+	for _, cid := range catIDs {
+		bal, err := calcCategoryBalance(q, cid)
+		if err != nil {
+			return "", "", err
+		}
+		if bal != 0 {
+			return "PARTY_HAS_BALANCE", fmt.Sprintf("该单位名下科目余额为 %s 元，不为 0，不能删除", fenText(bal)), nil
+		}
+	}
+	if len(catIDs) > 0 {
+		qq := `SELECT COUNT(*) FROM receivable WHERE org_id=? AND party_id<>? AND income_category_id IN (` +
+			placeholders(len(catIDs)) + `)`
+		var refCnt int
+		if err := q.QueryRow(qq, catArgs([]any{orgID, partyID}, catIDs)...).Scan(&refCnt); err != nil {
+			return "", "", fmt.Errorf("查询科目引用失败: %w", err)
+		}
+		if refCnt > 0 {
+			return "PARTY_CATEGORY_REFERENCED", "该单位科目被其它单位的应收单引用，不能删除", nil
+		}
+	}
+	return "", "", nil
+}
+
+// partyCategoryIDs 查该单位在事务内的同名二级科目 id 集合。
+func (r *Repo) partyCategoryIDs(db queryer, orgID int64, name, ptype string) ([]int64, error) {
+	l1names := partyCategoryL1[ptype]
+	if len(l1names) == 0 {
+		return nil, nil
+	}
+	q := `SELECT c.id FROM category c JOIN category p ON p.id = c.parent_id
+	      WHERE c.org_id=? AND c.level=2 AND c.name=? AND p.level=1 AND p.name IN (` +
+		placeholders(len(l1names)) + `)`
+	args := make([]any, 0, len(l1names)+2)
+	args = append(args, orgID, name)
+	for _, n := range l1names {
+		args = append(args, n)
+	}
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询单位同名科目失败: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("扫描单位同名科目失败: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ensureArchiveCategoryTx 定位/惰性创建「历史归档 / 已删除单位」二级科目，返回其 id。
+func ensureArchiveCategoryTx(tx *sql.Tx, orgID int64) (int64, error) {
+	now := platform.Now()
+	var l1id int64
+	err := tx.QueryRow(`SELECT id FROM category WHERE org_id=? AND name=? AND level=1`, orgID, archiveL1Name).Scan(&l1id)
+	if err == sql.ErrNoRows {
+		res, ierr := tx.Exec(
+			`INSERT INTO category(org_id, name, level, parent_id, status, kind, preset, sort_order, created_at, updated_at)
+			 VALUES(?, ?, 1, NULL, 'active', 'equity', 1, 0, ?, ?)`,
+			orgID, archiveL1Name, now, now)
+		if ierr != nil {
+			return 0, fmt.Errorf("创建历史归档一级科目失败: %w", ierr)
+		}
+		l1id, _ = res.LastInsertId()
+	} else if err != nil {
+		return 0, fmt.Errorf("查询历史归档一级科目失败: %w", err)
+	}
+
+	var l2id int64
+	err = tx.QueryRow(`SELECT id FROM category WHERE org_id=? AND name=? AND parent_id=?`, orgID, archiveL2Name, l1id).Scan(&l2id)
+	if err == sql.ErrNoRows {
+		res, ierr := tx.Exec(
+			`INSERT INTO category(org_id, name, level, parent_id, status, kind, preset, sort_order, created_at, updated_at)
+			 VALUES(?, ?, 2, ?, 'active', 'equity', 1, 0, ?, ?)`,
+			orgID, archiveL2Name, l1id, now, now)
+		if ierr != nil {
+			return 0, fmt.Errorf("创建历史归档二级科目失败: %w", ierr)
+		}
+		l2id, _ = res.LastInsertId()
+	} else if err != nil {
+		return 0, fmt.Errorf("查询历史归档二级科目失败: %w", err)
+	}
+	return l2id, nil
+}
+
+// calcCategoryBalance 科目余额（口径同 category.CalcBalance：
+// 期初 + Σ收入 − Σ支出 + Σ转入 − Σ转出）。
+func calcCategoryBalance(db queryer, catID int64) (int64, error) {
+	var opening int64
+	if err := db.QueryRow(`SELECT opening_balance_cents FROM category WHERE id=?`, catID).Scan(&opening); err != nil {
+		return 0, fmt.Errorf("读取科目期初失败: %w", err)
+	}
+	var inc, exp int64
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(CASE WHEN direction='income' THEN amount_cents ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN direction='expense' THEN amount_cents ELSE 0 END), 0)
+		 FROM txn WHERE category_id=? AND status='normal'`, catID).Scan(&inc, &exp); err != nil {
+		return 0, fmt.Errorf("聚合收支失败: %w", err)
+	}
+	var out int64
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(source_amount_cents), 0) FROM transfer WHERE source_category_id=? AND status='normal'`,
+		catID).Scan(&out); err != nil {
+		return 0, fmt.Errorf("聚合转出失败: %w", err)
+	}
+	var in int64
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(leg.amount_cents), 0) FROM transfer_leg leg
+		 JOIN transfer t ON leg.transfer_id = t.id
+		 WHERE leg.category_id=? AND t.status='normal'`, catID).Scan(&in); err != nil {
+		return 0, fmt.Errorf("聚合转入失败: %w", err)
+	}
+	return opening + inc - exp + in - out, nil
+}
+
+// countCategoryRefs 统计指向这些科目的流水/转账记录数（判断是否需要建归档承接）。
+func countCategoryRefs(db queryer, orgID int64, catIDs []int64) (int, error) {
+	in := placeholders(len(catIDs))
+	var total int
+	for _, q := range []string{
+		`SELECT COUNT(*) FROM txn WHERE org_id=? AND category_id IN (` + in + `)`,
+		`SELECT COUNT(*) FROM transfer WHERE org_id=? AND source_category_id IN (` + in + `)`,
+		`SELECT COUNT(*) FROM transfer_leg WHERE org_id=? AND category_id IN (` + in + `)`,
+	} {
+		var n int
+		if err := db.QueryRow(q, catArgs([]any{orgID}, catIDs)...).Scan(&n); err != nil {
+			return 0, fmt.Errorf("统计科目引用失败: %w", err)
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// placeholders 生成 n 个逗号分隔的 ?（n<=0 返回空串）。
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// catArgs 拼接 (前缀参数..., ids...)。
+func catArgs(prefix []any, ids []int64) []any {
+	out := make([]any, 0, len(prefix)+len(ids))
+	out = append(out, prefix...)
+	for _, id := range ids {
+		out = append(out, id)
+	}
+	return out
 }
 
 // ---------- receivable ----------
@@ -297,7 +659,16 @@ func (r *Repo) ListReceivables(orgID int64, partyID *int64, year int, kind, stat
 	sel := `SELECT r.id, r.org_id, r.party_id, p.name, r.recv_year, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
 	        r.status, r.note, r.created_at, r.updated_at,
 	        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
-	            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid
+	            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid,
+	        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
+	            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'
+	              AND rc.method = 'writeoff'), 0) AS writeoff,
+	        (SELECT rc.receipt_date FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+	            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_date,
+	        (SELECT rc.note FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+	            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_note,
+	        (SELECT rc.id FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+	            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_receipt_id
 	 FROM receivable r JOIN party p ON p.id = r.party_id AND p.org_id = r.org_id `
 
 	var total int
@@ -324,22 +695,24 @@ func (r *Repo) ListReceivables(orgID int64, partyID *int64, year int, kind, stat
 	return items, total, rows.Err()
 }
 
-// scanReceivableRow 扫描带 partyName 与 paid 的应收单行。
+// scanReceivableRow 扫描带 partyName 与 paid/writeoff 的应收单行。
 type receivableScanner interface {
 	Scan(dest ...any) error
 }
 
 func scanReceivableRow(row receivableScanner) (*Receivable, error) {
 	rec := &Receivable{}
-	var paid int64
+	var paid, writeoff int64
 	err := row.Scan(
 		&rec.ID, &rec.OrgID, &rec.PartyID, &rec.PartyName, &rec.RecvYear, &rec.RecvKind, &rec.Title, &rec.AmountCents,
-		&rec.IncomeCategoryID, &rec.Status, &rec.Note, &rec.CreatedAt, &rec.UpdatedAt, &paid,
+		&rec.IncomeCategoryID, &rec.Status, &rec.Note, &rec.CreatedAt, &rec.UpdatedAt, &paid, &writeoff,
+		&rec.WriteoffDate, &rec.WriteoffNote, &rec.WriteoffReceiptID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("扫描应收单行失败: %w", err)
 	}
 	rec.PaidCents = paid
+	rec.WriteoffCents = writeoff
 	rec.OutstandingCents = rec.AmountCents - paid
 	return rec, nil
 }
@@ -351,7 +724,16 @@ func (r *Repo) GetReceivableDetail(orgID, id int64) (*ReceivableDetail, error) {
 		`SELECT r.id, r.org_id, r.party_id, p.name, r.recv_year, r.recv_kind, r.title, r.amount_cents, r.income_category_id,
 		        r.status, r.note, r.created_at, r.updated_at,
 		        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
-		            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid
+		            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'), 0) AS paid,
+		        COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc
+		            WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id AND rc.status = 'normal'
+		              AND rc.method = 'writeoff'), 0) AS writeoff,
+		        (SELECT rc.receipt_date FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+		            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_date,
+		        (SELECT rc.note FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+		            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_note,
+		        (SELECT rc.id FROM receipt rc WHERE rc.org_id = r.org_id AND rc.receivable_id = r.id
+		            AND rc.status = 'normal' AND rc.method = 'writeoff' ORDER BY rc.id DESC LIMIT 1) AS writeoff_receipt_id
 		 FROM receivable r JOIN party p ON p.id = r.party_id AND p.org_id = r.org_id
 		 WHERE r.org_id = ? AND r.id = ?`, orgID, id,
 	)
@@ -606,6 +988,51 @@ func (r *Repo) CreateOffsetReceipt(orgID int64, rec *Receivable, amount int64, d
 	rc := &Receipt{ID: receiptID, OrgID: orgID, ReceivableID: rec.ID, AmountCents: amount, ReceiptDate: date,
 		Method: "offset", TxnID: &txnID, Note: note, Status: "normal", CreatedAt: now, UpdatedAt: now}
 	return &CreateOutcome{Receipt: rc, ReceivableStatus: newStatus}, nil
+}
+
+// CreateWriteoffReceipt 坏账核销：单事务写入 receipt(method='writeoff', txn_id=NULL)，
+// 金额恒为该单「剩余待收」（事务内按已核销重算，前端传值不参与，防止多写），
+// 清零后应收单置 closed。**不生成任何银行流水**，故银行存款/科目余额/收支汇总均不受影响。
+// 可撤销：作废该核销后按已核销重算，未结清则退回 open（复用 VoidReceipt）。
+func (r *Repo) CreateWriteoffReceipt(orgID int64, rec *Receivable, date string, note *string) (*CreateOutcome, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	paid, err := sumPaidTx(tx, orgID, rec.ID)
+	if err != nil {
+		return nil, err
+	}
+	remaining := rec.AmountCents - paid
+	if remaining <= 0 {
+		return nil, ErrOverReceivable
+	}
+
+	now := platform.Now()
+	res, err := tx.Exec(
+		`INSERT INTO receipt(org_id, receivable_id, amount_cents, receipt_date, method, txn_id, note, status, created_at, updated_at)
+		 VALUES(?, ?, ?, ?, 'writeoff', NULL, ?, 'normal', ?, ?)`,
+		orgID, rec.ID, remaining, date, note, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("写入坏账核销记录失败: %w", err)
+	}
+	receiptID, _ := res.LastInsertId()
+
+	// 剩余待收已全额核销 → 必然结清
+	if _, err := tx.Exec(`UPDATE receivable SET status = 'closed', updated_at = ? WHERE id = ? AND org_id = ?`,
+		now, rec.ID, orgID); err != nil {
+		return nil, fmt.Errorf("更新应收单状态失败: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交坏账核销事务失败: %w", err)
+	}
+
+	rc := &Receipt{ID: receiptID, OrgID: orgID, ReceivableID: rec.ID, AmountCents: remaining, ReceiptDate: date,
+		Method: "writeoff", TxnID: nil, Note: note, Status: "normal", CreatedAt: now, UpdatedAt: now}
+	return &CreateOutcome{Receipt: rc, ReceivableStatus: "closed"}, nil
 }
 
 // PartyCollectItem 整额核销结果中的一条应收核销明细。
