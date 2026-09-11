@@ -26,6 +26,18 @@ func (h *Handler) Register(r gin.IRouter) {
 	r.POST("/api/auth/register", h.RegisterOrg)
 	r.POST("/api/auth/logout", h.Logout)
 	r.POST("/api/auth/reset-password", h.ResetPassword)
+	r.GET("/api/auth/registration-status", h.RegistrationStatus)
+}
+
+// RegistrationStatus GET /api/auth/registration-status —— 公开：系统是否仍可注册（尚无用户）。
+// 供登录页决定是否展示「注册组织」入口；只返回一个布尔值，不泄露任何账号信息。
+func (h *Handler) RegistrationStatus(c *gin.Context) {
+	open, err := h.svc.IsRegistrationOpen()
+	if err != nil {
+		platform.Fail(c, http.StatusInternalServerError, "REGISTRATION_STATUS_FAILED", "获取注册状态失败，请重试")
+		return
+	}
+	platform.OK(c, gin.H{"open": open})
 }
 
 // RegisterAuthed 挂载需要登录的路由（由 main 在鉴权组内调用）。

@@ -15,6 +15,19 @@ export const useAuthStore = defineStore('auth', () => {
   // 是否已完成（或已跳过）引导——以服务端 org.onboarded 为唯一权威来源，
   // 不再依赖 localStorage 标记，避免清缓存/换浏览器/换访问地址被误判为未建账。
   const onboarded = ref(false)
+  // 系统是否仍可注册（尚无任何用户才为 true）；null = 尚未取到。
+  // 登录页仅在确认为 true 时展示「注册组织」入口，避免已注册的系统挂着一个必然失败的死链接。
+  const registrationOpen = ref<boolean | null>(null)
+
+  // 查询注册开放状态（公开接口，无需登录）
+  async function loadRegistrationStatus() {
+    try {
+      const res = await fetch('/api/auth/registration-status', { credentials: 'include' }).then(r => r.json())
+      registrationOpen.value = !!res?.data?.open
+    } catch {
+      registrationOpen.value = null
+    }
+  }
 
   // 拉取当前组织信息（登录/注册/首屏后统一调用，保证 orgId/onboarded 始终可用）
   async function refreshOrg() {
@@ -105,8 +118,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    isLoggedIn, loading, error, orgId, onboarded,
-    checkLogin, refreshOrg, isOnboarded, markOnboarded,
+    isLoggedIn, loading, error, orgId, onboarded, registrationOpen,
+    checkLogin, refreshOrg, isOnboarded, markOnboarded, loadRegistrationStatus,
     login, markLoggedIn, clearAuth, logout,
   }
 })

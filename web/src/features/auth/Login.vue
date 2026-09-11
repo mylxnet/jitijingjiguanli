@@ -33,10 +33,9 @@
           </van-button>
         </div>
 
-        <div class="login-tip">测试账号：admin / admin888</div>
       </van-form>
 
-      <div class="login-footer">
+      <div v-if="auth.registrationOpen === true" class="login-footer">
         <span>还没有账号？</span>
         <a class="register-link" @click="goRegister">注册组织</a>
       </div>
@@ -48,23 +47,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore, ORG_NAME_KEY } from './store'
 import { api } from '../../lib/http'
-import { showToast } from 'vant'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-const username = ref('admin')
-const password = ref('admin888')
+const username = ref('')
+const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
 // 记住上次登录的组织名：大字显示组织名，小字显示系统名
 const orgName = ref(localStorage.getItem(ORG_NAME_KEY) || '')
 const displayTitle = computed(() => orgName.value || '集体经济管理系统')
+
+// 进入登录页时查询注册是否仍开放；仅"系统中尚无用户"时展示「注册组织」入口
+onMounted(() => {
+  auth.loadRegistrationStatus()
+})
 
 async function handleLogin() {
   loading.value = true
@@ -151,12 +154,5 @@ function goResetPwd() {
   color: var(--jade);
   margin-left: 4px;
   cursor: pointer;
-}
-
-.login-tip {
-  text-align: center;
-  font-size: 12px;
-  color: var(--ink-muted);
-  margin: -8px 0 12px;
 }
 </style>

@@ -116,6 +116,16 @@ func (s *Service) RegisterOrg(orgName, username, password string) (string, time.
 	return token, expiresAt, nil
 }
 
+// IsRegistrationOpen 报告是否仍允许注册：系统中尚无任何用户时为 true。
+// 与 RegisterOrg 的关闸条件（CountUsers > 0 即拒绝）完全同源，避免前后端判断不一致。
+func (s *Service) IsRegistrationOpen() (bool, error) {
+	n, err := s.repo.CountUsers()
+	if err != nil {
+		return false, err
+	}
+	return n == 0, nil
+}
+
 // Login 校验账号口令，成功则签发会话。
 func (s *Service) Login(username, password string) (string, time.Time, error) {
 	u, err := s.repo.FindByUsername(strings.TrimSpace(username))

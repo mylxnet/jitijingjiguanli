@@ -92,6 +92,45 @@ func TestRegisterOrg(t *testing.T) {
 	}
 }
 
+// TestRegistrationStatus 注册开放状态接口：尚无用户 → open=true；注册后 → open=false。
+// 登录页据此决定是否展示「注册组织」入口（与 RegisterOrg 的关闸条件同源）。
+func TestRegistrationStatus(t *testing.T) {
+	svc, r := newTestEnv(t)
+
+	check := func(want bool, stage string) {
+		t.Helper()
+		open, err := svc.IsRegistrationOpen()
+		if err != nil {
+			t.Fatalf("%s：查询注册状态失败: %v", stage, err)
+		}
+		if open != want {
+			t.Errorf("%s：IsRegistrationOpen 应为 %v，实际 %v", stage, want, open)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/auth/registration-status", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s：接口应 200，实际 %d", stage, w.Code)
+		}
+		var out struct {
+			Data struct {
+				Open bool `json:"open"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s：解析响应失败: %v，body=%s", stage, err, w.Body.String())
+		}
+		if out.Data.Open != want {
+			t.Errorf("%s：接口 open 应为 %v，实际 %v，body=%s", stage, want, out.Data.Open, w.Body.String())
+		}
+	}
+
+	check(true, "尚无用户时")
+	if _, _, err := svc.RegisterOrg("甲村", "admin", "s3cret"); err != nil {
+		t.Fatalf("注册失败: %v", err)
+	}
+	check(false, "已注册用户后")
+}
+
 func TestLoginAndSession(t *testing.T) {
 	svc, _ := newTestEnv(t)
 	if _, _, err := svc.RegisterOrg("甲村", "admin", "s3cret"); err != nil {
