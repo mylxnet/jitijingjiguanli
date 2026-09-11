@@ -11,6 +11,9 @@ cookies.txt
 backups/
 data/
 
+# 测试/临时数据统一目录（测试产物、调试转储、临时脚本一律放这里，不入库）
+_scratch/
+
 # 前端
 web/node_modules/
 web/dist*/
@@ -32,6 +35,9 @@ server/bin/
 
 # 本机托管工具链（不入库）
 .tools/
+
+# AI 记忆与项目规则（含本机凭据，不入库）
+.trae/
 
 # 系统
 .DS_Store
