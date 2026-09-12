@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>集体经济管理平台 · 新用户帮助</title>
+<meta name="description" content="集体经济管理平台的新用户快速入门帮助，涵盖建账、记账、页面使用、常见问题与数据安全。">
+<style>
+  :root{
+    --ink:#1a2420;
+    --ink-2:#3d4a45;
+    --ink-3:#6a7771;
+    --paper:#f5f2ec;
+    --card:#fffdf8;
+    --line:#e5e0d5;
+    --jade:#1f5c48;
+    --jade-2:#2f7a63;
+    --gold:#b08a3e;
+    --radius:14px;
+    --container:1120px;
+    font-size:17px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);background:var(--paper);line-height:1.75;-webkit-font-smoothing:antialiased;}
+  .serif{font-family:"Noto Serif SC","Songti SC","SimSun",serif;}
+  .wrap{max-width:var(--container);margin:0 auto;padding:0 24px;}
+  a{color:var(--jade);text-decoration:none;}
+  a:hover{color:var(--jade-2);text-decoration:underline;}
+
+  /* header */
+  header{position:sticky;top:0;z-index:50;background:rgba(245,242,236,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
+  .head{display:flex;align-items:center;justify-content:space-between;height:60px;}
+  .brand{display:flex;align-items:center;gap:.6em;font-weight:700;font-size:1.02rem;}
+  .brand-mark{width:30px;height:30px;border-radius:8px;background:var(--jade);color:#fff;display:grid;place-items:center;font-family:"Noto Serif SC",serif;}
+  .head a.link{font-size:.9rem;}
+
+  /* layout */
+  .body{display:grid;grid-template-columns:230px 1fr;gap:40px;padding:44px 0 80px;}
+  @media(max-width:920px){.body{grid-template-columns:1fr;gap:20px;}}
+  nav.toc{position:sticky;top:80px;align-self:start;display:flex;flex-direction:column;gap:2px;
+    font-size:.92rem;border-right:1px solid var(--line);padding-right:14px;}
+  nav.toc a{color:var(--ink-2);padding:6px 10px;border-radius:8px;}
+  nav.toc a:hover{background:rgba(31,92,72,.08);color:var(--jade);text-decoration:none;}
+  @media(max-width:920px){
+    nav.toc{position:static;flex-direction:row;flex-wrap:wrap;gap:6px;border:0;padding:0;margin-bottom:6px;}
+    nav.toc a{background:var(--card);border:1px solid var(--line);padding:5px 12px;}
+  }
+
+  main{min-width:0;}
+  .sec{margin-bottom:44px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 26px 24px;}
+  .sec-idx{font-size:.82rem;color:var(--gold);letter-spacing:.14em;margin-bottom:8px;}
+  h2{font-size:1.35rem;font-weight:600;margin-bottom:6px;}
+  h3{font-size:1.05rem;font-weight:600;margin:20px 0 8px;color:var(--jade-ink);}
+  .sec p,.sec li,.sec div.plain{color:var(--ink-2);font-size:.98rem;}
+  .sec p{margin-bottom:10px;}
+  .sec ul,.sec ol{margin:6px 0 12px 1.2em;}
+  .sec li{margin-bottom:6px;}
+
+  .hint{background:rgba(31,92,72,.07);border-left:3px solid var(--jade);border-radius:6px;padding:12px 14px;margin:14px 0;font-size:.92rem;color:var(--ink-2);}
+  .table{width:100%;border-collapse:collapse;margin:12px 0;font-size:.94rem;}
+  .table th,.table td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+  .table th{background:#eeece4;font-weight:600;color:var(--ink);}
+  .table td{color:var(--ink-2);}
+
+  details.q{border-bottom:1px solid var(--line);padding:14px 0;}
+  details.q:first-of-type{border-top:1px solid var(--line);}
+  details.q summary{list-style:none;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;align-items:center;}
+  details.q summary::-webkit-details-marker{display:none;}
+  details.q summary .c{color:var(--jade);transition:transform .2s;}
+  details.q[open] summary .c{transform:rotate(180deg);}
+  details.q .a{color:var(--ink-2);font-size:.95rem;margin-top:8px;max-width:66ch;}
+
+  .totop{position:fixed;right:22px;bottom:22px;width:42px;height:42px;border-radius:50%;background:var(--jade);color:#fff;
+    display:grid;place-items:center;font-size:1.1rem;box-shadow:0 8px 20px -8px rgba(31,92,72,.5);opacity:.9;}
+  .totop:hover{background:var(--jade-2);text-decoration:none;}
+  footer{padding:30px 0 48px;border-top:1px solid var(--line);color:var(--ink-3);font-size:.86rem;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;}
+
+  .reveal{opacity:1;transform:none;}
+  @media(scripting:none){.reveal{opacity:1 !important;transform:none !important;}}
+  @media(prefers-reduced-motion:reduce){.reveal{transition:none !important;} html{scroll-behavior:auto !important;}}
+  .reveal.off{opacity:0;transform:translateY(16px);transition:opacity .5s ease,transform .5s ease;}
+  .reveal.off.in{opacity:1;transform:none;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap head">
+    <div class="brand"><span class="brand-mark">集</span><span>集体经济管理平台</span></div>
+    <a class="link" href="index.html">← 返回产品介绍</a>
+  </div>
+</header>
+
+<div class="wrap body">
+  <nav class="toc" aria-label="目录">
+    <a href="#s1">1 第一次使用</a>
+    <a href="#s2">2 完善基础账务</a>
+    <a href="#s3">3 日常记账</a>
+    <a href="#s4">4 页面速览</a>
+    <a href="#s5">5 常见业务</a>
+    <a href="#s6">6 数据安全</a>
+    <a href="#s7">7 三条原则</a>
+    <a href="#s8">8 常见问题</a>
+  </nav>
+
+  <main>
+    <div class="sec-head" style="margin-bottom:26px">
+      <div class="sec-idx serif">帮助文档</div>
+      <h1 class="serif" style="font-size:1.9rem;font-weight:600">新用户快速入门</h1>
+      <p style="margin-top:10px;color:var(--ink-2)">适用版本 v0.19。本文帮你十分钟上手日常记账。本系统是村级集体经济组织的记账管理平台，管钱、管单位、管投资，每一笔账都留痕、可回滚。</p>
+    </div>
+
+    <section id="s1" class="sec reveal off">
+      <div class="sec-idx">第一步</div>
+      <h2>第一次使用，三分钟建好账</h2>
+      <p>打开系统后进入登录页。首次使用点注册，注册一个组织，系统会按集体经济常用科目预设好账套，不用自己建科目。</p>
+      <p>注册登录后，首次进入会出现建账向导，可二选一。</p>
+      <h3>方式一：导入 Excel（推荐）</h3>
+      <p>下载模板，填好流转企业、投资公司、再投资单位后上传，系统会自动建单位，并同步建好对应科目。银行存款期初、预置科目期初和最终预览在这里手工填写。</p>
+      <h3>方式二：手工逐条录入</h3>
+      <p>按七步向导手动填银行存款期初、添加各类单位、填预置科目期初，预览后完成。</p>
+      <div class="hint">提醒：单位类型只有三种，流转企业是土地流转费和管理费的收入来源，投资公司与再投资单位是集体资金对外投资去向。这个定位决定单位对应哪个科目，建单位时别选错。</div>
+    </section>
+
+    <section id="s2" class="sec reveal off">
+      <div class="sec-idx">第二步</div>
+      <h2>完善基础账务，把家底摸清</h2>
+      <p>建好账套后，先别急着记流水，把历史欠款补上、单位资料补齐、提醒处理好，后面记账、收缴、对账才准、才顺。</p>
+      <div class="hint">先说一句话当作铺垫：科目是账的分桶，流水是每一笔收支，单位是业务对象。这三个词后面会经常用到。</div>
+      <h3>一、登记历年欠款</h3>
+      <p>把历史上应收未收的欠款补录成应收，比如土地流转费、管理费、投资分红等。这样应收、已收、未收才反映真实家底，收缴时也有据可对、不会漏收。</p>
+      <h3>二、完善单位资料，上传合同</h3>
+      <p>给每个往来单位补基本信息、上传合同等附件。在往来单位里点某个单位整行展开，即可编辑资料、上传合同，点合同文件名可全屏预览。资料齐全，后续对账和收缴更有依据。</p>
+      <h3>三、及时处理左侧导航的提醒红点</h3>
+      <p>左侧「往来单位」出现红点时，说明有单位的数据不齐全，比如联系人、面积等必填信息缺失。点开红点看缺失清单，逐项补齐即可消除，避免后面计提应收、收缴时缺字段而卡住。</p>
+      <div class="hint">做完这三步，账套基础就扎实了，可以进入第三步日常记账。</div>
+    </section>
+
+    <section id="s3" class="sec reveal off">
+      <div class="sec-idx">第三步</div>
+      <h2>日常记一笔</h2>
+      <h3>快速记账（推荐）</h3>
+      <p>用左侧的加号按钮。弹窗默认就是快速记账模式，日期默认今天。选一项业务，例如收到其他收入、拨出其他收入、土地流转费等，系统预置了常用模板，模板已配好收支方向、入账科目和默认摘要，一般只要填金额提交即可。部分业务还要选往来单位或投资公司，把必填项选好再提交。</p>
+      <h3>普通记账</h3>
+      <p>用于不用模板的场景。切到普通记账，手动选收入或支出、科目、金额、日期。提交前注意：支出会校验科目余额是否足够，不足会提示，说明账不平衡，先检查再提交。</p>
+      <h3>记错了怎么办</h3>
+      <p>进流水页找到那一笔，点作废。作废会自动回滚这笔涉及的所有联动，包括银行存款、科目余额、应收、投资等。作废等同于这笔没发生，不影响其他账。</p>
+    </section>
+
+    <section id="s4" class="sec reveal off">
+      <div class="sec-idx">第四步</div>
+      <h2>页面速览</h2>
+      <p><b>收支总览（首页）</b>是看板，展示银行存款、净资产和收益进度，从查看全部可以进流水或汇总。</p>
+      <p><b>往来单位</b>是单位清单与概览。点某个单位可展开合同、查看应收、上传或查看合同扫描件；概览统计卡看应收、已收、未收。从这里还能进入应收土地流转费、应收管理费、应收投资收益（按单位和年份查看应收与收缴核销）、合同管理（点整行展开或折叠，点文件名可全屏预览）、计提向导（按面积等规则一键计提当年应收）、坏账清单（管理已核销坏账的归档和撤销）。</p>
+      <p><b>投资管理</b>是对外投资公司台账，跟踪投资本金、收益和再投资。<b>流转管理</b>是流转企业台账，看土地流转面积、流转费和管理费的应收与收缴。</p>
+      <p><b>快速记账</b>是一键记一笔常用业务。<b>流水</b>是全部收支明细，可按方向、关键字、金额、时间筛选，已作废的会有标记。<b>汇总</b>是各维度的收支统计。<b>科目</b>用来查看和管理账套科目与余额，一般不手动改。</p>
+      <p><b>设置</b>里可以管理组织信息、操作日志、备份恢复，以及高级设置，包括银行存款期初、流水清单、科目、计提坏账、单位删除等。</p>
+    </section>
+
+    <section id="s5" class="sec reveal off">
+      <div class="sec-idx">第五步</div>
+      <h2>常见业务该记哪</h2>
+      <table class="table">
+        <tr><th style="width:200px">场景</th><th>该记哪</th></tr>
+        <tr><td>收到流转企业交来的土地流转费</td><td>记收入，摘要注意明企业</td></tr>
+        <tr><td>拨付土地流转费给农户</td><td>支出科目选土地流转费转付农户</td></tr>
+        <tr><td>收投资分红</td><td>选分红类模板，或记投资收益收入</td></tr>
+        <tr><td>集体资金投给投资公司</td><td>选投资类模板，记到对应公司科目，不要选普通收入</td></tr>
+        <tr><td>收到其他财政收入</td><td>用收到其他收入模板</td></tr>
+        <tr><td>执行年度 532 分配方案</td><td>走分配流程，方案一旦产生流水就锁定不能再改，先核对再确定</td></tr>
+      </table>
+    </section>
+
+    <section id="s6" class="sec reveal off">
+      <div class="sec-idx">第六步</div>
+      <h2>数据安全与恢复</h2>
+      <ul>
+        <li><b>备份</b>：在设置里随时可以备份到本地，最新一条备份受保护，不能删除。</li>
+        <li><b>系统重置</b>：高危操作，要输入两次确认才会清空账和账号，只保留预置科目，并强制重新注册建账，谨慎使用。</li>
+        <li><b>操作日志</b>：所有增删改都会留痕，可以导出成 CSV。</li>
+      </ul>
+    </section>
+
+    <section id="s7" class="sec reveal off">
+      <div class="sec-idx">第七步</div>
+      <h2>三条原则</h2>
+      <ul>
+        <li>流水只能作废，不能修改或删除。作废会自动回滚联动，前提是操作在正确的流水上。</li>
+        <li>支出前看余额。余额不足说明账不平，先对比流水找原因。</li>
+        <li>单位名称和类型建好后不可编辑，单位不可随意删除，建单位时看清类型再定。</li>
+      </ul>
+    </section>
+
+    <section id="s8" class="sec reveal off">
+      <div class="sec-idx">答疑</div>
+      <h2>常见问题</h2>
+      <details class="q">
+        <summary><span>记错了钱能改吗？</span><span class="c">▾</span></summary>
+        <div class="a">流水不能修改，只能作废。作废会自动回滚这笔涉及的所有联动，等同这笔没有发生过，避免账被改脏。</div>
+      </details>
+      <details class="q">
+        <summary><span>需要专业会计才能用吗？</span><span class="c">▾</span></summary>
+        <div class="a">不需要。系统按集体经济预置了科目和常用记账模板，选业务填金额即可，不会记会计方程也能正确入账。</div>
+      </details>
+      <details class="q">
+        <summary><span>单位类型建立错怎么办？</span><span class="c">▾</span></summary>
+        <div class="a">单位类型决定它对应哪个科目，建好之后名称和类型不可随意修改。建单位时先确认定位，确有疑问联系管理员核实。</div>
+      </details>
+      <details class="q">
+        <summary><span>钱和账的数据安全吗？</span><span class="c">▾</span></summary>
+        <div class="a">组织之间数据隔离，登录有权限管控；全部操作留痕、可随时备份；高风险操作需二次确认。可配合本地部署，账务数据掌握在组织自己手里。</div>
+      </details>
+      <details class="q">
+        <summary><span>记不住这么多怎么办？</span><span class="c">▾</span></summary>
+        <div class="a">大多数日常业务用快速记账一个入口就够。要查某一笔的来龙去脉，去流水看那一笔，再结合操作日志。余额对不上时，优先核对银行存款和各个科目的收支是否一一对应。给新手的建议：先记一笔真实的收入，到收支总览看银行存款和净资产有没有同步变化，能对上就说明你上手了。</div>
+      </details>
+    </section>
+  </main>
+</div>
+
+<a class="totop" href="#" title="返回顶部" aria-label="返回顶部">↑</a>
+
+<footer>
+  <div class="wrap foot" style="display:flex;flex-direction:column;gap:6px;width:100%">
+    <div>集体经济管理平台 · 新用户帮助 · v0.19</div>
+    <div>遇到暂时无法解决的账务问题，请联系管理员核实后再作废或调整，避免误操作影响报表。</div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var els = document.querySelectorAll('.reveal');
+    if(!('IntersectionObserver' in window)){ return; }
+    els.forEach(function(el){ el.classList.add('off'); });
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, {threshold:.1});
+    els.forEach(function(el){ io.observe(el); });
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      els.forEach(function(el){ el.classList.remove('off'); el.classList.add('in'); });
+    }
+  })();
+</script>
+</body>
+</html>

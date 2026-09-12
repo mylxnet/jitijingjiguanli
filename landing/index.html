@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>集体经济管理平台 · 村级记账管理</title>
+<meta name="description" content="村级集体经济组织的记账管理平台。管钱、管单位、管投资，收支自动对账，作废一键回滚，账目全程留痕。">
+<style>
+  :root{
+    --ink:#1a2420;
+    --ink-2:#3d4a45;
+    --ink-3:#6a7771;
+    --paper:#f5f2ec;
+    --card:#fffdf8;
+    --line:#e5e0d5;
+    --jade:#1f5c48;
+    --jade-2:#2f7a63;
+    --jade-ink:#123a2e;
+    --gold:#b08a3e;
+    --radius:14px;
+    --container:1120px;
+    font-size:17px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+    background:var(--paper);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{font-family:"Noto Serif SC","Songti SC","SimSun",serif;}
+  .wrap{max-width:var(--container);margin:0 auto;padding:0 24px;}
+  a{color:inherit;}
+
+  /* ===== Toggle/card ===== */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:.5em;
+    background:var(--jade);color:#fff;border:0;border-radius:999px;
+    padding:.85em 1.9em;font-size:1rem;font-weight:600;line-height:1;
+    text-decoration:none;cursor:pointer;transition:background .18s ease,transform .18s ease;
+    box-shadow:0 10px 24px -12px rgba(31,92,72,.6);
+  }
+  .btn:hover{background:var(--jade-2);transform:translateY(-1px);}
+  .btn.ghost{background:transparent;color:var(--jade);box-shadow:inset 0 0 0 1.5px var(--line);}
+  .btn.ghost:hover{box-shadow:inset 0 0 0 1.5px var(--jade-2);color:var(--jade-2);transform:none;}
+
+  /* ===== Header ===== */
+  header{
+    position:sticky;top:0;z-index:50;background:rgba(245,242,236,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .head-inner{display:flex;align-items:center;justify-content:space-between;height:64px;}
+  .brand{display:flex;align-items:center;gap:.6em;font-weight:700;font-size:1.05rem;}
+  .brand-mark{width:34px;height:34px;border-radius:9px;background:var(--jade);color:#fff;display:grid;place-items:center;
+    font-family:"Noto Serif SC",serif;font-size:1rem;}
+  .nav{display:flex;align-items:center;gap:26px;font-size:.92rem;color:var(--ink-2);}
+  .nav a{text-decoration:none;color:inherit;transition:color .15s;}
+  .nav a:hover{color:var(--jade);}
+  .nav .btn.nav-cta{padding:.6em 1.3em;font-size:.9rem;}
+  @media(max-width:760px){.nav .plain{display:none;}}
+
+  /* ===== Hero ===== */
+  .hero{padding:92px 0 84px;overflow:hidden;}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center;}
+  @media(max-width:920px){.hero-grid{grid-template-columns:1fr;gap:40px;}}
+  .kicker{display:inline-flex;align-items:center;gap:.55em;font-size:.84rem;color:var(--jade);
+    letter-spacing:.12em;text-transform:none;margin-bottom:20px;}
+  .kicker::before{content:"";width:26px;height:2px;background:var(--gold);display:inline-block;}
+  h1{font-size:clamp(2.1rem,5vw,3.3rem);line-height:1.22;letter-spacing:.01em;font-weight:600;}
+  h1 em{font-style:normal;color:var(--jade);}
+  .hero p.sub{margin-top:22px;font-size:1.12rem;color:var(--ink-2);max-width:46ch;}
+  .hero-actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px;}
+  .hero-note{margin-top:16px;font-size:.86rem;color:var(--ink-3);}
+
+  /* dashboard mock card */
+  .mock{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px 26px 22px;
+    box-shadow:0 30px 60px -30px rgba(26,36,32,.28);}
+  .mock-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  .mock-top b{font-size:.95rem;}
+  .mock-tag{font-size:.74rem;color:var(--ink-3);background:var(--paper);border-radius:999px;padding:.2em .75em;}
+  .stat-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px;}
+  .stat{border:1px solid var(--line);border-radius:12px;padding:14px 16px;}
+  .stat .lbl{font-size:.78rem;color:var(--ink-3);}
+  .stat .val{font-size:1.32rem;font-weight:700;font-family:"Noto Serif SC",serif;margin-top:4px;color:var(--jade-ink);}
+  .bar-title{display:flex;justify-content:space-between;font-size:.82rem;color:var(--ink-2);margin-bottom:8px;}
+  .bar-track{height:9px;background:var(--paper);border-radius:999px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--jade),var(--jade-2));}
+  .mini-ledger{margin-top:18px;border-top:1px dashed var(--line);padding-top:14px;display:grid;gap:9px;}
+  .line{display:flex;justify-content:space-between;font-size:.86rem;color:var(--ink-2);}
+  .line span:first-child{color:var(--ink-3);}
+  .mock-caption{margin-top:18px;font-size:.76rem;color:var(--ink-3);text-align:center;}
+
+  /* ===== section base ===== */
+  section{padding:84px 0;}
+  .sec-head{max-width:640px;margin-bottom:46px;}
+  .sec-head h2{font-size:clamp(1.6rem,3vw,2.2rem);font-weight:600;letter-spacing:.01em;}
+  .sec-head .sub{color:var(--ink-2);margin-top:12px;font-size:1.02rem;}
+  .sec-num{font-size:.84rem;color:var(--gold);letter-spacing:.15em;margin-bottom:10px;}
+
+  /* ===== proof band ===== */
+  .band{background:var(--ink);color:#eef2ef;border-radius:20px;padding:38px 34px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:26px;}
+  .band .cap{font-size:.82rem;color:#a9b6b0;letter-spacing:.04em;}
+  .band .val{font-family:"Noto Serif SC",serif;font-size:1.9rem;color:#fff;margin-top:6px;font-weight:600;}
+  .band .val small{font-size:.95rem;color:var(--gold);}
+
+  /* ===== features ===== */
+  .feat-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px;}
+  .feat{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:26px 24px;}
+  .feat.wide{grid-column:span 7;}
+  .feat.slim{grid-column:span 5;}
+  .feat:nth-child(3){grid-column:span 5;}
+  .feat:nth-child(4){grid-column:span 7;}
+  @media(max-width:920px){.feat{grid-column:span 12 !important;}}
+  .feat .ic{width:44px;height:44px;border-radius:11px;background:rgba(31,92,72,.1);display:grid;place-items:center;margin-bottom:18px;}
+  .feat .ic svg{width:22px;height:22px;stroke:var(--jade);}
+  .feat h3{font-size:1.14rem;font-weight:600;margin-bottom:8px;}
+  .feat p{color:var(--ink-2);font-size:.96rem;}
+  .feat ul{margin-top:12px;padding-left:0;list-style:none;display:grid;gap:6px;}
+  .feat ul li{font-size:.9rem;color:var(--ink-2);padding-left:1.1em;position:relative;}
+  .feat ul li::before{content:"·";position:absolute;left:0;color:var(--jade);font-weight:700;}
+
+  /* ===== how ===== */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;}
+  @media(max-width:920px){.steps{grid-template-columns:1fr;gap:30px;}}
+  .step{position:relative;padding:0 30px;border-right:1px dashed var(--line);}
+  .step:last-child{border-right:0;}
+  @media(max-width:920px){.step{border-right:0;border-top:1px dashed var(--line);padding:26px 0 0;}}
+  .step .idx{font-family:"Noto Serif SC",serif;font-size:2.6rem;color:var(--line);font-weight:700;line-height:1;}
+  .step h4{font-size:1.1rem;margin:14px 0 10px;}
+  .step p{color:var(--ink-2);font-size:.94rem;}
+
+  /* ===== safety ===== */
+  .safety{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center;}
+  @media(max-width:920px){.safety{grid-template-columns:1fr;}}
+  .safe-list{display:grid;gap:20px;}
+  .safe-item{display:flex;gap:16px;}
+  .safe-check{flex:none;width:26px;height:26px;border-radius:50%;background:rgba(31,92,72,.12);color:var(--jade);display:grid;place-items:center;font-weight:700;margin-top:2px;}
+  .safe-item b{display:block;font-size:1.02rem;}
+  .safe-item span{color:var(--ink-2);font-size:.93rem;}
+  .safe-card{background:linear-gradient(160deg,var(--jade-ink),var(--jade));border-radius:20px;color:#dfeae4;padding:30px 28px;}
+  .safe-card b{display:block;font-size:1.1rem;color:#fff;margin-bottom:12px;}
+  .safe-card div{font-size:1.7rem;font-family:"Noto Serif SC",serif;color:#fff;margin-bottom:6px;}
+  .safe-card p{font-size:.9rem;color:#c3d2cb;}
+
+  /* ===== FAQ ===== */
+  .faq{max-width:780px;margin:0 auto;}
+  .q{border-bottom:1px solid var(--line);padding:20px 0;}
+  .q summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:1.05rem;}
+  .q summary::-webkit-details-marker{display:none;}
+  .q summary .chev{transition:transform .2s;color:var(--jade);}
+  .q[open] summary .chev{transform:rotate(180deg);}
+  .q .a{color:var(--ink-2);font-size:.96rem;margin-top:10px;max-width:64ch;}
+
+  /* ===== final cta ===== */
+  .final{text-align:center;background:linear-gradient(160deg,var(--ink),#24312b);color:#eef2ef;border-radius:24px;padding:64px 28px;}
+  .final h2{font-size:clamp(1.7rem,3.4vw,2.4rem);font-weight:600;}
+  .final p{color:#aebbb4;margin:16px auto 30px;max-width:44ch;font-size:1.02rem;}
+
+  footer{padding:40px 0 56px;border-top:1px solid var(--line);color:var(--ink-3);font-size:.86rem;}
+  .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;}
+
+  /* reveal (fail-open: visible by default) */
+  .reveal{opacity:1;transform:none;}
+  @media(scripting:none){.reveal{opacity:1 !important;transform:none !important;}}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto !important;} .reveal{transition:none !important;}}
+  .reveal.off{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease;}
+  .reveal.off.in{opacity:1;transform:none;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap head-inner">
+    <div class="brand"><span class="brand-mark">集</span>集体经济管理平台</div>
+    <nav class="nav">
+      <a class="plain" href="#features">功能</a>
+      <a class="plain" href="#how">如何使用</a>
+      <a class="plain" href="#safety">数据安全</a>
+      <a class="plain" href="#faq">常见问题</a>
+      <a class="btn nav-cta" href="#start">立即开始使用</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="kicker serif">集体经济记账管理平台</span>
+      <h1 class="serif">管好村级账本，<br>让每一笔<em>去向清晰</em></h1>
+      <p class="sub">面向村级集体经济组织的记账管理平台。管钱、管单位、管投资，收支自动对账，作废一键回滚，账目全程留痕。</p>
+      <div class="hero-actions">
+        <a class="btn" href="#start">立即开始使用</a>
+        <a class="btn ghost" href="#features">了解功能</a>
+      </div>
+      <div class="hero-note">无需专业会计，预置集体经济科目与常用记账模板。</div>
+    </div>
+    <div class="mock" aria-label="收支总览演示卡片">
+      <div class="mock-top"><b class="serif">收支总览</b><span class="mock-tag">演示数据</span></div>
+      <div class="stat-row">
+        <div class="stat"><div class="lbl">银行存款</div><div class="val">¥6,722,000</div></div>
+        <div class="stat"><div class="lbl">净资产</div><div class="val">¥5,722,000</div></div>
+      </div>
+      <div class="bar-title"><span>本月收入进度</span><span>¥380,000 / ¥600,000</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:63%"></div></div>
+      <div class="mini-ledger">
+        <div class="line"><span>收到土地流转费 · 临夏县农业公司</span><span>+¥120,000</span></div>
+        <div class="line"><span>分配成员分红</span><span>−¥80,000</span></div>
+        <div class="line"><span>收到其他财政收入</span><span>+¥60,000</span></div>
+      </div>
+      <div class="mock-caption">演示示意，实际以账套真实数据为准</div>
+    </div>
+  </div>
+</section>
+
+<!-- PROOF BAND -->
+<section style="padding-top:0">
+  <div class="wrap">
+    <div class="band reveal off">
+      <div><div class="cap">账套科目</div><div class="val">按集体经济<small>预置</small></div></div>
+      <div><div class="cap">记账模板</div><div class="val">常用业务<small>一键</small></div></div>
+      <div><div class="cap">账目留痕</div><div class="val">全程<small>可追溯</small></div></div>
+      <div><div class="cap">作废回滚</div><div class="val">联动<small>可撤销</small></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal off">
+      <div class="sec-num">概览</div>
+      <h2 class="serif">一个平台，管好钱、单位和投资</h2>
+      <div class="sub">把村级集体经济最常见的几件事收拢到一起，减少对账成本，让每一笔都能说清来龙去脉。</div>
+    </div>
+    <div class="feat-grid">
+      <div class="feat wide reveal off">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 8h3M7 12h6M7 16h4"/></svg></div>
+        <h3>快速记账，收付一笔搞定</h3>
+        <p>常用的收入、支出都做成业务模板，选业务填金额即可，收支方向、入账科目、默认摘要自动配好，不需要会计也能记对。</p>
+        <ul>
+          <li>流转、投资、分红、财政等常用模板开箱即用</li>
+          <li>普通记账支持手动选科目，灵活处理特殊业务</li>
+          <li>支出前自动校验科目余额，账不平当场提示</li>
+        </ul>
+      </div>
+      <div class="feat slim reveal off">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10h8M8 14h5M7 3h10l3 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7l3-4Z"/></svg></div>
+        <h3>往来单位与合同</h3>
+        <p>流转企业、投资公司的台账统一管理，应收、收缴、合同附件一个入口查看。</p>
+        <ul>
+          <li>应收计提、收缴与核销</li>
+          <li>合同上传、预览与归档</li>
+        </ul>
+      </div>
+      <div class="feat slim reveal off">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-5 4 3 5-8 5 5"/><path d="M3 20h18"/></svg></div>
+        <h3>投资与流转</h3>
+        <p>对外投资公司台账与流转企业档案，本金、收益、面积、收缴进度一目了然。</p>
+        <ul>
+          <li>投资管理：本金、收益、再投资</li>
+          <li>流转管理：面积、流转费、管理费</li>
+        </ul>
+      </div>
+      <div class="feat wide reveal off">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v4l3 2"/></svg></div>
+        <h3>收支汇总与科目视图</h3>
+        <p>看板和汇总页让银行存款、净资产、各科目余额随时可核，历史一笔都查得到。</p>
+        <ul>
+          <li>收支总览看板：银行存款、净资产、收入进度</li>
+          <li>流水可按方向、关键字、金额、时间筛选</li>
+          <li>科目余额自动累计，账实可对</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how" style="background:#efece4;">
+  <div class="wrap">
+    <div class="sec-head reveal off">
+      <div class="sec-num">使用流程</div>
+      <h2 class="serif">三步就能跑起来</h2>
+      <div class="sub">从建账到日常记账，再到核对，路径很顺。</div>
+    </div>
+    <div class="steps">
+      <div class="step reveal off">
+        <div class="idx">01</div>
+        <h4>建账</h4>
+        <p>注册组织后进入建账向导。可用 Excel 模板批量导入流转、投资、再投资单位并自动建科目，也可手工逐条录入，一次把期初和单位建好。</p>
+      </div>
+      <div class="step reveal off">
+        <div class="idx">02</div>
+        <h4>记账</h4>
+        <p>日常业务用快速记账选模板填金额即可；涉及的应收、收缴、合同、计提都在往来单位里按流程处理，支出前系统自动校验余额。</p>
+      </div>
+      <div class="step reveal off">
+        <div class="idx">03</div>
+        <h4>核对</h4>
+        <p>在收支总览、流水和汇总里核对银行存款与科目余额。全部操作进入日志，可随时备份，账实始终对得上。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SAFETY -->
+<section id="safety">
+  <div class="wrap safety">
+    <div class="safe-list">
+      <div class="safe-item reveal off">
+        <div class="safe-check">✓</div>
+        <div><b>流水只可作废，绝不篡改</b><span>记错只能作废。作废会自动回滚这笔涉及的所有联动，等同于未发生，从根上防止脏账和假账。</span></div>
+      </div>
+      <div class="safe-item reveal off">
+        <div class="safe-check">✓</div>
+        <div><b>全过程操作留痕</b><span>所有增删改记入操作日志，可按需导出 CSV，账目的每一步都有据可查。</span></div>
+      </div>
+      <div class="safe-item reveal off">
+        <div class="safe-check">✓</div>
+        <div><b>多组织数据隔离</b><span>组织之间数据相互隔离，登录会话管控，防止越权访问和随意操作。</span></div>
+      </div>
+      <div class="safe-item reveal off">
+        <div class="safe-check">✓</div>
+        <div><b>随时本地备份</b><span>可随时备份到本地；系统重置等高危操作需二次确认，保护重要账套数据。</span></div>
+      </div>
+    </div>
+    <div class="safe-card reveal off">
+      <b>数据安全与自主</b>
+      <div>账在自己手里</div>
+      <p>数据可随组织自主保管、随时备份，不依赖外部平台，配合本地部署可脱网运行，账务数据掌握在集体经济组织自己手中。</p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="background:#efece4;">
+  <div class="wrap">
+    <div class="sec-head reveal off" style="margin-bottom:26px">
+      <div class="sec-num">常见问题</div>
+      <h2 class="serif">你可能关心的</h2>
+    </div>
+    <div class="faq">
+      <details class="q reveal off" open>
+        <summary><span>记错了钱能改吗？</span><span class="chev">▾</span></summary>
+        <div class="a">流水不能修改，只能作废。作废会自动回滚这笔涉及的所有联动，包括银行存款、科目余额、应收、投资等，等同这笔没有发生过，不影响其他账，避免账被改脏。</div>
+      </details>
+      <details class="q reveal off">
+        <summary><span>需要专业会计才能用吗？</span><span class="chev">▾</span></summary>
+        <div class="a">不需要。系统按集体经济预置了科目和常用记账模板，选业务填金额即可，收支方向、入账科目和摘要自动配好，不会记会计方程也能正确入账。</div>
+      </details>
+      <details class="q reveal off">
+        <summary><span>单位的类型建立错怎么办？</span><span class="chev">▾</span></summary>
+        <div class="a">单位类型决定它对应哪个科目（流转企业对应收入来源科目，投资公司对应对外投资去向），建好之后名称和类型不可随意修改。建单位时先确认定位，确有疑问联系管理员核实。</div>
+      </details>
+      <details class="q reveal off">
+        <summary><span>钱和账的数据安全吗？</span><span class="chev">▾</span></summary>
+        <div class="a">组织之间数据隔离，登录有权限管控；全部操作留痕、可随时备份；高风险操作需二次确认。账务数据掌握在组织自己手里，可配合本地部署，不强制依赖外部平台。</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section id="start">
+  <div class="wrap">
+    <div class="final reveal off">
+      <h2 class="serif">把村级账本打理得清清楚楚</h2>
+      <p>管钱、管单位、管投资，每一笔都留痕、可回滚、对得上。现在就建立你的集体账套，开始第一笔记账。</p>
+      <a class="btn" href="#" style="font-size:1.06rem">立即开始使用</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div>集体经济管理平台 · v0.19</div>
+    <div>© 集体经济组织 ｜ 本页为产品介绍示意，页面与数据以实际账套为准</div>
+  </div>
+</footer>
+
+<script>
+  // 滚动淡入：默认已可见（fail-open），通过 JS 仅对真正裁开的元素加 .off 再触发 .in
+  (function(){
+    var els = document.querySelectorAll('.reveal');
+    if(!('IntersectionObserver' in window)){ return; }
+    els.forEach(function(el){ el.classList.add('off'); });
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, {threshold:.14});
+    els.forEach(function(el){ io.observe(el); });
+    // 无动效偏好时不加阴影
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      els.forEach(function(el){ el.classList.remove('off'); el.classList.add('in'); });
+    }
+  })();
+</script>
+</body>
+</html>
