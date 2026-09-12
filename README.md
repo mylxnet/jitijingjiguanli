@@ -1,3 +1,4 @@
+<img width="1157" height="842" alt="image" src="https://github.com/user-attachments/assets/e3f776bd-16b7-4ca6-9428-5906ebfd6667" />
 本系统是村级集体经济组织的记账管理平台，管钱、管单位、管投资，每一笔账都留痕、可回滚。
 
 ## 1 第一次使用，三分钟建好账
