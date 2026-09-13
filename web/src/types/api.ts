@@ -91,6 +91,19 @@ export interface Contract {
 
 export type ContractType = 'contract' | 'attachment' | 'other'
 
+// 合同到期清单项（GET /contracts/expiring 返回）
+export interface ExpiringContract {
+  partyId: number
+  partyName: string
+  type: string
+  contractId: number
+  contractTitle: string
+  fileName: string
+  expiresAt: string
+  hasExpired: boolean
+  daysUntil: number
+}
+
 
 export interface AccrualStandard {
   id: number

@@ -11,6 +11,16 @@
       </div>
     </div>
 
+    <!-- 合同预警统计卡 -->
+    <div class="cp-stats">
+      <div v-for="card in EXPIRY_CARDS" :key="card.key" class="cp-stat-card"
+        :class="{ 'cp-stat-active': expiryFilter === card.key }"
+        @click="expiryFilter = card.key">
+        <div class="cp-stat-label">{{ card.label }}</div>
+        <div class="cp-stat-num">{{ card.key === 'all' ? expiryStats.total : expiryStats[card.key] }}</div>
+      </div>
+    </div>
+
     <div class="cp-filters">
       <van-search v-model="keyword" placeholder="搜索文件名 / 单位名" shape="round" background="transparent" class="cp-search" />
       <select v-model="activePartyType" class="cp-select">
@@ -34,19 +44,32 @@
           <span class="cp-party-name">{{ g.partyName }}</span>
           <span class="cp-party-type" :class="'tag-' + g.partyType">{{ partyTypeLabel(g.partyType) }}</span>
           <span class="cp-count">{{ g.files.length }}</span>
+          <span class="party-expiry-tag" :class="partyStatusClass(g.partyId)">{{ partyStatusText(g.partyId) }}</span>
         </div>
         <van-button size="mini" plain icon="plus" @click.stop="openUpload(g.partyId)">上传到此单位</van-button>
       </div>
       <div v-show="isExpanded(g.partyId)" class="cp-group-body">
         <div v-if="g.files.length === 0" class="cp-empty-group">（暂无合同）</div>
         <div v-for="c in g.files" :key="c.id" class="cp-file-item">
-          <span class="cp-file-ic" :class="'ic-' + fileExt(c.fileName)">📄</span>
+          <span class="cp-file-ic" :class="isArchivedContract(c) ? 'ic-archived' : 'ic-' + fileExt(c.fileName)">
+            {{ isArchivedContract(c) ? '📦' : '📄' }}
+          </span>
           <div class="cp-file-info">
-            <div class="cp-file-name" @click="viewContract(c)">{{ c.fileName }}</div>
-            <div class="cp-file-meta">{{ fileExt(c.fileName).toUpperCase() }} · {{ fmtSize(c.fileSize) }} · {{ c.uploadedAt }}</div>
+            <div class="cp-file-name" :class="{ 'cp-file-archived': isArchivedContract(c) }" @click="viewContract(c)">
+              {{ isArchivedContract(c) ? '到期续签新合同，已归档' : c.fileName }}
+            </div>
+            <div class="cp-file-meta">
+              {{ fileExt(c.fileName).toUpperCase() }} · {{ fmtSize(c.fileSize) }} · {{ c.uploadedAt }}
+            </div>
+            <div class="cp-file-expiry" :class="contractExpiryClass(c)">
+              <span class="cfe-label">合同到期</span>
+              <span class="cfe-date">{{ c.expiresAt || '—' }}</span>
+              <span v-if="c.expiresAt" class="cfe-state">{{ contractExpiryText(c) }}</span>
+            </div>
           </div>
           <div class="cp-file-actions">
             <van-button size="mini" @click="viewContract(c)">查看</van-button>
+            <van-button size="mini" plain @click.stop="openEditExpiry(c)">改期</van-button>
             <van-button size="mini" type="danger" plain @click="remove(c)">删除</van-button>
           </div>
         </div>
@@ -74,7 +97,7 @@
             <template v-if="!chosenFile">
               <div class="up-drop-ic">📁</div>
               <div>点击选择 或 拖拽文件到此处</div>
-              <div class="up-drop-sub">支持 PDF / Word / Excel / 图片，单个 ≤ 10MB</div>
+              <div class="up-drop-sub">合同只能上传 PDF 格式，单个 ≤ 10MB</div>
             </template>
             <template v-else>
               <div class="up-chosen">
@@ -83,11 +106,40 @@
               </div>
             </template>
           </div>
-          <input ref="fileInputRef" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.txt" @change="onPickFile" style="display:none" />
+          <input ref="fileInputRef" type="file" accept=".pdf,application/pdf" @change="onPickFile" style="display:none" />
         </div>
         <div class="up-field">
           <label>合同名称</label>
           <input class="up-name-input" v-model="manualName" placeholder="填合同名称，留空自动按类型命名（如：图片合同）" />
+        </div>
+        <div class="up-field">
+          <label>合同期至（可选）</label>
+          <input type="date" v-model="contractExpiresAt" class="up-name-input" />
+          <div class="up-hint">选择后上传会登记到期提醒；到期前 30 天及到期后将在「往来单位」角标提示</div>
+        </div>
+      </div>
+    </van-dialog>
+
+    <!-- 合同期至调整弹窗 -->
+    <van-dialog v-model:show="editExpiryVisible" title="合同期至调整" show-cancel-button :confirm-button-text="'保存'"
+      @confirm="saveContractExpiry" @cancel="editExpiryVisible = false">
+      <div class="ee-body">
+        <div class="ee-sub">{{ editingContract ? editingContract.fileName : '' }}</div>
+        <input type="date" v-model="editExpiryDate" class="ee-date" />
+        <div class="ee-tip">留空并保存 = 清除到期提醒</div>
+      </div>
+    </van-dialog>
+
+    <!-- 删除合同二次验证（倒计时 5 秒后才可确认删除） -->
+    <van-dialog v-model:show="delVisible" title="删除合同" :show-confirm-button="false"
+      @closed="closeDeleteDialog">
+      <div class="dc-body">
+        <div class="dc-file">{{ pendingDelete?.fileName }}</div>
+        <div class="dc-warn">该操作不可恢复，删除后无法找回原合同，请谨慎！</div>
+        <div class="dc-count" v-if="delCountdown > 0">{{ delCountdown }} 秒后可确认删除</div>
+        <div class="dc-btns">
+          <van-button size="small" @click="closeDeleteDialog">取消</van-button>
+          <van-button size="small" :disabled="delCountdown > 0" @click="confirmDelete">确定删除</van-button>
         </div>
       </div>
     </van-dialog>
@@ -141,6 +193,7 @@ import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import { api } from '../../../lib/http'
 import JSZip from 'jszip'
+import { useContactIssues } from '../useContactIssues'
 
 // 统一从 API 响应里提取数组
 function extractList(r: any) {
@@ -152,13 +205,14 @@ function extractList(r: any) {
 }
 
 interface Party { id: number; name: string; type: string }
-interface Contract { id: number; partyId: number; fileName: string; fileSize: number; mimeType?: string; uploadedAt: string; fileData?: string }
+interface Contract { id: number; partyId: number; fileName: string; fileSize: number; mimeType?: string; uploadedAt: string; fileData?: string; expiresAt?: string | null }
 
 const parties = ref<Party[]>([])
 const contracts = ref<Contract[]>([])
 const loading = ref(false)
 const keyword = ref('')
 const activePartyType = ref('all')
+const expiryFilter = ref<'all' | 'expired' | 'pending' | 'future'>('all')
 
 const dialogVisible = ref(false)
 const uploadPartyId = ref<number | null>(null)
@@ -166,6 +220,21 @@ const uploadPartyChosen = ref<number | null>(null)
 const chosenFile = ref<File | null>(null)
 const manualName = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// 合同期至（可选）：上传时登记到期日
+const contractExpiresAt = ref('')
+
+// 合同期至调整弹窗
+const editExpiryVisible = ref(false)
+
+// 删除二次验证：倒计时 5 秒后才可确认删除
+const delVisible = ref(false)
+const delCountdown = ref(0)
+const pendingDelete = ref<Contract | null>(null)
+let delTimer: number | null = null
+const editingContract = ref<Contract | null>(null)
+const editExpiryDate = ref('')
+const { refresh: refreshContactIssues } = useContactIssues()
 
 // 预览相关
 const previewVisible = ref(false)
@@ -200,17 +269,6 @@ const fileExt = (name: string) => (name.split('.').pop() || '').toLowerCase()
 const partyTypeLabel = (t?: string) => ({ invest: '长投', reinvest: '再投', flow: '流转', other: '其他' }[t || 'other'] || '其他')
 const partyName = (id: number) => parties.value.find(p => p.id === id)?.name || `单位#${id}`
 
-const filteredContracts = computed(() => {
-  let arr = contracts.value
-  if (activePartyType.value !== 'all') {
-    const ids = new Set(parties.value.filter(p => p.type === activePartyType.value).map(p => p.id))
-    arr = arr.filter(c => ids.has(c.partyId))
-  }
-  const k = keyword.value.trim().toLowerCase()
-  if (k) arr = arr.filter(c => c.fileName.toLowerCase().includes(k) || partyName(c.partyId).toLowerCase().includes(k))
-  return arr
-})
-
 interface Group { partyId: number; partyName: string; partyType: string; files: Contract[] }
 
 // 展开状态独立于 grouped 派生结构，用单位 id 列表控制（默认全折叠）
@@ -222,21 +280,38 @@ function toggleExpand(id: number) {
     : [...expandedIds.value, id]
 }
 
+// 合同列表按「全部单位」分组展示：每个单位都显示一组（含暂无合同的单位），
+// 合同按所属单位归入各自组。
 const grouped = computed<Group[]>(() => {
-  const byParty = new Map<number, Group>()
-  for (const c of filteredContracts.value) {
-    if (!byParty.has(c.partyId)) {
-      const p = parties.value.find(pp => pp.id === c.partyId)
-      byParty.set(c.partyId, {
-        partyId: c.partyId,
-        partyName: p?.name || `单位#${c.partyId}`,
-        partyType: p?.type || 'other',
-        files: [],
-      })
-    }
-    byParty.get(c.partyId)!.files.push(c)
+  // 1) 单位维度：类型过滤
+  let plist = parties.value
+  if (activePartyType.value !== 'all') {
+    plist = plist.filter(p => p.type === activePartyType.value)
   }
-  return Array.from(byParty.values()).sort((a, b) => a.partyName.localeCompare(b.partyName, 'zh'))
+  // 2) 生成单位骨架组
+  const byParty = new Map<number, Group>()
+  for (const p of plist) {
+    byParty.set(p.id, { partyId: p.id, partyName: p.name, partyType: p.type, files: [] })
+  }
+  // 3) 把合同归入对应单位
+  for (const c of contracts.value) {
+    const g = byParty.get(c.partyId)
+    if (g) g.files.push(c)
+  }
+  // 4) 关键词过滤（匹配单位名 或 单位下任一合同文件名）
+  let arr = Array.from(byParty.values())
+  const k = keyword.value.trim().toLowerCase()
+  if (k) {
+    arr = arr.filter(g =>
+      g.partyName.toLowerCase().includes(k) ||
+      g.files.some(f => f.fileName.toLowerCase().includes(k))
+    )
+  }
+  // 5) 到期分类过滤（点击统计卡）：仅保留命中该分类的单位
+  if (expiryFilter.value !== 'all') {
+    arr = arr.filter(g => partyInCat(g.partyId, expiryFilter.value as ExpiryCat))
+  }
+  return arr.sort((a, b) => a.partyName.localeCompare(b.partyName, 'zh'))
 })
 
 // ============ base64 工具 ============
@@ -300,22 +375,179 @@ async function load() {
   } finally { loading.value = false }
 }
 
+// 东八区当日 YYYY-MM-DD（避开本地时区）
+function cnToday(): string {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+// ============ 到期分类 ============
+type ExpiryCat = 'expired' | 'pending' | 'future'
+// 单合同分类：已到期(<0) / 即将到期(0~30) / 未到期(>30)；无到期日 → null
+function contractExpiryCat(c: Contract): ExpiryCat | null {
+  if (!c.expiresAt) return null
+  const [y, m, d] = c.expiresAt.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
+  if (days < 0) return 'expired'
+  if (days <= 30) return 'pending'
+  return 'future'
+}
+// 单位是否命中某到期分类：以该单位所有合同的「最新期至」归类（只看最新期至，旧过期合同忽略）
+function partyInCat(partyId: number, cat: ExpiryCat): boolean {
+  return partyLatestCat(partyId) === cat
+}
+
+// 单位最新期至的分类：取该单位所有有期至合同的最大 expiresAt（字符串 YYYY-MM-DD 可直接比较），
+// 按此归类；单位无任何期至合同 → null
+function partyLatestCat(partyId: number): ExpiryCat | null {
+  let latest: string | null = null
+  for (const c of contracts.value) {
+    if (c.partyId !== partyId || !c.expiresAt) continue
+    if (latest === null || c.expiresAt > latest) latest = c.expiresAt
+  }
+  if (latest === null) return null
+  const [y, m, d] = latest.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
+  if (days < 0) return 'expired'
+  if (days <= 30) return 'pending'
+  return 'future'
+}
+
+// 单位行到期状态文案：无期至→无到期日；否则按最新期至(30天口径)
+function partyStatusText(partyId: number): string {
+  const days = partyLatestDays(partyId)
+  if (days === null) return '无到期日'
+  if (days < 0) return `已到期${-days}天`
+  if (days === 0) return '今天到期'
+  return `还剩${days}天到期`
+}
+
+// 单位行到期状态着色：到期→红；临期(30天内)→橙；未到期→默认
+function partyStatusClass(partyId: number): string {
+  const days = partyLatestDays(partyId)
+  if (days === null) return ''
+  if (days < 0) return 'pet-expired'
+  if (days <= 30) return 'pet-pending'
+  return 'pet-ok'
+}
+
+// 单位最新期至剩余天数；无期至 → null
+function partyLatestDays(partyId: number): number | null {
+  const cat = partyLatestCat(partyId)
+  if (cat === null) return null
+  let latest: string | null = null
+  for (const c of contracts.value) {
+    if (c.partyId !== partyId || !c.expiresAt) continue
+    if (latest === null || c.expiresAt > latest) latest = c.expiresAt
+  }
+  if (latest === null) return null
+  const [y, m, d] = latest.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
+}
+
+// ============ 单个合同到期展示（合同维度） ============
+// 单个合同剩余天数；无期至 → null
+function contractExpiryDays(c: Contract): number | null {
+  if (!c.expiresAt) return null
+  const [y, m, d] = c.expiresAt.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
+}
+
+// 单个合同到期文案：已到期N天 / 今天到期 / 还剩N天到期；无期至 → ''
+function contractExpiryText(c: Contract): string {
+  const days = contractExpiryDays(c)
+  if (days === null) return ''
+  if (days < 0) return `已到期${-days}天`
+  if (days === 0) return '今天到期'
+  return `还剩${days}天到期`
+}
+
+// 单个合同到期着色：到期前 30 天（含已到期）标红；>30 天未到期默认；无期至置灰
+function contractExpiryClass(c: Contract): string {
+  const days = contractExpiryDays(c)
+  if (days === null) return 'ce-none'
+  if (days <= 30) return 'ce-warn'
+  return 'ce-ok'
+}
+
+// 是否「到期续签后归档」：该合同已到期（<0天），且同单位存在期至更晚的续签合同
+function isArchivedContract(c: Contract): boolean {
+  if (!c.expiresAt) return false
+  const [y, m, d] = c.expiresAt.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
+  if (days >= 0) return false
+  return contracts.value.some(o => o.partyId === c.partyId && o.expiresAt !== null && o.expiresAt > c.expiresAt!)
+}
+// 三类统计单位数（去重）；无到期日合同的单位不计入三卡
+const expiryStats = computed(() => {
+  const stats: Record<ExpiryCat, number> & { total: number } = { expired: 0, pending: 0, future: 0, total: parties.value.length }
+  for (const p of parties.value) {
+    const cat = partyLatestCat(p.id)
+    if (cat) stats[cat]++
+  }
+  return stats
+})
+// 统计卡标签
+const EXPIRY_CARDS = [
+  { key: 'all', label: '全部' },
+  { key: 'expired', label: '已到期' },
+  { key: 'pending', label: '即将到期' },
+  { key: 'future', label: '未到期' },
+] as const
+
+// 打开「合同期至调整」弹窗
+function openEditExpiry(c: Contract) {
+  editingContract.value = c
+  editExpiryDate.value = c.expiresAt || ''
+  editExpiryVisible.value = true
+}
+
+// 保存「合同期至调整」：空 = 清除到期；保存后刷新列表与角标
+async function saveContractExpiry() {
+  const c = editingContract.value
+  if (!c) return
+  const val = editExpiryDate.value || ''
+  if (val === (c.expiresAt || '')) {
+    editExpiryVisible.value = false
+    return
+  }
+  try {
+    await api.put<any>(`/contracts/${c.id}/expiry`, { expiresAt: val || null })
+    editExpiryVisible.value = false
+    c.expiresAt = val || null
+    void refreshContactIssues()
+  } catch (e: any) { alert(e?.message || '更新失败') }
+}
+
 function openUpload(partyId: number | null) {
   uploadPartyId.value = partyId
   uploadPartyChosen.value = partyId
   chosenFile.value = null
   manualName.value = ''
+  contractExpiresAt.value = ''
   dialogVisible.value = true
 }
 
 function triggerFile() { fileInputRef.value?.click() }
+function isPdfFile(f: File): boolean {
+  return f.type === 'application/pdf' || fileExt(f.name).toLowerCase() === 'pdf'
+}
+
+function acceptFile(f: File): boolean {
+  if (!isPdfFile(f)) { alert('合同只能上传 PDF 格式'); return false }
+  return true
+}
 function onPickFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
-  if (f) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
+  if (f && acceptFile(f)) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
 }
 function onDrop(e: DragEvent) {
   const f = e.dataTransfer?.files?.[0]
-  if (f) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
+  if (f && acceptFile(f)) { chosenFile.value = f; manualName.value = cleanContractName(f.name) }
 }
 
 // 异常文件名的识别与清理：如 "u=4217215850,4193273696&fm=253&fmt=auto&app=138&f=JPEG.jpg"
@@ -359,6 +591,7 @@ async function submitUpload() {
   const pid = uploadPartyChosen.value
   if (!pid) { alert('请选择所属单位'); return }
   if (!chosenFile.value) { alert('请选择文件'); return }
+  if (!isPdfFile(chosenFile.value)) { alert('合同只能上传 PDF 格式'); return }
 
   try {
     const fileData = await fileToBase64(chosenFile.value)
@@ -375,11 +608,14 @@ async function submitUpload() {
       mimeType: chosenFile.value.type || 'application/octet-stream',
       contractTitle: fileName,
       fileData,
+      expiresAt: contractExpiresAt.value || null,
     }
     await api.post<any>('/contracts', body)
     dialogVisible.value = false
     chosenFile.value = null
+    contractExpiresAt.value = ''
     await load()
+    void refreshContactIssues()
   } catch (e: any) { alert(e?.message || '上传失败') }
 }
 
@@ -405,17 +641,25 @@ async function viewContract(c: Contract) {
   excelWorkbook.value = null
 
   // 同步类型：立即显示
-  if (kind === 'iframe' || kind === 'office-download' || kind === 'image') {
+  if (kind === 'iframe' || kind === 'image') {
     previewVisible.value = true
     return
   }
 
-  // 需要异步处理的类型（word / excel / text）：显示 loading
+  // 需要异步处理的类型（office-download 尝试提取正文 / word / excel / text）：显示 loading
   previewLoading.value = true
   previewVisible.value = true
 
   try {
-    if (kind === 'text') {
+    if (kind === 'office-download') {
+      // 老式 .doc：调用后端提取正文文本，成功则切换为文本预览
+      const t: any = await api.get(`/contracts/${c.id}/text`)
+      const data = t?.data ?? t
+      if (data?.supported && data?.text) {
+        previewKind.value = 'text'
+        previewTextContent.value = data.text
+      }
+    } else if (kind === 'text') {
       const res = await fetch(target.fileData)
       previewTextContent.value = await res.text()
     } else if (kind === 'word') {
@@ -478,8 +722,36 @@ async function exportZip() {
 }
 
 function remove(c: Contract) {
-  if (!confirm(`确定删除 ${c.fileName}？`)) return
-  api.del(`/contracts/${c.id}`).then(load).catch((e: any) => alert(e?.message || '删除失败'))
+  pendingDelete.value = c
+  delCountdown.value = 5
+  delVisible.value = true
+  if (delTimer !== null) clearInterval(delTimer)
+  delTimer = window.setInterval(() => {
+    delCountdown.value--
+    if (delCountdown.value <= 0) {
+      if (delTimer !== null) clearInterval(delTimer)
+      delTimer = null
+    }
+  }, 1000)
+}
+
+// 二次验证弹窗「确定删除」：倒计时归零后才可点击
+function confirmDelete() {
+  const c = pendingDelete.value
+  if (!c) return
+  api.del(`/contracts/${c.id}`).then(() => {
+    delVisible.value = false
+    pendingDelete.value = null
+    void load()
+    void refreshContactIssues() // 删除后刷新角标，去除对应的到期提醒
+  }).catch((e: any) => alert(e?.message || '删除失败'))
+}
+
+function closeDeleteDialog() {
+  delVisible.value = false
+  pendingDelete.value = null
+  if (delTimer !== null) clearInterval(delTimer)
+  delTimer = null
 }
 
 // 全局 Escape 关闭预览
@@ -494,6 +766,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscape)
+  if (delTimer !== null) clearInterval(delTimer)
 })
 </script>
 
@@ -545,12 +818,34 @@ onUnmounted(() => {
 .cp-file-ic.ic-doc, .cp-file-ic.ic-docx { background: #2b579a; }
 .cp-file-ic.ic-pdf { background: #d4380d; }
 .cp-file-ic.ic-jpg, .cp-file-ic.ic-jpeg, .cp-file-ic.ic-png, .cp-file-ic.ic-gif { background: #52c41a; }
+.cp-file-ic.ic-archived { background: #c8c9cc; }
 .cp-file-info { flex: 1; min-width: 0; }
 .cp-file-name { font-weight: 500; color: #1f2329; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cp-file-name:hover { color: #1989fa; }
+.cp-file-name.cp-file-archived { color: #c8c9cc; font-weight: 400; }
 .cp-file-meta { font-size: 11px; color: #969799; margin-top: 2px; }
 .cp-file-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .empty { padding: 40px 0; }
+
+/* 合同预警统计卡（参照投资收益统计卡：圆角8px + 四色淡彩背景） */
+.cp-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
+}
+.cp-stat-card {
+  background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px;
+  padding: 10px 12px; cursor: pointer; transition: box-shadow .15s;
+}
+.cp-stat-label { font-size: 12px; color: #969799; }
+.cp-stat-num { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.cp-stats .cp-stat-card { border-color: transparent; }
+.cp-stats .cp-stat-card:nth-child(1) { background: #e8f0fb; }
+.cp-stats .cp-stat-card:nth-child(2) { background: #e6f5f4; }
+.cp-stats .cp-stat-card:nth-child(3) { background: #f1edfc; }
+.cp-stats .cp-stat-card:nth-child(4) { background: #fff1e0; }
+/* 选中态：深描边区分，保持淡彩背景 */
+.cp-stat-active { box-shadow: inset 0 0 0 1.5px rgba(31, 35, 41, .35); }
+.cp-stat-active .cp-stat-num { font-weight: 700; color: #1f2329; }
+.cp-stat-active .cp-stat-label { color: #646566; }
 
 .up-body { padding: 10px 4px; min-width: 380px; }
 .up-field { margin-bottom: 16px; }
@@ -560,6 +855,39 @@ onUnmounted(() => {
 .up-select:focus { border-color: #1989fa; }
 .up-name-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
 .up-name-input:focus { border-color: #1989fa; }
+.up-hint { font-size: 11px; color: #969799; margin-top: 4px; }
+
+/* 单位行到期状态标签（跟单位，按最新期至） */
+.party-expiry-tag {
+  display: inline-block; margin-left: 8px; padding: 1px 7px;
+  border-radius: 8px; font-size: 11px; font-weight: 500; white-space: nowrap;
+  background: #ebedf0; color: #969799;
+}
+.party-expiry-tag.pet-expired { background: #ffece8; color: #ee0a24; font-weight: 600; }
+.party-expiry-tag.pet-pending { background: #fff7e6; color: #ed6a0c; font-weight: 600; }
+.party-expiry-tag.pet-ok { background: #e8f9f5; color: #07c160; }
+
+/* 合同期至调整弹窗 */
+.ee-body { padding: 12px 8px; min-width: 260px; }
+.ee-sub { font-size: 12px; color: #969799; margin-bottom: 10px; word-break: break-all; }
+.ee-date { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
+.ee-date:focus { border-color: #1989fa; }
+.ee-tip { font-size: 11px; color: #969799; margin-top: 6px; }
+
+/* 删除二次验证弹窗 */
+/* 单个合同到期展示 */
+.cp-file-expiry { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 2px; }
+.cfe-label { color: #969799; }
+.cfe-date { color: #1f2329; }
+.cfe-state { color: #646566; }
+.cp-file-expiry.ce-none .cfe-date { color: #c8c9cc; }
+.cp-file-expiry.ce-warn .cfe-date,
+.cp-file-expiry.ce-warn .cfe-state { color: #ee0a24; font-weight: 600; }
+.dc-body { padding: 12px 16px 4px; text-align: center; }
+.dc-file { font-size: 13px; font-weight: 600; color: #1f2329; word-break: break-all; margin-bottom: 8px; }
+.dc-warn { font-size: 13px; color: #ee0a24; line-height: 1.5; }
+.dc-count { font-size: 12px; color: #969799; margin-top: 10px; }
+.dc-btns { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
 .up-drop {
   border: 2px dashed #dcdee0; border-radius: 10px; padding: 22px 16px;
   text-align: center; color: #969799; cursor: pointer; transition: all .15s;

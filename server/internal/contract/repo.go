@@ -51,6 +51,42 @@ func (r *Repo) ListContracts(orgID int64, partyID *int64) ([]Contract, error) {
 	return items, nil
 }
 
+// ListExpiring 查询「各单位的合同最新期至」并关联往来单位（含单位名/类型）。
+// 每个单位只返回期至（MAX(expires_at)）最大的那条合同；无到期日合同或并列时可能多条。
+// 供「合同到期」提醒使用；须在 handler 层按当时日期筛选 30 天内/已到期。
+func (r *Repo) ListExpiring(orgID int64) ([]ExpiringItem, error) {
+	rows, err := r.db.Query(
+		`SELECT c.id, c.party_id, p.name, p.type, c.contract_title, c.file_name, c.expires_at
+		 FROM contract c JOIN party p ON p.id = c.party_id
+		 WHERE c.org_id = ?
+		   AND c.expires_at IS NOT NULL AND c.expires_at <> ''
+		   AND c.expires_at = (
+		     SELECT MAX(c2.expires_at) FROM contract c2
+		     WHERE c2.party_id = c.party_id AND c2.org_id = ?
+		       AND c2.expires_at IS NOT NULL AND c2.expires_at <> ''
+		   )
+		 ORDER BY c.expires_at`, orgID, orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询到期合同失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := []ExpiringItem{}
+	for rows.Next() {
+		var it ExpiringItem
+		if err := rows.Scan(&it.ContractID, &it.PartyID, &it.PartyName, &it.Type,
+			&it.ContractTitle, &it.FileName, &it.ExpiresAt); err != nil {
+			return nil, fmt.Errorf("扫描到期合同行失败: %w", err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // CreateContract 新建合同，fileData 为已解码的原始字节存 BLOB。
 func (r *Repo) CreateContract(c *Contract, fileData []byte) (*Contract, error) {
 	now := platform.Now()
@@ -89,6 +125,23 @@ func (r *Repo) FindContractByID(id int64) (*Contract, error) {
 	}
 	c.FileBytes = fileData
 	return c, nil
+}
+
+// UpdateExpiry 更新合同到期日（expiresAt 为 nil 或空串时清除为 NULL）。返回是否命中该组织的记录。
+func (r *Repo) UpdateExpiry(id, orgID int64, expiresAt *string) (bool, error) {
+	var v any // nil → 存 NULL（清除到期）
+	if expiresAt != nil && *expiresAt != "" {
+		v = *expiresAt
+	}
+	res, err := r.db.Exec(
+		`UPDATE contract SET expires_at = ?, updated_at = ? WHERE id = ? AND org_id = ?`,
+		v, platform.Now(), id, orgID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("更新合同到期日失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // DeleteContract 删除合同，返回是否命中该组织的记录。

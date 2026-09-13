@@ -71,7 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function markOnboarded() {
     if (!orgId.value) await refreshOrg()
     if (!orgId.value) throw new Error('无法确认组织信息')
-    await api.post('/api/onboarding/complete')
+    await api.post('/onboarding/complete')
     onboarded.value = true
   }
 

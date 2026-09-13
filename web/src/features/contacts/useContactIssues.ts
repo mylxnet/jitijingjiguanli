@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
 import { api } from '../../lib/http'
-import type { ApiResponse, Party } from '../../types/api'
+import type { ApiResponse, ExpiringContract, Party } from '../../types/api'
 
 // 单位类型展示名
-const TYPE_LABEL: Record<string, string> = {
+export const TYPE_LABEL: Record<string, string> = {
   flow: '流转企业',
   invest: '投资公司',
   reinvest: '再投资',
@@ -49,6 +49,7 @@ export interface PartyIssue {
 
 // 模块级共享状态：侧边栏角标与缺失清单弹窗共用同一份数据
 const parties = ref<Party[]>([])
+const expiring = ref<ExpiringContract[]>([])
 const loading = ref(false)
 let inflight: Promise<void> | null = null
 
@@ -62,21 +63,28 @@ const issues = computed<PartyIssue[]>(() =>
   }, [])
 )
 
-const issueCount = computed(() => issues.value.length)
+// 综合角标数 = 缺失单位数 + 到期合同条数（直接相加，不去重）
+const issueCount = computed(() => issues.value.length + expiring.value.length)
 
-// 拉取单位并重算缺口。
+// 拉取单位与到期合同，并重算缺口/到期。
 // - 并发调用复用同一请求，避免路由连续切换时重复拉取；
-// - 失败时保留上一次结果，避免角标闪烁。
+// - 任一失败时保留上一次结果，避免角标闪烁。
 function refresh(): Promise<void> {
   if (inflight) return inflight
   loading.value = true
-  inflight = api
-    .get<ApiResponse<Party[]> | Party[]>('/parties')
-    .then((res) => {
-      const list = Array.isArray(res)
-        ? res
-        : (Array.isArray((res as ApiResponse<Party[]>)?.data) ? (res as ApiResponse<Party[]>).data : [])
+  inflight = Promise.all([
+    api.get<ApiResponse<Party[]> | Party[]>('/parties'),
+    api.get<ApiResponse<ExpiringContract[]> | ExpiringContract[]>('/contracts/expiring'),
+  ])
+    .then(([pRes, eRes]) => {
+      const list = Array.isArray(pRes)
+        ? pRes
+        : (Array.isArray((pRes as ApiResponse<Party[]>)?.data) ? (pRes as ApiResponse<Party[]>).data : [])
+      const exp = Array.isArray(eRes)
+        ? eRes
+        : (Array.isArray((eRes as ApiResponse<ExpiringContract[]>)?.data) ? (eRes as ApiResponse<ExpiringContract[]>).data : [])
       parties.value = list
+      expiring.value = exp
     })
     .catch(() => {
       // ignore：保留旧数据
@@ -89,5 +97,5 @@ function refresh(): Promise<void> {
 }
 
 export function useContactIssues() {
-  return { issues, issueCount, loading, refresh }
+  return { issues, expiring, issueCount, loading, refresh }
 }

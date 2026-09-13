@@ -23,10 +23,29 @@ type Contract struct {
 
 // CreateContractRequest 新建合同/附件。
 type CreateContractRequest struct {
-	PartyID       int64  `json:"partyId" binding:"required"`
-	FileName      string `json:"fileName" binding:"required"`
-	FileSize      int64  `json:"fileSize"`
-	MimeType      string `json:"mimeType"`
+	PartyID       int64   `json:"partyId" binding:"required"`
+	FileName      string  `json:"fileName" binding:"required"`
+	FileSize      int64   `json:"fileSize"`
+	MimeType      string  `json:"mimeType"`
+	ContractTitle string  `json:"contractTitle"`
+	ExpiresAt     *string `json:"expiresAt"` // 可选「合同期至时间」，留空/缺省 = 无到期
+	FileData      string  `json:"fileData" binding:"required"` // base64 data URL
+}
+
+// UpdateContractExpiryRequest 修改合同「合同期至时间」。ExpiresAt 为 nil/空串 = 清除到期。
+type UpdateContractExpiryRequest struct {
+	ExpiresAt *string `json:"expiresAt"`
+}
+
+// ExpiringItem 到期合同清单项（关联往来单位，用于「合同到期」提醒）。
+type ExpiringItem struct {
+	PartyID       int64  `json:"partyId"`
+	PartyName     string `json:"partyName"`
+	Type          string `json:"type"`
+	ContractID    int64  `json:"contractId"`
 	ContractTitle string `json:"contractTitle"`
-	FileData      string `json:"fileData" binding:"required"` // base64 data URL
+	FileName      string `json:"fileName"`
+	ExpiresAt     string `json:"expiresAt"`
+	HasExpired    bool   `json:"hasExpired"`
+	DaysUntil     int64  `json:"daysUntil"`
 }

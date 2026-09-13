@@ -36,6 +36,7 @@
           <col class="cg-num" v-if="!hideLandCol" />
           <col class="cg-contract" />
           <col class="cg-owe" />
+          <col class="cg-status" />
           <col class="cg-note" />
           <col class="cg-action" />
         </colgroup>
@@ -47,6 +48,7 @@
             <th class="pl-th" v-if="!hideLandCol">流转面积</th>
             <th class="pl-th">是否有合同</th>
             <th class="pl-th">欠款合计</th>
+            <th class="pl-th">合同到期状态</th>
             <th class="pl-th">备注</th>
             <th class="pl-th">操作</th>
           </tr>
@@ -73,6 +75,9 @@
             </td>
             <td class="pl-td pl-td-owe" :class="{ 'pl-owe': (p.outstandingCents || 0) > 0 }">
               {{ fmtYuan(p.outstandingCents) }}
+            </td>
+            <td class="pl-td pl-td-status">
+              <span class="pl-status" :class="statusClass(p.id)">{{ partyContractStatus(p.id) }}</span>
             </td>
             <td class="pl-td pl-td-note">{{ p.note || '—' }}</td>
             <td class="pl-td pl-td-action">
@@ -124,28 +129,7 @@
               <van-field v-model="partyForm.contactPhone" label-width="150" label="联系电话" placeholder="可选" />
             </van-cell-group>
 
-            <van-cell-group inset title="合同与备注">
-              <div class="inline-upload">
-                <input
-                  type="file"
-                  id="inline-file-edit"
-                  class="hidden-file-input"
-                  @change="handleInlineUpload"
-                />
-                <label for="inline-file-edit" class="upload-trigger inline">
-                  <van-icon name="plus" />
-                  <span>{{ inlineUploading ? '上传中…' : '点击选择合同/附件' }}</span>
-                </label>
-                <div v-if="inlineContracts.length > 0" class="inline-contract-list">
-                  <div v-for="(c, i) in inlineContracts" :key="i" class="inline-contract-item">
-                    <van-icon name="description" class="contract-icon" />
-                    <span class="inline-ctitle">{{ splitCleanFileName(c.fileName).cleanName + splitCleanFileName(c.fileName).ext }}</span>
-                    <span class="inline-cstate" v-if="c._status === 'uploading'">上传中…</span>
-                    <span class="inline-cstate ok" v-else>✓</span>
-                    <van-icon name="cross" class="inline-cremove" @click="inlineContracts.splice(i, 1)" />
-                  </div>
-                </div>
-              </div>
+            <van-cell-group inset title="备注">
               <van-field v-model="partyForm.note" label-width="150" label="备注" placeholder="备注（可选）" />
             </van-cell-group>
           </van-tab>
@@ -267,11 +251,72 @@ async function openDetail(p: Party) {
   } finally { detailLoading.value = false }
 }
 
-interface Contract { id: number; partyId: number; fileName: string; }
+interface Contract { id: number; partyId: number; fileName: string; expiresAt: string | null; }
 const contracts = ref<Contract[]>([])
 
 function contractCount(partyId: number): number {
   return contracts.value.filter(c => c.partyId === partyId).length
+}
+
+// 东八区当日 YYYY-MM-DD（避开本地时区）
+function cnToday(): string {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+// 到期剩余天数：正=还剩N天到期，负=已到期超N天，0=今天到期；无到期日返回 null
+function daysToExpiry(expiresAt?: string | null): number | null {
+  if (!expiresAt) return null
+  const [y, m, d] = expiresAt.split('-').map(Number)
+  const [ty, tm, td] = cnToday().split('-').map(Number)
+  const ms = Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)
+  return Math.round(ms / 86400000)
+}
+
+// 单合同到期状态：到期N天（超期）/ 剩余不到N天（0~30天）/ 未到期（>30天）；无到期日返回空串
+function expiryStateText(expiresAt?: string | null): string {
+  const days = daysToExpiry(expiresAt)
+  if (days === null) return ''
+  if (days < 0) return `到期${-days}天`
+  if (days <= 30) return `剩余不到${days}天`
+  return '未到期'
+}
+
+// 单位「最新期至」：所有有期至合同的最大 expiresAt（YYYY-MM-DD 字符串可直接比较）；无则 null
+function partyLatestExpiry(partyId: number): string | null {
+  let latest: string | null = null
+  for (const c of contracts.value) {
+    if (c.partyId !== partyId || !c.expiresAt) continue
+    if (latest === null || c.expiresAt > latest) latest = c.expiresAt
+  }
+  return latest
+}
+
+// 导出「合同期至时间」列：该单位最新期至；无则空
+function partyExpiryDates(partyId: number): string {
+  return partyLatestExpiry(partyId) || ''
+}
+
+// 导出「合同状态」列：对应单位最新期至的状态；无期至 → 无到期日
+function partyExpiryStates(partyId: number): string {
+  const ex = partyLatestExpiry(partyId)
+  if (ex === null) return '无到期日'
+  return expiryStateText(ex)
+}
+
+// 列表「合同到期状态」列：以单位最新期至判定唯一状态；无期至 → 无到期日
+function partyContractStatus(partyId: number): string {
+  const ex = partyLatestExpiry(partyId)
+  if (ex === null) return '无到期日'
+  return expiryStateText(ex)
+}
+
+// 状态着色：最新期至 到期→红；临期(30天内)→橙；否则默认（无期至/未到期）
+function statusClass(partyId: number): string {
+  const days = daysToExpiry(partyLatestExpiry(partyId))
+  if (days === null) return ''
+  if (days < 0) return 'expired'
+  if (days <= 30) return 'pending'
+  return ''
 }
 
 function downloadCSV(filename: string, headers: string[], rows: string[][]) {
@@ -284,7 +329,7 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 }
 
 function exportCSV() {
-  const headers = ['单位名称', '单位类型', '联系电话', '投资金额', '流转面积', '是否有合同', '欠款合计', '备注']
+  const headers = ['单位名称', '单位类型', '联系电话', '投资金额', '流转面积', '是否有合同', '欠款合计', '合同期至时间', '合同状态', '备注']
   const rows = parties.value.map(p => [
     p.name,
     partyTypeLabel(p.type),
@@ -293,6 +338,8 @@ function exportCSV() {
     p.type === 'flow' ? ((p.landMu ?? p.areaMu ?? 0) + ' 亩') : '',
     contractCount(p.id) > 0 ? '有 ' + contractCount(p.id) + ' 份' : '无',
     fmtYuan(p.outstandingCents),
+    partyExpiryDates(p.id),
+    partyExpiryStates(p.id),
     p.note || '',
   ])
   downloadCSV('单位列表.csv', headers, rows)
@@ -320,10 +367,6 @@ async function load() {
 const showPartyDialog = ref(false)
 const isEditing = ref(false)
 const formTab = ref<'basic' | 'data'>('basic')
-
-interface InlineContract { fileName: string; fileSize: number; mimeType: string; fileData: string; _status?: 'uploading' | 'ok' | 'error' }
-const inlineContracts = ref<InlineContract[]>([])
-const inlineUploading = ref(false)
 
 const partyForm = ref({
   id: 0,
@@ -405,7 +448,6 @@ function resetForm() {
     landMuYuan: '', landFeePerMuYuan: '', expectedLandFeeYuan: '',
     mgmtFeePerMuYuan: '', expectedMgmtFeeYuan: '',
   }
-  inlineContracts.value = []
   formTab.value = 'basic'
   lastAutoReturn = null
   lastAutoLandFee = null
@@ -486,63 +528,11 @@ async function saveParty() {
       partyId = res?.data?.id ?? res?.id ?? 0
       showToast('创建成功')
     }
-    // 上传保存后关联的合同
-    if (inlineContracts.value.length > 0 && partyId > 0) {
-      await Promise.all(inlineContracts.value.map(c =>
-        api.post('/contracts', {
-          partyId,
-          fileName: c.fileName,
-          fileSize: c.fileSize,
-          mimeType: c.mimeType,
-          contractTitle: c.fileName,
-          fileData: c.fileData,
-        })
-      ))
-      inlineContracts.value = []
-    }
     showPartyDialog.value = false
     await load()
     refreshIssues()
   } catch (e: any) {
     showDialog({ title: '保存失败', message: e.message || '保存失败，请重试' })
-  }
-}
-
-// ---- 合同上传 ----
-function splitCleanFileName(name: string) {
-  const dotIdx = name.lastIndexOf('.')
-  if (dotIdx > 0) return { cleanName: name.slice(0, dotIdx), ext: name.slice(dotIdx) }
-  return { cleanName: name, ext: '' }
-}
-
-async function handleInlineUpload(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  if (file.size > 5 * 1024 * 1024) {
-    showToast('文件超过 5MB 限制')
-    return
-  }
-  const item: InlineContract = {
-    fileName: file.name,
-    fileSize: file.size,
-    mimeType: file.type || 'application/octet-stream',
-    fileData: '',
-    _status: 'uploading',
-  }
-  inlineContracts.value.push(item)
-  try {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = () => reject(new Error('读取文件失败'))
-      reader.readAsDataURL(file)
-    })
-    item.fileData = dataUrl
-    item._status = 'ok'
-  } catch {
-    item._status = 'error'
-  } finally {
-    inlineUploading.value = false
   }
 }
 
@@ -593,6 +583,7 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-table col.cg-num      { width: 9%; }
 .pl-table col.cg-contract { width: 9%; }
 .pl-table col.cg-owe      { width: 11%; }
+.pl-table col.cg-status   { width: 14%; }
 .pl-table col.cg-note     { width: 22%; }
 .pl-table col.cg-action   { width: 7%; }
 .pl-tr { cursor: pointer; transition: background .12s; }
@@ -606,6 +597,10 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-td-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-td-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-td-contract { white-space: nowrap; }
+.pl-td-status { white-space: nowrap; }
+.pl-status { font-size: 12px; font-weight: 600; white-space: nowrap; color: #c8c9cc; }
+.pl-status.expired { color: #ee0a24; }
+.pl-status.pending { color: #ff9500; }
 .pl-td-owe { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-name { font-weight: 600; font-size: 13px; color: #1f2329; margin-right: 6px; }
 .pl-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
@@ -622,21 +617,6 @@ watch(() => route.query.editParty, handleEditQuery)
 .empty { padding: 40px 0; }
 
 /* 表单样式 */
-.hidden-file-input { display: none; }
-.inline-upload { padding: 12px 16px; }
-.upload-trigger {
-  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
-  border: 1px dashed #dcdee0; border-radius: 8px; cursor: pointer; color: #1989fa; font-size: 13px;
-}
-.upload-trigger:hover { border-color: #1989fa; background: #f7f8fa; }
-.inline-contract-list { margin-top: 8px; }
-.inline-contract-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
-.inline-ctitle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inline-cstate { color: #969799; font-size: 12px; }
-.inline-cstate.ok { color: #07c160; }
-.inline-cremove { cursor: pointer; color: #969799; }
-.inline-cremove:hover { color: #ee0a24; }
-.contract-icon { font-size: 18px; color: #1989fa; }
 
 /* 欠款弹窗 */
 .detail-dialog { width: 90vw; max-width: 480px; }

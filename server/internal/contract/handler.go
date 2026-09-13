@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -14,6 +15,9 @@ import (
 	"jititaizhang/server/internal/platform"
 	"jititaizhang/server/internal/receivable"
 )
+
+// dateLayout 合同期至时间格式（与表内 TEXT 约定一致）。
+const dateLayout = "2006-01-02"
 
 // Handler 处理合同/附件 HTTP 请求。
 type Handler struct {
@@ -35,7 +39,10 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) Register(r gin.IRouter) {
 	r.GET("/api/contracts", h.ListContracts)
 	r.POST("/api/contracts", h.CreateContract)
+	r.GET("/api/contracts/expiring", h.ListExpiring) // 注意：须在 /:id 之前注册
 	r.GET("/api/contracts/:id", h.GetContract)
+	r.GET("/api/contracts/:id/text", h.GetContractText) // 老式 .doc 正文文本提取
+	r.PUT("/api/contracts/:id/expiry", h.UpdateContractExpiry)
 	r.DELETE("/api/contracts/:id", h.DeleteContract)
 }
 
@@ -74,6 +81,41 @@ func (h *Handler) ListContracts(c *gin.Context) {
 		items = []Contract{}
 	}
 	platform.SuccessResponse(c, items)
+}
+
+// ListExpiring 到期合同清单：返回「已到期」或「30 天内即将到期」的合同，关联单位信息与剩余天数。
+// GET /api/contracts/expiring
+func (h *Handler) ListExpiring(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	rows, err := h.repo.ListExpiring(orgID)
+	if err != nil {
+		h.internal(c, "查询到期合同失败")
+		return
+	}
+
+	now := platform.Now()
+	loc := now.Location()
+	today, _ := time.ParseInLocation(dateLayout, now.Format(dateLayout), loc)
+
+	out := []ExpiringItem{}
+	for _, it := range rows {
+		exp, err := time.ParseInLocation(dateLayout, it.ExpiresAt, loc)
+		if err != nil {
+			continue
+		}
+		days := int64(exp.Sub(today).Hours() / 24)
+		if days > 30 {
+			continue // 只留「已到期或 30 天内即将到期」
+		}
+		it.HasExpired = days < 0
+		it.DaysUntil = days
+		out = append(out, it)
+	}
+	platform.SuccessResponse(c, out)
 }
 
 // CreateContract 新建合同/附件。
@@ -120,6 +162,18 @@ func (h *Handler) CreateContract(c *gin.Context) {
 		return
 	}
 
+	// 校验「合同期至时间」：可选，非空须为 YYYY-MM-DD
+	var expires *string
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		if _, err := time.Parse(dateLayout, *req.ExpiresAt); err != nil {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_REQUEST", Message: "合同期至时间格式不合法，应为 YYYY-MM-DD",
+			})
+			return
+		}
+		expires = req.ExpiresAt
+	}
+
 	title := req.ContractTitle
 	if title == "" {
 		title = req.FileName
@@ -131,6 +185,7 @@ func (h *Handler) CreateContract(c *gin.Context) {
 		FileSize:      req.FileSize,
 		MimeType:      req.MimeType,
 		ContractTitle: title,
+		ExpiresAt:     expires,
 	}
 	created, err := h.repo.CreateContract(nc, fileData)
 	if err != nil {
@@ -173,6 +228,106 @@ func (h *Handler) GetContract(c *gin.Context) {
 	platform.SuccessResponse(c, cnt)
 }
 
+// GetContractText 读取合同二进制并提取封装在老式 .doc（OLE2）里的正文文本，供前端文本预览。
+// GET /api/contracts/:id/text  →  {text:string, supported:bool}
+func (h *Handler) GetContractText(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "合同 ID 不合法",
+		})
+		return
+	}
+	cnt, err := h.repo.FindContractByID(id)
+	if err != nil {
+		h.internal(c, "查询合同失败")
+		return
+	}
+	if cnt == nil || cnt.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "CONTRACT_NOT_FOUND", Message: "合同不存在",
+		})
+		return
+	}
+	text, extracted := extractDocText(cnt.FileBytes)
+	platform.SuccessResponse(c, gin.H{"text": text, "supported": extracted})
+}
+
+// extractDocText 从老式 .doc（OLE2）二进制中尽量提取正文文本。
+// 原理：Word 正文常以 UTF-16LE 连续码元存储在文件内，将其按 2 字节扫描，
+// 只收集「可打印 ASCII + CJK + 常用全角标点」的连续片段，过滤掉结构残留噪声。
+// .doc 二进制仅在提取到足够长度的连续文本时视为 supported。
+func extractDocText(raw []byte) (text string, ok bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+	// OLE2/CFB 魔数 d0cf11e0a1b11ae1，非 .doc 二进制不进文本提取
+	if len(raw) < 8 || !(raw[0] == 0xd0 && raw[1] == 0xcf && raw[2] == 0x11 && raw[3] == 0xe0) {
+		return "", false
+	}
+	n := len(raw) - 1
+	var sb strings.Builder
+	seg := make([]byte, 0, 512)
+	flush := func() {
+		if len(seg) >= 8 { // 至少 4 个连续可读码元（8 字节）才作为正文片段
+			s := decodeUTF16LE(seg)
+			for _, r := range strings.Fields(s) {
+				sb.WriteString(r)
+				sb.WriteByte('\n')
+			}
+		}
+		seg = seg[:0]
+	}
+	for i := 0; i+1 < n; i += 2 {
+		v := uint16(raw[i]) | uint16(raw[i+1])<<8
+		if isDocPrintable(v) {
+			seg = append(seg, raw[i], raw[i+1])
+		} else {
+			flush()
+		}
+	}
+	flush()
+	if sb.Len() < 8 {
+		return "", false
+	}
+	return sb.String(), true
+}
+
+// isDocPrintable 判断 UTF-16LE 码元是否为可作正文的字符（ASCII/CJK/全角标点/空格）。
+func isDocPrintable(v uint16) bool {
+	switch {
+	case v == 0: // 空分隔
+		return false
+	case v >= 0x20 && v < 0x7E: // 可打印 ASCII（含空格）
+		return true
+	case v >= 0x4E00 && v <= 0x9FFF: // CJK 统一表意文字
+		return true
+	case v >= 0x3000 && v <= 0x303F: // CJK 标点
+		return true
+	case v >= 0xFF00 && v <= 0xFFEF: // 全角标点
+		return true
+	}
+	switch v {
+	case 0x2018, 0x2019, 0x201C, 0x201D, 0x2026, 0x300A, 0x300B:
+		return true
+	}
+	return false
+}
+
+// decodeUTF16LE 将 UTF-16LE 字节解码为字符串（容错替换非法码元）。
+func decodeUTF16LE(b []byte) string {
+	runes := make([]rune, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		runes = append(runes, rune(uint16(b[i]) | uint16(b[i+1])<<8))
+	}
+	return string(runes)
+}
+
 // DeleteContract 删除合同。
 // DELETE /api/contracts/:id
 func (h *Handler) DeleteContract(c *gin.Context) {
@@ -200,6 +355,77 @@ func (h *Handler) DeleteContract(c *gin.Context) {
 		return
 	}
 	_ = h.clRepo.LogChangeVoid(orgID, "contract", id, "delete", "normal", "deleted")
+	platform.SuccessResponse(c, gin.H{"ok": true})
+}
+
+// UpdateContractExpiry 修改合同「合同期至时间」，可清除（置空）。记 changelog。
+// PUT /api/contracts/:id/expiry  body {expiresAt?: string|null}
+func (h *Handler) UpdateContractExpiry(c *gin.Context) {
+	orgID, ok := auth.CurrentOrgID(c)
+	if !ok {
+		h.unauthorized(c)
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "合同 ID 不合法",
+		})
+		return
+	}
+	var req UpdateContractExpiryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+			Code: "INVALID_REQUEST", Message: "参数不合法",
+		})
+		return
+	}
+	// 非空须为 YYYY-MM-DD；空串/nil = 清除到期
+	var expires *string
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		if _, err := time.Parse(dateLayout, *req.ExpiresAt); err != nil {
+			platform.ErrResponse(c, http.StatusBadRequest, &platform.AppError{
+				Code: "INVALID_REQUEST", Message: "合同期至时间格式不合法，应为 YYYY-MM-DD",
+			})
+			return
+		}
+		expires = req.ExpiresAt
+	}
+
+	// 读旧值并校验归属（复用 FindContractByID，忽略其 fileData）
+	oldC, err := h.repo.FindContractByID(id)
+	if err != nil {
+		h.internal(c, "查询合同失败")
+		return
+	}
+	if oldC == nil || oldC.OrgID != orgID {
+		platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+			Code: "CONTRACT_NOT_FOUND", Message: "合同不存在",
+		})
+		return
+	}
+	oldVal := ""
+	if oldC.ExpiresAt != nil {
+		oldVal = *oldC.ExpiresAt
+	}
+	newVal := ""
+	if expires != nil {
+		newVal = *expires
+	}
+	if oldVal != newVal {
+		hit, err := h.repo.UpdateExpiry(id, orgID, expires)
+		if err != nil {
+			h.internal(c, "更新合同到期日失败")
+			return
+		}
+		if !hit {
+			platform.ErrResponse(c, http.StatusNotFound, &platform.AppError{
+				Code: "CONTRACT_NOT_FOUND", Message: "合同不存在",
+			})
+			return
+		}
+		_ = h.clRepo.LogUpdateField(orgID, "contract", id, "expires_at", oldVal, newVal)
+	}
 	platform.SuccessResponse(c, gin.H{"ok": true})
 }
 
