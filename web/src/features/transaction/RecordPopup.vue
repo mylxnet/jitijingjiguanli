@@ -573,7 +573,7 @@ defineExpose({ openRecord })
 }
 
 .record-error {
-  color: #a32d2d;
+  color: var(--danger);
   font-size: 13px;
   padding: 0 16px 8px;
 }
@@ -600,40 +600,40 @@ defineExpose({ openRecord })
 .mode-btn.van-button--primary,
 :deep(.record-save .van-button--primary),
 :deep(.record-save .van-button--primary:not(.van-button--disabled)) {
-  background-color: #e5f5f4;
-  border-color: #e5f5f4;
-  color: #1f5c48;
+  background-color: var(--jade-light);
+  border-color: var(--jade-light);
+  color: var(--jade-deep);
 }
 .mode-btn.van-button--primary:hover,
 :deep(.record-save .van-button--primary:hover) {
-  background-color: #d3eeee;
-  border-color: #d3eeee;
-  color: #143d30;
+  background-color: var(--jade-bg);
+  border-color: var(--jade-bg);
+  color: var(--jade-deep);
 }
 
 .qselect {
   flex: 1;
   width: 100%;
   height: 40px;
-  border: 1px solid #dcdee0;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 15px;
   padding: 0 10px;
   background: #fff;
-  color: #323233;
+  color: var(--ink);
 }
 
 .new-company-link {
   padding: 6px 16px 2px;
   font-size: 13px;
-  color: #07c160;
+  color: var(--info);
   cursor: pointer;
 }
 
 .new-company-hint {
   padding: 0 16px;
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .new-company-actions {
@@ -662,18 +662,18 @@ defineExpose({ openRecord })
   .d-label {
     width: 70px;
     font-size: 15px;
-    color: #969799;
+    color: var(--ink-muted);
   }
 
   .d-select {
     flex: 1;
     height: 40px;
-    border: 1px solid #dcdee0;
+    border: 1px solid var(--line);
     border-radius: 8px;
     font-size: 15px;
     padding: 0 10px;
     background: #fff;
-    color: #323233;
+    color: var(--ink);
   }
 }
 </style>

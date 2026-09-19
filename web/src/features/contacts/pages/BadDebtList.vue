@@ -173,28 +173,28 @@ onMounted(load)
 .bd-page { padding-bottom: 24px; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
-.page-sub { font-size: 12px; color: #969799; margin: 4px 0 0; }
+.page-sub { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 
 .bd-filter-bar { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; }
-.bd-filter { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #646566; }
+.bd-filter { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
 .bd-select {
-  height: 34px; border: 1px solid #dcdee0; border-radius: 8px; font-size: 14px;
-  padding: 0 8px; background: #fff; color: #323233; min-width: 120px;
+  height: 34px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px;
+  padding: 0 8px; background: #fff; color: var(--ink); min-width: 120px;
 }
 
 .bd-list { display: flex; flex-direction: column; gap: 12px; }
-.bd-card { background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 10px; padding: 12px 14px; }
+.bd-card { background: #fff; border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px; }
 .bd-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.bd-card-title { font-size: 15px; font-weight: 600; color: #1f2329; }
+.bd-card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
 .bd-chip {
   font-size: 11px; padding: 1px 8px; border-radius: 999px;
-  background: #f2f3f5; color: #646566;
+  background: var(--paper-deep); color: var(--ink-soft);
 }
-.bd-chip.bad { background: #fdf3e3; color: var(--warn); }
+.bd-chip.bad { background: var(--terracotta-light); color: var(--warn); }
 
 .bd-card-body { display: flex; flex-direction: column; gap: 4px; }
-.bd-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; color: #323233; }
-.bd-k { font-size: 12px; color: #969799; }
+.bd-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink); }
+.bd-k { font-size: 12px; color: var(--ink-muted); }
 .bd-v { margin-right: 10px; font-variant-numeric: tabular-nums; }
 .bd-bad { color: var(--warn); font-weight: 600; }
 

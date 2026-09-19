@@ -152,8 +152,8 @@ const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind 
 
 <style scoped>
 .page-header { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; }
-.page-title { font-size: 18px; font-weight: 600; color: var(--ink-900, #1f2329); margin: 0; }
-.page-sub { font-size: 12px; color: var(--ink-300, #969799); margin: 4px 0 0; }
+.page-title { font-size: 18px; font-weight: 600; color: var(--ink-900); margin: 0; }
+.page-sub { font-size: 12px; color: var(--ink-300); margin: 4px 0 0; }
 
 .ov-stats {
   display: grid;
@@ -163,24 +163,24 @@ const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind 
 }
 .ov-stat {
   background: #ffffff;
-  border: 1px solid var(--line-soft, #eaeaea);
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
   padding: 12px 14px;
   display: flex; align-items: center; gap: 12px;
 }
 .ov-stats .ov-stat { border-color: transparent; }
-.ov-stats .ov-stat:nth-child(1) { background: #f1edfc; }
-.ov-stats .ov-stat:nth-child(2) { background: #fff1e0; }
-.ov-stats .ov-stat:nth-child(3) { background: #e8f0fb; }
-.ov-stats .ov-stat:nth-child(4) { background: #fcecec; }
+.ov-stats .ov-stat:nth-child(1) { background: var(--asset-bg); }
+.ov-stats .ov-stat:nth-child(2) { background: var(--warn-bg); }
+.ov-stats .ov-stat:nth-child(3) { background: var(--success-bg); }
+.ov-stats .ov-stat:nth-child(4) { background: var(--danger-bg); }
 .ov-fi {
   width: 40px; height: 40px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 22px; color: #7b8794; background: rgba(255, 255, 255, 0.65);
+  font-size: 22px; color: var(--ink-muted); background: rgba(255, 255, 255, 0.65);
   flex-shrink: 0;
 }
-.ov-stat-label { font-size: 12px; color: var(--ink-300, #969799); }
-.ov-stat-value { font-size: 17px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.ov-stat-label { font-size: 12px; color: var(--ink-300); }
+.ov-stat-value { font-size: 17px; font-weight: 600; color: var(--ink-900); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 .ov-hub-grid {
   display: grid;
@@ -189,7 +189,7 @@ const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind 
 }
 .ov-hub-card {
   background: #fff;
-  border: 1px solid var(--line-soft, #eaeaea);
+  border: 1px solid var(--line-soft);
   border-radius: 12px;
   padding: 18px;
   transition: all .2s;
@@ -202,13 +202,13 @@ const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind 
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px; color: #fff;
 }
-.ov-hub-ic.blue   { background: linear-gradient(135deg, var(--info), #0074d9); }
-.ov-hub-ic.green  { background: linear-gradient(135deg, var(--success), #06ad56); }
-.ov-hub-ic.orange { background: linear-gradient(135deg, var(--warn), #ee3f12); }
-.ov-hub-ic.purple { background: linear-gradient(135deg, var(--accent), #667eea); }
-.ov-hub-card h3 { font-size: 14px; font-weight: 600; color: var(--ink-900, #1f2329); margin: 0; }
-.ov-hub-card p  { font-size: 12px; color: var(--ink-300, #969799); margin: 0; line-height: 1.6; }
+.ov-hub-ic.blue   { background: var(--info); }
+.ov-hub-ic.green  { background: var(--success); }
+.ov-hub-ic.orange { background: var(--terracotta); color: var(--jade-deep); }
+.ov-hub-ic.purple { background: var(--accent); }
+.ov-hub-card h3 { font-size: 14px; font-weight: 600; color: var(--ink-900); margin: 0; }
+.ov-hub-card p  { font-size: 12px; color: var(--ink-300); margin: 0; line-height: 1.6; }
 .ov-hub-meta { display: flex; align-items: center; justify-content: space-between; }
-.ov-hub-meta .count { font-weight: 600; color: var(--ink-900, #1f2329); font-size: 20px; font-variant-numeric: tabular-nums; }
-.ov-hub-meta .label { color: var(--ink-300, #969799); font-size: 12px; }
+.ov-hub-meta .count { font-weight: 600; color: var(--ink-900); font-size: 20px; font-variant-numeric: tabular-nums; }
+.ov-hub-meta .label { color: var(--ink-300); font-size: 12px; }
 </style>

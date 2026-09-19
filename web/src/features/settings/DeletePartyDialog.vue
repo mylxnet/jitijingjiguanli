@@ -169,7 +169,7 @@ async function confirmDelete() {
       title: '确认删除',
       message: `确定删除「${p.name}」吗？\n\n该单位的应收单与核销记录（含坏账）、计提标准、合同、再投资去向将被清除，历史流水将归档，操作不可撤销。`,
       confirmButtonText: '确认删除',
-      confirmButtonColor: '#c0392b',
+      confirmButtonColor: 'var(--danger, #a33a2d)',
     })
   } catch {
     return
@@ -194,23 +194,23 @@ async function confirmDelete() {
 <style scoped>
 .dp-popup { padding: 16px 0 24px; max-height: 88vh; overflow-y: auto; }
 .popup-title { font-size: 16px; font-weight: 500; padding: 0 16px 6px; }
-.dp-tip { padding: 0 16px 10px; font-size: 12px; color: #8f8e88; line-height: 1.5; }
+.dp-tip { padding: 0 16px 10px; font-size: 12px; color: var(--ink-muted); line-height: 1.5; }
 .dp-filter { display: flex; align-items: center; justify-content: space-between; padding: 0 16px 8px; }
-.dp-list { margin: 0 16px; border: 1px solid #ececec; border-radius: 10px; max-height: 34vh; overflow-y: auto; }
-.dp-row { padding: 10px 12px; border-bottom: 1px solid #f2f2f2; cursor: pointer; }
+.dp-list { margin: 0 16px; border: 1px solid var(--line); border-radius: 10px; max-height: 34vh; overflow-y: auto; }
+.dp-row { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
 .dp-row:last-child { border-bottom: none; }
-.dp-row.active { background: #eef7f4; }
+.dp-row.active { background: var(--jade-light); }
 .dp-row.blocked { cursor: not-allowed; opacity: 0.75; }
-.dp-row-title { font-size: 14px; color: #323233; display: flex; align-items: center; gap: 8px; }
-.dp-chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: #f2f3f5; color: #646566; }
-.dp-row-sub { margin-top: 3px; font-size: 12px; color: #969799; }
+.dp-row-title { font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.dp-chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--paper-deep); color: var(--ink-muted); }
+.dp-row-sub { margin-top: 3px; font-size: 12px; color: var(--ink-muted); }
 .dp-ok { color: var(--success); }
 .dp-no { color: var(--danger); }
-.dp-empty { padding: 24px 12px; text-align: center; font-size: 13px; color: #969799; }
+.dp-empty { padding: 24px 12px; text-align: center; font-size: 13px; color: var(--ink-muted); }
 .dp-confirm { padding: 10px 16px 0; font-size: 13px; }
-.dp-error { color: #a32d2d; font-size: 13px; padding: 8px 16px 0; }
+.dp-error { color: var(--danger); font-size: 13px; padding: 8px 16px 0; }
 .dp-actions { margin: 12px 16px 0; }
-.dp-result { padding: 8px 16px 16px; font-size: 13px; color: #323233; }
+.dp-result { padding: 8px 16px 16px; font-size: 13px; color: var(--ink); }
 .dp-result ul { margin: 8px 0 0; padding-left: 18px; }
 .dp-result li { line-height: 1.9; }
 </style>

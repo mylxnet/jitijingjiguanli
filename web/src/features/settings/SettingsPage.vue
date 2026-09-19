@@ -443,7 +443,7 @@ padding-bottom: 60px;
   padding: 12px 16px 0;
 }
 .section-label.danger {
-  color: var(--expense, #e74c3c);
+  color: var(--expense, #a33a2d);
   font-weight: 600;
 }
 
@@ -467,7 +467,7 @@ padding-bottom: 60px;
   font-weight: 600;
 }
 .adv-arrow {
-  color: var(--ink-muted, #969799);
+  color: var(--ink-muted, #7a7770);
   font-size: 14px;
 }
 
@@ -505,7 +505,7 @@ padding-bottom: 60px;
 
 .reset-tip {
   font-size: 11px;
-  color: var(--expense, #e74c3c);
+  color: var(--expense, #a33a2d);
   padding: 0 16px 12px;
   line-height: 1.5;
 }

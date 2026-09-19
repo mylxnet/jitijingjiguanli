@@ -90,7 +90,7 @@ function goExpiring() {
 .ci-section-title {
   font-size: 12px;
   font-weight: 600;
-  color: #646566;
+  color: var(--ink-soft);
   margin: 6px 0 4px;
 }
 .ci-section-gap {
@@ -99,12 +99,12 @@ function goExpiring() {
 .ci-sub {
   margin-top: 3px;
   font-size: 11px;
-  color: #646566;
+  color: var(--ink-soft);
 }
 .ci-empty {
   padding: 32px 0;
   text-align: center;
-  color: #969799;
+  color: var(--ink-muted);
   font-size: 13px;
 }
 .ci-list {
@@ -118,10 +118,10 @@ function goExpiring() {
   transition: background .12s;
 }
 .ci-row:hover {
-  background: #f7f8fa;
+  background: var(--paper-warm);
 }
 .ci-row + .ci-row {
-  border-top: 1px solid #f2f3f5;
+  border-top: 1px solid var(--paper-deep);
 }
 .ci-main {
   display: flex;
@@ -131,14 +131,14 @@ function goExpiring() {
 .ci-name {
   font-size: 13px;
   font-weight: 600;
-  color: #1f2329;
+  color: var(--ink);
 }
 .ci-tag {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: #f2f3f5;
-  color: #646566;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 .ci-miss {
@@ -150,6 +150,6 @@ function goExpiring() {
   margin-top: 10px;
   text-align: center;
   font-size: 11px;
-  color: #969799;
+  color: var(--ink-muted);
 }
 </style>

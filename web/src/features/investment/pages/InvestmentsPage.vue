@@ -812,83 +812,83 @@ onMounted(load)
 <style scoped>
 .page-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
-.page-sub   { font-size: 12px; color: #969799; margin: 4px 0 0; }
+.page-sub   { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 
 .ip-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
 }
 .ip-stat {
-  background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; padding: 10px 12px;
+  background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px;
 }
-.ip-stat-label { font-size: 12px; color: #969799; }
-.ip-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.ip-stat-sub { font-size: 11px; color: #969799; margin-top: 4px; }
-.ip-stat-sub.na { color: #969799; }
+.ip-stat-label { font-size: 12px; color: var(--ink-muted); }
+.ip-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, var(--ink)); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.ip-stat-sub { font-size: 11px; color: var(--ink-muted); margin-top: 4px; }
+.ip-stat-sub.na { color: var(--ink-muted); }
 .ip-stat-sub .rd { color: var(--danger); }
 .ip-stats .ip-stat { border-color: transparent; }
-.ip-stats .ip-stat:nth-child(1) { background: #e8f0fb; }
-.ip-stats .ip-stat:nth-child(2) { background: #e6f5f4; }
-.ip-stats .ip-stat:nth-child(3) { background: #f1edfc; }
-.ip-stats .ip-stat:nth-child(4) { background: #fff1e0; }
+.ip-stats .ip-stat:nth-child(1) { background: var(--info-bg); }
+.ip-stats .ip-stat:nth-child(2) { background: var(--success-bg); }
+.ip-stats .ip-stat:nth-child(3) { background: var(--asset-bg); }
+.ip-stats .ip-stat:nth-child(4) { background: var(--warn-bg); }
 
 .ip-filter { margin-bottom: 8px; }
 .ip-search { padding: 0; }
 
-.ip-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; background: #fff; }
+.ip-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; }
 .ip-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ip-table th {
   position: sticky; top: 0; z-index: 1;
-  background: #f7f8fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #646566;
-  border-bottom: 1px solid #ebedf0; white-space: nowrap;
+  background: var(--paper-deep); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--ink-soft);
+  border-bottom: 1px solid var(--line); white-space: nowrap;
 }
-.ip-table td { padding: 10px 12px; border-bottom: 1px solid #f0f1f2; color: #1f2329; }
+.ip-table td { padding: 10px 12px; border-bottom: 1px solid #f0f1f2; color: var(--ink); }
 .ip-table tr:last-child td { border-bottom: none; }
 .ip-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ip-table th.num { text-align: right; }
-.ip-table .empty-cell { text-align: center; color: #969799; padding: 24px; }
+.ip-table .empty-cell { text-align: center; color: var(--ink-muted); padding: 24px; }
 
 .ip-section-title {
-  font-size: 14px; font-weight: 600; color: #1f2329;
+  font-size: 14px; font-weight: 600; color: var(--ink);
   margin: 20px 0 8px; padding: 0 2px;
 }
 
 /* 532分配样式 */
 .dist-year-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.dist-year-label { font-size: 13px; color: #646566; white-space: nowrap; }
+.dist-year-label { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 .dist-year-select {
-  padding: 6px 10px; border: 1px solid #dcdee0; border-radius: 6px; font-size: 14px;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px;
   background: #fff; outline: none; min-width: 120px;
 }
 .dist-year-select:focus { border-color: var(--info); }
 .dist-year-status {
-  font-size: 12px; padding: 2px 10px; border-radius: 10px; background: #f7f8fa; color: #969799;
+  font-size: 12px; padding: 2px 10px; border-radius: 10px; background: var(--paper-deep); color: var(--ink-muted);
 }
-.dist-year-status.allocated { background: #e8f8e8; color: var(--success); font-weight: 500; }
+.dist-year-status.allocated { background: var(--success-bg); color: var(--success); font-weight: 500; }
 
-.ip-stat-value.na { color: #969799; font-weight: 400; font-size: 13px; }
+.ip-stat-value.na { color: var(--ink-muted); font-weight: 400; font-size: 13px; }
 
 /* 分配弹窗 */
 .dist-dialog { width: 90vw; max-width: 480px; }
 .dist-dialog-body { padding: 0 16px 16px; }
-.dist-dialog-year { font-size: 15px; font-weight: 600; color: #1f2329; margin-bottom: 4px; }
-.dist-dialog-hint { font-size: 12px; color: #969799; margin-bottom: 16px; line-height: 1.5; }
-.dist-dialog-lock { font-size: 13px; color: var(--danger); margin-bottom: 12px; padding: 8px 12px; background: #fff2f0; border-radius: 4px; }
+.dist-dialog-year { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.dist-dialog-hint { font-size: 12px; color: var(--ink-muted); margin-bottom: 16px; line-height: 1.5; }
+.dist-dialog-lock { font-size: 13px; color: var(--danger-deep); margin-bottom: 12px; padding: 8px 12px; background: var(--danger-bg); border-radius: 4px; }
 .dist-dialog-fields { display: flex; flex-direction: column; gap: 10px; }
 .dist-dialog-field {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; background: #f7f8fa; border-radius: 6px;
+  padding: 8px 12px; background: var(--paper-deep); border-radius: 6px;
 }
-.dist-dialog-field label { font-size: 13px; font-weight: 500; color: #1f2329; white-space: nowrap; }
+.dist-dialog-field label { font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; }
 .dist-input-wrap { display: flex; align-items: center; gap: 4px; }
 .dist-input {
-  width: 140px; padding: 6px 8px; border: 1px solid #dcdee0; border-radius: 4px;
+  width: 140px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px;
   font-size: 14px; text-align: right; outline: none;
 }
 .dist-input:focus { border-color: var(--info); }
 .dist-input.readonly { background: #f0f0f0; cursor: not-allowed; }
-.dist-input-unit { font-size: 12px; color: #969799; }
+.dist-input-unit { font-size: 12px; color: var(--ink-muted); }
 .dist-dialog-total {
-  margin-top: 12px; text-align: right; font-size: 13px; font-weight: 500; color: #1f2329;
+  margin-top: 12px; text-align: right; font-size: 13px; font-weight: 500; color: var(--ink);
 }
 .dist-dialog-diff { font-size: 11px; color: var(--danger); font-weight: 400; }
 

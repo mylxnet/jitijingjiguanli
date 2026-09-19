@@ -464,17 +464,17 @@ async function deleteCat(cat: Category) {
   font-size: 11px;
   border-radius: 99px;
   padding: 1px 8px;
-  border: 1px solid #e3e2dd;
+  border: 1px solid var(--line);
   color: var(--ink-muted);
 }
 
 .l2-chip.residual { border-color: var(--jade); color: var(--jade); }
 .l2-chip.spending { border-color: var(--indigo); color: var(--indigo); }
-.l2-chip.preset { border-color: var(--warn); color: var(--warn); background: #fbf3df; }
+.l2-chip.preset { border-color: var(--warn); color: var(--warn); background: var(--terracotta-light); }
 .l2-chip.equity { border-color: var(--jade); color: var(--jade); background: var(--jade-light); }
-.l2-chip.asset { border-color: var(--warn); color: var(--warn); background: #fdf3e3; }
+.l2-chip.asset { border-color: var(--asset); color: var(--asset); background: var(--asset-bg); }
 .l2-chip.reconcile { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
-.l2-chip.stopped { background: #fcebeb; border-color: var(--expense); color: var(--expense); }
+.l2-chip.stopped { background: var(--danger-bg); border-color: var(--expense); color: var(--expense); }
 
 .l2-balance {
   font-size: 12px;

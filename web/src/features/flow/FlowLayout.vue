@@ -36,7 +36,7 @@ const activeTab = ref('rent')
   gap: 2px;
   padding: 10px 16px;
   background: #fafbfc;
-  border-bottom: 1px solid var(--line-soft, #eaeaea);
+  border-bottom: 1px solid var(--line-soft);
   overflow-x: auto;
 }
 .fl-tab {
@@ -44,16 +44,16 @@ const activeTab = ref('rent')
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--ink-500, #646566);
+  color: var(--ink-500);
   border: none;
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
   transition: all .15s;
 }
-.fl-tab:hover { color: var(--ink-900, #1f2329); }
+.fl-tab:hover { color: var(--ink-900); }
 .fl-tab.active {
-  background: var(--jade, #07c160);
+  background: var(--jade, #2b5876);
   color: #fff;
   font-weight: 600;
 }

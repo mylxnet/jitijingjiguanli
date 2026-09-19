@@ -557,23 +557,23 @@ watch(() => route.query.editParty, handleEditQuery)
 <style scoped>
 .page-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
-.page-sub   { font-size: 12px; color: #969799; margin: 4px 0 0; }
+.page-sub   { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 .pl-header-actions { display: flex; gap: 8px; align-items: center; }
 
 .pl-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .pl-types { display: flex; gap: 6px; flex-wrap: wrap; }
 .pl-type-btn {
-  padding: 6px 12px; border-radius: 20px; font-size: 13px; border: 1px solid #eaeaea;
-  background: #fff; color: #646566; cursor: pointer;
+  padding: 6px 12px; border-radius: 20px; font-size: 13px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink-soft); cursor: pointer;
 }
-.pl-type-btn.active { background: var(--jade, #07c160); color: #fff; border-color: var(--jade, #07c160); }
+.pl-type-btn.active { background: var(--jade, #2b5876); color: #fff; border-color: var(--jade, #2b5876); }
 .pl-search { padding: 0; }
 
 .pl-list { overflow-x: auto; }
 .pl-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
 .pl-th {
-  background: #f7f8fa; color: #969799; font-weight: 500; font-size: 11px;
-  padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ebedf0;
+  background: var(--paper-deep); color: var(--ink-muted); font-weight: 500; font-size: 11px;
+  padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 1;
 }
 /* 列宽由 colgroup 控制：隐藏列（投资金额/流转面积）随筛选移除后，其余列自动等比填充 */
@@ -587,8 +587,8 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-table col.cg-note     { width: 22%; }
 .pl-table col.cg-action   { width: 7%; }
 .pl-tr { cursor: pointer; transition: background .12s; }
-.pl-tr:hover { background: #f7f8fa; }
-.pl-td { padding: 8px 10px; border-bottom: 1px solid #f2f3f5; color: #1f2329; vertical-align: middle; }
+.pl-tr:hover { background: var(--paper-deep); }
+.pl-td { padding: 8px 10px; border-bottom: 1px solid var(--paper-deep); color: var(--ink); vertical-align: middle; }
 .pl-th:last-child { text-align: center; }
 .pl-td-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-name-link { font-weight: 600; font-size: 13px; color: var(--info); cursor: pointer; margin-right: 6px; }
@@ -598,20 +598,20 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-td-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-td-contract { white-space: nowrap; }
 .pl-td-status { white-space: nowrap; }
-.pl-status { font-size: 12px; font-weight: 600; white-space: nowrap; color: #c8c9cc; }
+.pl-status { font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--ink-muted); }
 .pl-status.expired { color: var(--danger); }
 .pl-status.pending { color: var(--warn); }
 .pl-td-owe { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pl-name { font-weight: 600; font-size: 13px; color: #1f2329; margin-right: 6px; }
+.pl-name { font-weight: 600; font-size: 13px; color: var(--ink); margin-right: 6px; }
 .pl-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
-.tag-invest   { background: #e6f1ff; color: var(--info); }
-.tag-reinvest { background: #f0e6ff; color: var(--accent); }
-.tag-flow     { background: #fff2e6; color: var(--warn); }
-.tag-other    { background: #f2f3f5; color: #646566; }
-.pl-na { color: #c8c9cc; }
-.pl-td-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #969799; }
+.tag-invest   { background: var(--info-bg); color: var(--info-deep); }
+.tag-reinvest { background: var(--asset-bg); color: var(--asset); }
+.tag-flow     { background: var(--warn-bg); color: var(--warn); }
+.tag-other    { background: var(--paper-deep); color: var(--ink-muted); }
+.pl-na { color: var(--ink-faint); }
+.pl-td-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-muted); }
 .pl-owe { color: var(--danger); font-weight: 600; }
-.pl-has-contract { color: #c8c9cc; }
+.pl-has-contract { color: var(--ink-faint); }
 .pl-has-contract.has { color: var(--success); font-weight: 600; }
 .pl-td-action { text-align: center; }
 .empty { padding: 40px 0; }
@@ -620,20 +620,20 @@ watch(() => route.query.editParty, handleEditQuery)
 
 /* 欠款弹窗 */
 .detail-dialog { width: 90vw; max-width: 480px; }
-.detail-loading, .detail-empty { padding: 40px 0; text-align: center; color: #969799; font-size: 13px; }
+.detail-loading, .detail-empty { padding: 40px 0; text-align: center; color: var(--ink-muted); font-size: 13px; }
 .detail-list { padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
-.detail-item { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
+.detail-item { background: var(--paper-deep); border-radius: 8px; padding: 10px 12px; }
 .di-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.di-title { font-weight: 500; font-size: 13px; color: #1f2329; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.di-kind { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #e6f1ff; color: var(--info); white-space: nowrap; }
-.di-kind.rent { background: #fff2e6; color: var(--warn); }
-.di-kind.service { background: #f0e6ff; color: var(--accent); }
+.di-title { font-weight: 500; font-size: 13px; color: var(--ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.di-kind { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: var(--info-bg); color: var(--info-deep); white-space: nowrap; }
+.di-kind.rent { background: var(--warn-bg); color: var(--warn); }
+.di-kind.service { background: var(--asset-bg); color: var(--asset); }
 .di-status { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
-.di-status.open { background: #fffbe6; color: #d4a017; }
-.di-status.closed { background: #e6f7e6; color: var(--success); }
-.di-status.writeoff { background: #fdf3e3; color: var(--warn); }
-.di-amounts { display: flex; gap: 12px; font-size: 12px; color: #646566; }
-.di-amt strong { font-weight: 600; color: #1f2329; margin-left: 2px; }
+.di-status.open { background: var(--warn-bg); color: var(--warn); }
+.di-status.closed { background: var(--success-bg); color: var(--success); }
+.di-status.writeoff { background: var(--warn-bg); color: var(--warn); }
+.di-amounts { display: flex; gap: 12px; font-size: 12px; color: var(--ink-soft); }
+.di-amt strong { font-weight: 600; color: var(--ink); margin-left: 2px; }
 .di-paid strong { color: var(--success); }
 .di-owe strong { color: var(--danger); }
 .di-bad strong { color: var(--warn); }

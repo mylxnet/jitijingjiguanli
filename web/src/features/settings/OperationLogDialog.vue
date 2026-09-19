@@ -210,7 +210,7 @@ function exportCsv() {
 
 .oplog-hint {
   font-size: 12px;
-  color: #999;
+  color: var(--ink-muted);
 }
 
 .oplog-clear-btn {
@@ -228,7 +228,7 @@ function exportCsv() {
 .oplog-empty {
   text-align: center;
   padding: 32px 0;
-  color: #999;
+  color: var(--ink-muted);
   font-size: 14px;
 }
 
@@ -239,7 +239,7 @@ function exportCsv() {
 }
 
 .oplog-item {
-  background: #f8f8f8;
+  background: var(--paper-warm);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -255,7 +255,7 @@ function exportCsv() {
 }
 
 .oplog-header:hover {
-  background: #f0f0f0;
+  background: var(--paper-deep);
 }
 
 .oplog-meta {
@@ -269,39 +269,39 @@ function exportCsv() {
 .oplog-op {
   font-weight: 600;
   font-size: 14px;
-  color: #333;
+  color: var(--ink);
   white-space: nowrap;
 }
 
 .oplog-time {
   font-size: 12px;
-  color: #999;
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 
 .oplog-summary {
   font-size: 12px;
-  color: #666;
+  color: var(--ink-soft);
   width: 100%;
   padding-left: 0;
 }
 
 .oplog-expand-icon {
   font-size: 10px;
-  color: #bbb;
+  color: var(--ink-faint);
   flex-shrink: 0;
 }
 
 .oplog-effects {
   padding: 0 12px 10px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--line-soft);
   padding-top: 8px;
   margin-top: 0;
 }
 
 .oplog-section-title {
   font-size: 12px;
-  color: #999;
+  color: var(--ink-muted);
   margin-bottom: 6px;
 }
 
@@ -321,24 +321,24 @@ function exportCsv() {
 }
 
 .oplog-effect-field {
-  color: #666;
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
 .oplog-effect-arrow {
-  color: #ccc;
+  color: var(--ink-faint);
   margin: 0 2px;
 }
 
 .oplog-effect-new {
-  color: #333;
+  color: var(--ink);
   font-weight: 500;
 }
 
 .oplog-effect-desc {
   width: 100%;
   font-size: 12px;
-  color: #888;
+  color: var(--ink-muted);
   padding-left: 0;
   margin-top: 1px;
 }

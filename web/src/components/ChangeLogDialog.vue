@@ -156,13 +156,13 @@ max-height: 70vh;
 .popup-title {
   font-size: 16px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: var(--ink);
   padding: 0 16px 12px;
 }
 
 .changelog-empty {
   text-align: center;
-  color: #8f8e88;
+  color: var(--ink-muted);
   font-size: 13px;
   padding: 20px 0;
 }
@@ -173,7 +173,7 @@ max-height: 70vh;
 
 .changelog-item {
   padding: 8px 0;
-  border-bottom: 1px solid #f0f0eb;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .changelog-item:last-child {
@@ -188,27 +188,27 @@ max-height: 70vh;
 
 .changelog-action {
   font-size: 13px;
-  color: #185fa5;
-  background: #e6f1fb;
+  color: var(--info-deep);
+  background: var(--info-bg);
   border-radius: 4px;
   padding: 1px 6px;
 }
 
 .changelog-field {
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
 }
 
 .changelog-diff {
   font-size: 13px;
-  color: #2c2c2a;
+  color: var(--ink);
   margin-top: 2px;
   word-break: break-all;
 }
 
 .changelog-time {
   font-size: 11px;
-  color: #b0ada6;
+  color: var(--ink-muted);
   margin-top: 2px;
 }
 </style>

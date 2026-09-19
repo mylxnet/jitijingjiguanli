@@ -31,7 +31,7 @@
   gap: 2px;
   padding: 10px 16px;
   background: #fafbfc;
-  border-bottom: 1px solid var(--line-soft, #eaeaea);
+  border-bottom: 1px solid var(--line-soft);
   overflow-x: auto;
 }
 .cl-tab {
@@ -39,15 +39,15 @@
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--ink-500, #646566);
+  color: var(--ink-500);
   text-decoration: none;
   white-space: nowrap;
   transition: all .15s;
 }
-.cl-tab:hover { color: var(--ink-900, #1f2329); }
+.cl-tab:hover { color: var(--ink-900); }
 .cl-tab.router-link-active,
 .cl-tab.router-link-exact-active {
-  background: var(--jade, #07c160);
+  background: var(--jade, #2b5876);
   color: #fff;
   font-weight: 600;
 }

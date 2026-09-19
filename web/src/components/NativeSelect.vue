@@ -59,7 +59,7 @@ function onChange(e: Event) {
   .ns-label {
     width: 70px;
     font-size: 15px;
-    color: #969799;
+    color: var(--ink-muted);
     flex: none;
   }
 
@@ -67,12 +67,12 @@ function onChange(e: Event) {
     flex: 1;
     min-width: 0;
     height: 40px;
-    border: 1px solid #dcdee0;
+    border: 1px solid var(--line);
     border-radius: 8px;
     font-size: 15px;
     padding: 0 10px;
     background: #fff;
-    color: #323233;
+    color: var(--ink);
   }
 }
 </style>

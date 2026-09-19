@@ -42,6 +42,35 @@
   --trend-up:   #0e8a67;
   --trend-down: #c0392b;
 
+  /* —— 语义浅底（徽章/统计卡/状态 chip 统一用这组，配对应深色文字 ≥4.5:1） —— */
+  --success-bg: #eaf1f6;   /* = --jade-light */
+  --info-bg:    #dcecf3;
+  --warn-bg:    #f8e9d4;
+  --danger-bg:  #f3e0da;
+  --asset-bg:   #ebe5f4;
+  /* chip/徽章深色文字（浅色底上的语义色需加深才达 AA） */
+  --danger-deep: #8c2f24;
+  --info-deep:   #2b5876;  /* = --jade */
+  /* 浅橙底上的警示文字（保证 ≥4.5:1 对比度） */
+  --faint-on-warn: #8a5215;
+
+  /* —— 灰阶别名（历史页面 var(--ink-9xx/500/300) 引用统一映射到暖墨系） —— */
+  --ink-900: var(--ink);
+  --ink-500: var(--ink-muted);
+  --ink-300: var(--ink-faint);  /* 仅限装饰/占位/图标，不作正文文字 */
+
+  /* —— 图表色（环形构成图，与语义色同源） —— */
+  --chart-1: #2b5876;
+  --chart-2: #e0b459;
+  --chart-3: #5a9cb8;
+  --chart-4: #9a7fb0;
+  --chart-5: #c9d2da;
+
+  /* —— 文件类型图标色（保持通用文档认知惯例） —— */
+  --file-doc: #2b579a;
+  --file-pdf: #b3350b;
+  --file-img: #3d8f4f;
+
   /* —— 圆角 —— */
   --r-xs: 4px;
   --r-sm: 8px;

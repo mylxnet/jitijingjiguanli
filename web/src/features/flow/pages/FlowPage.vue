@@ -34,9 +34,9 @@
           <div class="fp-stat-label">坏账</div>
           <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(rentStats.writeoff) }}</div>
         </div>
-        <div class="fp-stat">
+        <div class="fp-stat fp-stat--expense">
           <div class="fp-stat-label">转付农户支出</div>
-          <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(rentFarmerExpenseTotal) }}</div>
+          <div class="fp-stat-value">{{ fmt(rentFarmerExpenseTotal) }}</div>
         </div>
       </div>
 
@@ -399,12 +399,12 @@ onMounted(load)
 <style scoped>
 .page-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
-.page-sub   { font-size: 12px; color: #969799; margin: 4px 0 0; }
+.page-sub   { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 
 .fp-year-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.fp-year-label { font-size: 13px; color: #646566; white-space: nowrap; }
+.fp-year-label { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 .fp-year-select {
-  padding: 6px 10px; border: 1px solid #dcdee0; border-radius: 6px; font-size: 14px;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px;
   background: #fff; outline: none; min-width: 120px;
 }
 .fp-year-select:focus { border-color: var(--info); }
@@ -413,48 +413,51 @@ onMounted(load)
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px;
 }
 .fp-stat {
-  background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; padding: 10px 12px;
+  background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px;
 }
-.fp-stat-label { font-size: 12px; color: #969799; }
-.fp-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.fp-stat-label { font-size: 12px; color: var(--ink-muted); }
+.fp-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, var(--ink)); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .fp-stats .fp-stat { border-color: transparent; }
-.fp-stats .fp-stat:nth-child(1) { background: #fdf3e3; }
-.fp-stats .fp-stat:nth-child(2) { background: #eaf5ed; }
-.fp-stats .fp-stat:nth-child(3) { background: #fcecec; }
-.fp-stats .fp-stat:nth-child(4) { background: #e8f0fb; }
+.fp-stats .fp-stat:nth-child(1) { background: var(--warn-bg); }
+.fp-stats .fp-stat:nth-child(2) { background: var(--success-bg); }
+.fp-stats .fp-stat:nth-child(3) { background: var(--danger-bg); }
+.fp-stats .fp-stat:nth-child(4) { background: var(--info-bg); }
+/* 转付农户支出=支出口径：浅砖红底 + AA 深色文字（配对 token） */
+.fp-stats .fp-stat--expense { background: var(--danger-bg); }
+.fp-stats .fp-stat--expense .fp-stat-value { color: var(--danger-deep); }
 
 .fp-section { margin-bottom: 20px; }
 .fp-section-title {
-  font-size: 14px; font-weight: 600; color: #1f2329;
+  font-size: 14px; font-weight: 600; color: var(--ink);
   margin-bottom: 8px; padding: 0 2px;
   display: flex; align-items: center; gap: 8px;
 }
 .fp-section-title.clickable { cursor: pointer; user-select: none; }
 .fp-section-title.clickable:hover { color: var(--info); }
-.fp-collapse-icon { font-size: 10px; color: #969799; }
+.fp-collapse-icon { font-size: 10px; color: var(--ink-muted); }
 
-.fp-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; background: #fff; }
+.fp-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; }
 .fp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fp-table th {
   position: sticky; top: 0; z-index: 1;
-  background: #f7f8fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #646566;
-  border-bottom: 1px solid #ebedf0; white-space: nowrap;
+  background: var(--paper-deep); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--ink-soft);
+  border-bottom: 1px solid var(--line); white-space: nowrap;
 }
-.fp-table td { padding: 10px 12px; border-bottom: 1px solid #f0f1f2; color: #1f2329; }
+.fp-table td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); color: var(--ink); }
 .fp-table tr:last-child td { border-bottom: none; }
 .fp-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .fp-table th.num { text-align: right; }
-.fp-table .empty-cell { text-align: center; color: #969799; padding: 24px; }
+.fp-table .empty-cell { text-align: center; color: var(--ink-muted); padding: 24px; }
 .fp-th-clickable { cursor: pointer; user-select: none; }
-.fp-th-clickable:hover { background: #edf0f4; }
+.fp-th-clickable:hover { background: var(--paper-deep); }
 
 .fp-status {
   display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
 }
-.fp-status.open { background: #fff1f0; color: var(--danger); }
-.fp-status.partial { background: #fff7e6; color: var(--warn); }
-.fp-status.paid { background: #e8f8e8; color: var(--success); }
-.fp-status.writeoff { background: #fdf3e3; color: var(--warn); }
+.fp-status.open { background: var(--danger-bg); color: var(--danger-deep); }
+.fp-status.partial { background: var(--warn-bg); color: var(--warn); }
+.fp-status.paid { background: var(--success-bg); color: var(--success); }
+.fp-status.writeoff { background: var(--warn-bg); color: var(--warn); }
 
 @media (max-width: 600px) {
   .fp-stats { grid-template-columns: repeat(2, 1fr); }

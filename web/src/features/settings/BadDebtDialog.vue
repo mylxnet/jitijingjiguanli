@@ -197,7 +197,7 @@ async function confirmWriteoff() {
       title: '确认坏账核销',
       message: `将把「${r.partyName} · ${r.title}」的剩余待收 ${formatFen(r.outstandingCents)} 全额核销为坏账。\n\n此操作不影响银行存款与科目余额，可在核销记录中撤销。`,
       confirmButtonText: '确认核销',
-      confirmButtonColor: '#c0392b',
+      confirmButtonColor: 'var(--danger, #a33a2d)',
     })
   } catch {
     return
@@ -236,7 +236,7 @@ async function confirmWriteoff() {
 .bd-tip {
   padding: 0 16px 12px;
   font-size: 12px;
-  color: #8f8e88;
+  color: var(--ink-muted);
   line-height: 1.5;
 }
 
@@ -244,17 +244,17 @@ async function confirmWriteoff() {
   flex: 1;
   width: 100%;
   height: 38px;
-  border: 1px solid #dcdee0;
+  border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 15px;
   padding: 0 10px;
   background: #fff;
-  color: #323233;
+  color: var(--ink);
 }
 
 .bd-list {
   margin: 12px 16px 0;
-  border: 1px solid #ececec;
+  border: 1px solid var(--line);
   border-radius: 10px;
   max-height: 34vh;
   overflow-y: auto;
@@ -262,7 +262,7 @@ async function confirmWriteoff() {
 
 .bd-row {
   padding: 10px 12px;
-  border-bottom: 1px solid #f2f2f2;
+  border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
 }
 
@@ -271,18 +271,18 @@ async function confirmWriteoff() {
 }
 
 .bd-row.active {
-  background: #eef7f4;
+  background: var(--jade-light);
 }
 
 .bd-row-title {
   font-size: 14px;
-  color: #323233;
+  color: var(--ink);
 }
 
 .bd-row-sub {
   margin-top: 2px;
   font-size: 12px;
-  color: #969799;
+  color: var(--ink-muted);
 }
 
 .bd-row-nums {
@@ -290,22 +290,22 @@ async function confirmWriteoff() {
   display: flex;
   gap: 12px;
   font-size: 12px;
-  color: #606266;
+  color: var(--ink-soft);
 }
 
 .bd-owe {
-  color: #c0392b;
+  color: var(--danger);
 }
 
 .bd-empty {
   padding: 24px 12px;
   text-align: center;
   font-size: 13px;
-  color: #969799;
+  color: var(--ink-muted);
 }
 
 .bd-error {
-  color: #a32d2d;
+  color: var(--danger);
   font-size: 13px;
   padding: 8px 16px 0;
 }

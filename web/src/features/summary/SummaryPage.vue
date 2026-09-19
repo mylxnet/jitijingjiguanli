@@ -555,14 +555,14 @@ padding-bottom: 60px;
   font-size: 10px;
   border-radius: 99px;
   padding: 1px 6px;
-  border: 1px solid #e3e2dd;
+  border: 1px solid var(--line);
   color: var(--ink-muted);
 }
 
 .l2-chip.residual { border-color: var(--jade); color: var(--jade); }
 .l2-chip.spending { border-color: var(--indigo); color: var(--indigo); }
 .l2-chip.equity { border-color: var(--jade); color: var(--jade); background: var(--jade-light); }
-.l2-chip.asset { border-color: var(--warn); color: var(--warn); background: #fdf3e3; }
+.l2-chip.asset { border-color: var(--asset); color: var(--asset); background: var(--asset-bg); }
 .l2-chip.reconcile { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 
 .l2-count {
@@ -587,7 +587,7 @@ padding-bottom: 60px;
 }
 
 .l2-arrow {
-  color: #c4c1ba;
+  color: var(--ink-faint);
   margin-left: 4px;
   vertical-align: middle;
 }
@@ -658,7 +658,7 @@ padding-bottom: 60px;
 }
 
 .drill-dir.income { background: var(--jade-light); color: var(--jade); }
-.drill-dir.expense { background: #fcebeb; color: var(--expense); }
+.drill-dir.expense { background: var(--danger-bg); color: var(--expense); }
 
 .drill-amount {
   font-size: 13px;

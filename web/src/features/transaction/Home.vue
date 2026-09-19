@@ -146,8 +146,10 @@ const fullCats = ref<Category[]>([])
 
 const rangeLabel = todayStr()
 
-// —— 环形构成调色板（对齐看板配色） ——
-const PALETTE = [ '#2B5876', '#E0B459', '#5A9CB8', '#9A7FB0', '#C9D2DA' ]
+// —— 环形构成调色板（运行时读 theme.css 的 --chart-1..5） ——
+const PALETTE = Array.from({ length: 5 }, (_, i) =>
+  getComputedStyle(document.documentElement).getPropertyValue(`--chart-${i + 1}`).trim() || '#2B5876'
+)
 
 interface Seg { name: string; value: number; color: string; cumulative: number; frac: number; total: number }
 interface DonutBlock { title: string; total: number; segs: Seg[] }
@@ -362,7 +364,7 @@ async function openBankFlow() {
   margin-bottom: 18px;
 }
 .donut-card {
-  background: var(--paper, #fff);
+  background: var(--paper, #faf8f4);
   border-radius: 14px;
   padding: 14px;
   box-shadow: var(--shadow-sm);
@@ -386,20 +388,20 @@ async function openBankFlow() {
 /* 欠款明细 */
 .section-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 0 8px; font-size: 14px; font-weight: 600; color: var(--ink-soft, #3a3936); }
 .more { font-size: 12px; color: var(--jade, #2b5876); font-weight: 500; cursor: pointer; }
-.owe-list { background: var(--paper, #fff); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.owe-list { background: var(--paper, #faf8f4); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
 .owe-empty { text-align: center; color: var(--ink-muted, #7a7770); font-size: 13px; padding: 24px 0; }
 .owe-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line, #e8e3d8); cursor: pointer; }
 .owe-row:last-child { border-bottom: none; }
 .owe-main { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
 .owe-party { font-size: 14px; font-weight: 500; color: var(--ink, #1a1a18); }
 .owe-kind { font-size: 11px; border-radius: 99px; padding: 1px 8px; border: 1px solid var(--line, #e8e3d8); color: var(--ink-muted, #7a7770); }
-.owe-kind.rent { border-color: #e0b459; color: #b08a2a; background: var(--terracotta-bg, #fbf6ea); }
+.owe-kind.rent { border-color: var(--terracotta); color: var(--faint-on-warn); background: var(--terracotta-bg); }
 .owe-kind.dividend { border-color: var(--indigo, #5a9cb8); color: var(--indigo, #5a9cb8); background: var(--indigo-bg, #f2f8fb); }
 .owe-kind.other { border-color: var(--line, #e8e3d8); color: var(--ink-muted, #7a7770); }
 .owe-title { font-size: 12px; color: var(--ink-muted, #7a7770); }
 .owe-amount { font-size: 14px; font-weight: 600; color: var(--expense, #a33a2d); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.empty-guide { text-align: center; background: var(--paper, #fff); border-radius: 14px; padding: 24px; margin-top: 12px; color: var(--ink-muted, #7a7770); box-shadow: var(--shadow-sm); }
+.empty-guide { text-align: center; background: var(--paper, #faf8f4); border-radius: 14px; padding: 24px; margin-top: 12px; color: var(--ink-muted, #7a7770); box-shadow: var(--shadow-sm); }
 
 /* 银行流水弹窗 */
 .bf-popup { padding: 14px 12px 18px; }

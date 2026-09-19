@@ -59,16 +59,16 @@ function goLogin() {
   font-size: 14px;
 }
 .rp-success {
-  background: #f0f9eb;
-  color: #67c23a;
+  background: var(--success-bg);
+  color: var(--success);
 }
 .rp-error {
-  background: #fef0f0;
-  color: #f56c6c;
+  background: var(--danger-bg);
+  color: var(--danger-deep);
 }
 .rp-spinner {
   text-align: center;
-  color: #999;
+  color: var(--ink-muted);
   margin: 24px 0;
 }
 </style>

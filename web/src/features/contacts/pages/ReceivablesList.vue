@@ -389,14 +389,14 @@ onMounted(load)
 <style scoped>
 .page-header { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
 .page-title { font-size: 18px; font-weight: 600; margin: 0; }
-.page-sub   { font-size: 12px; color: #969799; margin: 4px 0 0; }
+.page-sub   { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 .rl-header-actions { display: flex; gap: 8px; align-items: center; }
 .recv-dialog { width: 90vw; max-width: 460px; }
 .recv-form { padding: 4px 0 0; }
 .recv-party-select,
 .recv-year-select {
-  width: 100%; height: 28px; border: 1px solid #dcdee0; border-radius: 6px;
-  font-size: 14px; color: #1f2329; background: #fff; outline: none; padding: 0 4px;
+  width: 100%; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 14px; color: var(--ink); background: #fff; outline: none; padding: 0 4px;
 }
 .recv-form-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 8px 16px 16px; }
 
@@ -404,10 +404,10 @@ onMounted(load)
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px;
 }
 .rl-stat {
-  background: #fff; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; padding: 10px 12px;
+  background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px;
 }
-.rl-stat-label { font-size: 12px; color: #969799; }
-.rl-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.rl-stat-label { font-size: 12px; color: var(--ink-muted); }
+.rl-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, var(--ink)); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .rl-stat-value.paid     { color: var(--success); }
 .rl-stat-value.unpaid   { color: var(--danger); }
 .rl-stat-value.writeoff { color: var(--warn); }
@@ -415,22 +415,22 @@ onMounted(load)
 .rl-stat.clickable:hover { filter: brightness(0.97); }
 .rl-stat-hint { font-size: 11px; color: var(--warn); margin-top: 2px; }
 .rl-stats .rl-stat { border-color: transparent; }
-.rl-stats .rl-stat:nth-child(1) { background: #f1edfc; }
-.rl-stats .rl-stat:nth-child(2) { background: #eaf5ed; }
-.rl-stats .rl-stat:nth-child(3) { background: #fdf3e3; }
-.rl-stats .rl-stat:nth-child(4) { background: #fcecec; }
-.rl-stats .rl-stat:nth-child(5) { background: #e8f0fb; }
+.rl-stats .rl-stat:nth-child(1) { background: var(--asset-bg); }
+.rl-stats .rl-stat:nth-child(2) { background: var(--success-bg); }
+.rl-stats .rl-stat:nth-child(3) { background: var(--warn-bg); }
+.rl-stats .rl-stat:nth-child(4) { background: var(--danger-bg); }
+.rl-stats .rl-stat:nth-child(5) { background: var(--success-bg); }
 @media (max-width: 720px) {
   .rl-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
 .rl-filter-bar { display: flex; margin-bottom: 10px; }
 .rl-year-select { display: inline-flex; align-items: center; gap: 8px; }
-.rl-year-label { font-size: 13px; color: #969799; }
+.rl-year-label { font-size: 13px; color: var(--ink-muted); }
 .rl-year-native {
   height: 32px; min-width: 120px; padding: 0 8px;
-  border: 1px solid #dcdee0; border-radius: 6px;
-  font-size: 13px; color: #1f2329; background: #fff; outline: none;
+  border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; color: var(--ink); background: #fff; outline: none;
   -webkit-appearance: auto; appearance: auto;
 }
 .rl-year-native:focus { border-color: var(--info); }
@@ -443,15 +443,15 @@ onMounted(load)
 .rl-row-right .van-button { min-width: 64px; }
 /* 金额区固定宽度，确保各行进度条起点与右侧按钮对齐一致 */
 .rl-amounts { text-align: right; width: 224px; flex: 0 0 auto; }
-.rl-amount { font-weight: 600; color: #1f2329; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rl-progress { width: 224px; height: 9px; background: #f0f1f2; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
+.rl-amount { font-weight: 600; color: var(--ink); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-progress { width: 224px; height: 9px; background: var(--paper-deep); border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
 .rl-progress-bar { height: 100%; transition: width .3s; }
 /* 进度条着色：未收红 / 部分收橙 / 结清绿 / 坏账金 */
 .rl-progress-bar.st-open     { background: var(--danger); }
-.rl-progress-bar.st-partial  { background: #ff976a; }
-.rl-progress-bar.st-closed   { background: var(--jade, #07c160); }
+.rl-progress-bar.st-partial  { background: var(--terracotta); }
+.rl-progress-bar.st-closed   { background: var(--jade, #2b5876); }
 .rl-progress-bar.st-writeoff { background: var(--warn); }
-.rl-amount-sub { font-size: 11px; color: #969799; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-amount-sub { font-size: 11px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) {
   .rl-amounts { width: 150px; }
   .rl-progress { width: 150px; }
@@ -460,25 +460,25 @@ onMounted(load)
 
 /* 年度计提预览弹窗 */
 .accrue-dialog { width: 90vw; max-width: 460px; }
-.accrue-loading, .accrue-empty { padding: 40px 0; text-align: center; color: #969799; font-size: 13px; }
+.accrue-loading, .accrue-empty { padding: 40px 0; text-align: center; color: var(--ink-muted); font-size: 13px; }
 .accrue-body { padding: 0 16px 16px; }
-.accrue-year { font-size: 14px; font-weight: 600; color: #1f2329; margin-bottom: 4px; }
-.accrue-hint { font-size: 11px; color: #969799; margin-bottom: 12px; }
+.accrue-year { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.accrue-hint { font-size: 11px; color: var(--ink-muted); margin-bottom: 12px; }
 .accrue-list { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
 .accrue-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 10px; background: #f7f8fa; border-radius: 6px; gap: 8px;
+  padding: 8px 10px; background: var(--paper-warm); border-radius: 6px; gap: 8px;
 }
 .accrue-item.exists { opacity: 0.6; }
 .accrue-item-left { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.accrue-party { font-size: 13px; font-weight: 500; color: #1f2329; }
-.accrue-kind { font-size: 11px; color: #969799; }
+.accrue-party { font-size: 13px; font-weight: 500; color: var(--ink); }
+.accrue-kind { font-size: 11px; color: var(--ink-muted); }
 .accrue-item-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .accrue-input {
-  width: 100px; padding: 4px 6px; border: 1px solid #dcdee0; border-radius: 4px;
+  width: 100px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
   font-size: 13px; text-align: right; outline: none; font-variant-numeric: tabular-nums;
 }
 .accrue-input:focus { border-color: var(--info); }
-.accrue-unit { font-size: 12px; color: #969799; }
-.accrue-exists { font-size: 11px; color: #969799; background: #e8e8e8; padding: 2px 8px; border-radius: 4px; }
+.accrue-unit { font-size: 12px; color: var(--ink-muted); }
+.accrue-exists { font-size: 11px; color: var(--ink-muted); background: var(--line); padding: 2px 8px; border-radius: 4px; }
 </style>
