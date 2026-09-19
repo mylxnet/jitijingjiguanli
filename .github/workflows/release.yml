@@ -1,0 +1,55 @@
+name: build-release
+
+# 打 v* 标签推送时，构建单文件可执行程序并发布到 GitHub Releases。
+# 产物：Linux amd64（内嵌前端，监听 :8080），与本地 WSL 部署产物一致。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 构建前端 (跳过 vue-tsc 类型检查)
+        working-directory: web
+        run: |
+          npm ci
+          npx vite build
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: 复制前端产物到内嵌目录
+        run: |
+          rm -rf server/cmd/server/web
+          mkdir -p server/cmd/server/web
+          cp -r web/dist/. server/cmd/server/web/
+
+      - name: 编译后端 (Linux amd64)
+        working-directory: server
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -o ../jitizhang ./cmd/server
+
+      - name: 发布到 GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jitizhang
+          generate_release_notes: true
