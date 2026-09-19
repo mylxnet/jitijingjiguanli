@@ -190,13 +190,13 @@ onMounted(load)
   font-size: 11px; padding: 1px 8px; border-radius: 999px;
   background: #f2f3f5; color: #646566;
 }
-.bd-chip.bad { background: #fdf3e3; color: #b8860b; }
+.bd-chip.bad { background: #fdf3e3; color: var(--warn); }
 
 .bd-card-body { display: flex; flex-direction: column; gap: 4px; }
 .bd-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; color: #323233; }
 .bd-k { font-size: 12px; color: #969799; }
 .bd-v { margin-right: 10px; font-variant-numeric: tabular-nums; }
-.bd-bad { color: #b8860b; font-weight: 600; }
+.bd-bad { color: var(--warn); font-weight: 600; }
 
 .bd-card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 

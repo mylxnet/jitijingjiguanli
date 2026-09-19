@@ -591,7 +591,7 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-td { padding: 8px 10px; border-bottom: 1px solid #f2f3f5; color: #1f2329; vertical-align: middle; }
 .pl-th:last-child { text-align: center; }
 .pl-td-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-name-link { font-weight: 600; font-size: 13px; color: #1989fa; cursor: pointer; margin-right: 6px; }
+.pl-name-link { font-weight: 600; font-size: 13px; color: var(--info); cursor: pointer; margin-right: 6px; }
 .pl-name-link:hover { text-decoration: underline; }
 .pl-td-phone { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-td-money { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -599,20 +599,20 @@ watch(() => route.query.editParty, handleEditQuery)
 .pl-td-contract { white-space: nowrap; }
 .pl-td-status { white-space: nowrap; }
 .pl-status { font-size: 12px; font-weight: 600; white-space: nowrap; color: #c8c9cc; }
-.pl-status.expired { color: #ee0a24; }
-.pl-status.pending { color: #ff9500; }
+.pl-status.expired { color: var(--danger); }
+.pl-status.pending { color: var(--warn); }
 .pl-td-owe { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pl-name { font-weight: 600; font-size: 13px; color: #1f2329; margin-right: 6px; }
 .pl-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
-.tag-invest   { background: #e6f1ff; color: #1989fa; }
-.tag-reinvest { background: #f0e6ff; color: #764ba2; }
-.tag-flow     { background: #fff2e6; color: #ff6034; }
+.tag-invest   { background: #e6f1ff; color: var(--info); }
+.tag-reinvest { background: #f0e6ff; color: var(--accent); }
+.tag-flow     { background: #fff2e6; color: var(--warn); }
 .tag-other    { background: #f2f3f5; color: #646566; }
 .pl-na { color: #c8c9cc; }
 .pl-td-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #969799; }
-.pl-owe { color: #ee0a24; font-weight: 600; }
+.pl-owe { color: var(--danger); font-weight: 600; }
 .pl-has-contract { color: #c8c9cc; }
-.pl-has-contract.has { color: #07c160; font-weight: 600; }
+.pl-has-contract.has { color: var(--success); font-weight: 600; }
 .pl-td-action { text-align: center; }
 .empty { padding: 40px 0; }
 
@@ -625,16 +625,16 @@ watch(() => route.query.editParty, handleEditQuery)
 .detail-item { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
 .di-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .di-title { font-weight: 500; font-size: 13px; color: #1f2329; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.di-kind { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #e6f1ff; color: #1989fa; white-space: nowrap; }
-.di-kind.rent { background: #fff2e6; color: #ff6034; }
-.di-kind.service { background: #f0e6ff; color: #764ba2; }
+.di-kind { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #e6f1ff; color: var(--info); white-space: nowrap; }
+.di-kind.rent { background: #fff2e6; color: var(--warn); }
+.di-kind.service { background: #f0e6ff; color: var(--accent); }
 .di-status { font-size: 10px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
 .di-status.open { background: #fffbe6; color: #d4a017; }
-.di-status.closed { background: #e6f7e6; color: #07c160; }
-.di-status.writeoff { background: #fdf3e3; color: #b8860b; }
+.di-status.closed { background: #e6f7e6; color: var(--success); }
+.di-status.writeoff { background: #fdf3e3; color: var(--warn); }
 .di-amounts { display: flex; gap: 12px; font-size: 12px; color: #646566; }
 .di-amt strong { font-weight: 600; color: #1f2329; margin-left: 2px; }
-.di-paid strong { color: #07c160; }
-.di-owe strong { color: #ee0a24; }
-.di-bad strong { color: #b8860b; }
+.di-paid strong { color: var(--success); }
+.di-owe strong { color: var(--danger); }
+.di-bad strong { color: var(--warn); }
 </style>

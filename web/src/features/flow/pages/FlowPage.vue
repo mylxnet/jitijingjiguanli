@@ -24,19 +24,19 @@
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">已收</div>
-          <div class="fp-stat-value" style="color:#07c160">{{ fmt(rentStats.paid) }}</div>
+          <div class="fp-stat-value" style="color:var(--success)">{{ fmt(rentStats.paid) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">未收</div>
-          <div class="fp-stat-value" style="color:#ee0a24">{{ fmt(rentStats.unpaid) }}</div>
+          <div class="fp-stat-value" style="color:var(--danger)">{{ fmt(rentStats.unpaid) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">坏账</div>
-          <div class="fp-stat-value" style="color:#b8860b">{{ fmt(rentStats.writeoff) }}</div>
+          <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(rentStats.writeoff) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">转付农户支出</div>
-          <div class="fp-stat-value" style="color:#ff6034">{{ fmt(rentFarmerExpenseTotal) }}</div>
+          <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(rentFarmerExpenseTotal) }}</div>
         </div>
       </div>
 
@@ -112,19 +112,19 @@
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">已收</div>
-          <div class="fp-stat-value" style="color:#07c160">{{ fmt(svcStats.paid) }}</div>
+          <div class="fp-stat-value" style="color:var(--success)">{{ fmt(svcStats.paid) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">坏账</div>
-          <div class="fp-stat-value" style="color:#b8860b">{{ fmt(svcStats.writeoff) }}</div>
+          <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(svcStats.writeoff) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">已支出</div>
-          <div class="fp-stat-value" style="color:#ff6034">{{ fmt(svcExpenseTotal) }}</div>
+          <div class="fp-stat-value" style="color:var(--warn)">{{ fmt(svcExpenseTotal) }}</div>
         </div>
         <div class="fp-stat">
           <div class="fp-stat-label">可支出</div>
-          <div class="fp-stat-value" :style="{color: svcAvailable >= 0 ? '#1989fa' : '#ee0a24'}">{{ fmt(svcAvailable) }}</div>
+          <div class="fp-stat-value" :style="{color: svcAvailable >= 0 ? 'var(--info)' : 'var(--danger)'}">{{ fmt(svcAvailable) }}</div>
         </div>
       </div>
 
@@ -407,7 +407,7 @@ onMounted(load)
   padding: 6px 10px; border: 1px solid #dcdee0; border-radius: 6px; font-size: 14px;
   background: #fff; outline: none; min-width: 120px;
 }
-.fp-year-select:focus { border-color: #1989fa; }
+.fp-year-select:focus { border-color: var(--info); }
 
 .fp-stats {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px;
@@ -430,7 +430,7 @@ onMounted(load)
   display: flex; align-items: center; gap: 8px;
 }
 .fp-section-title.clickable { cursor: pointer; user-select: none; }
-.fp-section-title.clickable:hover { color: #1989fa; }
+.fp-section-title.clickable:hover { color: var(--info); }
 .fp-collapse-icon { font-size: 10px; color: #969799; }
 
 .fp-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft, #eaeaea); border-radius: 8px; background: #fff; }
@@ -451,10 +451,10 @@ onMounted(load)
 .fp-status {
   display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
 }
-.fp-status.open { background: #fff1f0; color: #ee0a24; }
-.fp-status.partial { background: #fff7e6; color: #fa8c16; }
-.fp-status.paid { background: #e8f8e8; color: #07c160; }
-.fp-status.writeoff { background: #fdf3e3; color: #b8860b; }
+.fp-status.open { background: #fff1f0; color: var(--danger); }
+.fp-status.partial { background: #fff7e6; color: var(--warn); }
+.fp-status.paid { background: #e8f8e8; color: var(--success); }
+.fp-status.writeoff { background: #fdf3e3; color: var(--warn); }
 
 @media (max-width: 600px) {
   .fp-stats { grid-template-columns: repeat(2, 1fr); }

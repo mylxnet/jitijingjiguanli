@@ -9,6 +9,21 @@ type Capital struct {
 	Warning          string `json:"warning,omitempty"`
 }
 
+// Slice 环形构成分项（name + value，value 单位分）。
+type Slice struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
+}
+
+// Composition 看板四块环形构成（v0.21 看板改造）。
+// 科目一律按名称动态解析（科目 ID 随组织注册变化），欠款按 recv_kind 分组。
+type Composition struct {
+	Fund    []Slice `json:"fund"`    // 资金构成：银行存款 / 长期投资 / 应收收益（土地流转费、管理费欠款不计入）。
+	Invest  []Slice `json:"invest"`  // 在外投资构成：长期投资 / 再投资 / 其他（资产类科目按一级名分组）。
+	Owe     []Slice `json:"owe"`     // 欠款构成：土地流转费 / 流转管理费 / 应收收益（按 recv_kind 分组 outstanding）。
+	Expense []Slice `json:"expense"` // 可支出构成：公益支出科目余额。
+}
+
 // CategorySummary 单个科目汇总。
 type CategorySummary struct {
 	ID                  int64              `json:"id"`
@@ -29,5 +44,6 @@ type SummaryResponse struct {
 	ExpenseTotal int64              `json:"expenseTotal"`
 	Balance      int64              `json:"balance"`
 	Capital      *Capital           `json:"capital"`
+	Composition  *Composition       `json:"composition"`
 	Categories   []*CategorySummary `json:"categories"`
 }

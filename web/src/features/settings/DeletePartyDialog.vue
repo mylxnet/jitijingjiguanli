@@ -204,8 +204,8 @@ async function confirmDelete() {
 .dp-row-title { font-size: 14px; color: #323233; display: flex; align-items: center; gap: 8px; }
 .dp-chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: #f2f3f5; color: #646566; }
 .dp-row-sub { margin-top: 3px; font-size: 12px; color: #969799; }
-.dp-ok { color: #07c160; }
-.dp-no { color: #ee0a24; }
+.dp-ok { color: var(--success); }
+.dp-no { color: var(--danger); }
 .dp-empty { padding: 24px 12px; text-align: center; font-size: 13px; color: #969799; }
 .dp-confirm { padding: 10px 16px 0; font-size: 13px; }
 .dp-error { color: #a32d2d; font-size: 13px; padding: 8px 16px 0; }

@@ -175,19 +175,19 @@
         </div>
         <div class="ip-stat">
           <div class="ip-stat-label">50% 再投资</div>
-          <div class="ip-stat-value" :style="{color:'#07c160'}" v-if="distData">{{ fmt(distData.reinvestCents) }}</div>
+          <div class="ip-stat-value" :style="{color:'var(--success)'}" v-if="distData">{{ fmt(distData.reinvestCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
           <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(reinvestStat.total) }} · 已支 {{ fmt(reinvestStat.invested) }} · <span class="rd">余 {{ fmt(reinvestStat.remain) }}</span></div>
         </div>
         <div class="ip-stat">
           <div class="ip-stat-label">30% 分红福利</div>
-          <div class="ip-stat-value" :style="{color:'#1989fa'}" v-if="distData">{{ fmt(distData.dividendCents) }}</div>
+          <div class="ip-stat-value" :style="{color:'var(--info)'}" v-if="distData">{{ fmt(distData.dividendCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
           <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(dividendStat.total) }} · 已支 {{ fmt(dividendStat.invested) }} · <span class="rd">余 {{ fmt(dividendStat.remain) }}</span></div>
         </div>
         <div class="ip-stat">
           <div class="ip-stat-label">20% 管理公益</div>
-          <div class="ip-stat-value" :style="{color:'#ff6034'}" v-if="distData">{{ fmt(distData.welfareCents) }}</div>
+          <div class="ip-stat-value" :style="{color:'var(--warn)'}" v-if="distData">{{ fmt(distData.welfareCents) }}</div>
           <div class="ip-stat-value na" v-else>未分配</div>
           <div class="ip-stat-sub" v-if="distData">总计 {{ fmt(welfareStat.total) }} · 已支 {{ fmt(welfareStat.invested) }} · <span class="rd">余 {{ fmt(welfareStat.remain) }}</span></div>
         </div>
@@ -824,7 +824,7 @@ onMounted(load)
 .ip-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .ip-stat-sub { font-size: 11px; color: #969799; margin-top: 4px; }
 .ip-stat-sub.na { color: #969799; }
-.ip-stat-sub .rd { color: #ee0a24; }
+.ip-stat-sub .rd { color: var(--danger); }
 .ip-stats .ip-stat { border-color: transparent; }
 .ip-stats .ip-stat:nth-child(1) { background: #e8f0fb; }
 .ip-stats .ip-stat:nth-child(2) { background: #e6f5f4; }
@@ -859,11 +859,11 @@ onMounted(load)
   padding: 6px 10px; border: 1px solid #dcdee0; border-radius: 6px; font-size: 14px;
   background: #fff; outline: none; min-width: 120px;
 }
-.dist-year-select:focus { border-color: #1989fa; }
+.dist-year-select:focus { border-color: var(--info); }
 .dist-year-status {
   font-size: 12px; padding: 2px 10px; border-radius: 10px; background: #f7f8fa; color: #969799;
 }
-.dist-year-status.allocated { background: #e8f8e8; color: #07c160; font-weight: 500; }
+.dist-year-status.allocated { background: #e8f8e8; color: var(--success); font-weight: 500; }
 
 .ip-stat-value.na { color: #969799; font-weight: 400; font-size: 13px; }
 
@@ -872,7 +872,7 @@ onMounted(load)
 .dist-dialog-body { padding: 0 16px 16px; }
 .dist-dialog-year { font-size: 15px; font-weight: 600; color: #1f2329; margin-bottom: 4px; }
 .dist-dialog-hint { font-size: 12px; color: #969799; margin-bottom: 16px; line-height: 1.5; }
-.dist-dialog-lock { font-size: 13px; color: #ee0a24; margin-bottom: 12px; padding: 8px 12px; background: #fff2f0; border-radius: 4px; }
+.dist-dialog-lock { font-size: 13px; color: var(--danger); margin-bottom: 12px; padding: 8px 12px; background: #fff2f0; border-radius: 4px; }
 .dist-dialog-fields { display: flex; flex-direction: column; gap: 10px; }
 .dist-dialog-field {
   display: flex; align-items: center; justify-content: space-between;
@@ -884,13 +884,13 @@ onMounted(load)
   width: 140px; padding: 6px 8px; border: 1px solid #dcdee0; border-radius: 4px;
   font-size: 14px; text-align: right; outline: none;
 }
-.dist-input:focus { border-color: #1989fa; }
+.dist-input:focus { border-color: var(--info); }
 .dist-input.readonly { background: #f0f0f0; cursor: not-allowed; }
 .dist-input-unit { font-size: 12px; color: #969799; }
 .dist-dialog-total {
   margin-top: 12px; text-align: right; font-size: 13px; font-weight: 500; color: #1f2329;
 }
-.dist-dialog-diff { font-size: 11px; color: #ee0a24; font-weight: 400; }
+.dist-dialog-diff { font-size: 11px; color: var(--danger); font-weight: 400; }
 
 @media (max-width: 600px) {
   .ip-stats { grid-template-columns: repeat(2, 1fr); }

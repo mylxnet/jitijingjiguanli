@@ -10,7 +10,7 @@
       <p class="aw-sub">按 {{ year }} 年度引导式结转 · 金额已按单位基本信息自动带出，可修改</p>
     </div>
 
-    <van-steps :active="step" active-color="#07c160">
+    <van-steps :active="step" active-color="var(--success)">
       <van-step v-for="s in STEPS" :key="s">{{ s }}</van-step>
     </van-steps>
 
@@ -175,17 +175,17 @@ onMounted(load)
 .aw-title { font-size: 11px; color: #969799; margin-top: 2px; }
 .aw-item-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .aw-input { width: 110px; padding: 6px 8px; border: 1px solid #c8c9cc; border-radius: 6px; font-size: 14px; text-align: right; }
-.aw-input:focus { border-color: #07c160; }
+.aw-input:focus { border-color: var(--success); }
 .aw-unit { font-size: 12px; color: #969799; }
 .aw-exists { font-size: 11px; color: #969799; background: #e8e8e8; padding: 2px 8px; border-radius: 4px; }
 .aw-summary { display: flex; flex-direction: column; gap: 14px; }
 .aw-sum-group { border: 1px solid #ebebeb; border-radius: 8px; padding: 10px 12px; }
 .aw-sum-group-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
 .aw-sum-group-label { font-size: 14px; font-weight: 600; }
-.aw-sum-group-amt { font-size: 14px; color: #07c160; font-weight: 600; }
+.aw-sum-group-amt { font-size: 14px; color: var(--success); font-weight: 600; }
 .aw-sum-item { display: flex; justify-content: space-between; font-size: 13px; color: #3a3a3a; padding: 4px 0; }
 .aw-sum-amount { font-variant-numeric: tabular-nums; }
 .aw-sum-total { display: flex; justify-content: space-between; font-size: 15px; font-weight: 600; padding: 10px 2px; border-top: 1px dashed #ddd; }
-.aw-sum-total-amt { color: #07c160; }
+.aw-sum-total-amt { color: var(--success); }
 .aw-footer { display: flex; align-items: center; padding: 14px 0 0; border-top: 1px solid #f0f0f0; }
 </style>

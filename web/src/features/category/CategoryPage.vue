@@ -422,7 +422,7 @@ async function deleteCat(cat: Category) {
 
 .l1-chip.residual { border-color: var(--jade); color: var(--jade); }
 .l1-chip.spending { border-color: var(--indigo); color: var(--indigo); }
-.l1-chip.preset { border-color: #8a6d1f; color: #8a6d1f; background: #fbf3df; }
+.l1-chip.preset { border-color: var(--warn); color: var(--warn); background: #fbf3df; }
 
 .l1-actions {
   display: flex;
@@ -470,9 +470,9 @@ async function deleteCat(cat: Category) {
 
 .l2-chip.residual { border-color: var(--jade); color: var(--jade); }
 .l2-chip.spending { border-color: var(--indigo); color: var(--indigo); }
-.l2-chip.preset { border-color: #8a6d1f; color: #8a6d1f; background: #fbf3df; }
+.l2-chip.preset { border-color: var(--warn); color: var(--warn); background: #fbf3df; }
 .l2-chip.equity { border-color: var(--jade); color: var(--jade); background: var(--jade-light); }
-.l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
+.l2-chip.asset { border-color: var(--warn); color: var(--warn); background: #fdf3e3; }
 .l2-chip.reconcile { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 .l2-chip.stopped { background: #fcebeb; border-color: var(--expense); color: var(--expense); }
 

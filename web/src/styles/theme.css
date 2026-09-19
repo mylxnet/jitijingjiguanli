@@ -13,24 +13,34 @@
   --line: #e8e3d8;
   --line-soft: #f0ebe0;
 
-  /* —— 主题色（玉绿 + 赭石） —— */
-  --jade: #1f5c48;
-  --jade-deep: #143d30;
-  --jade-light: #e3ede9;
-  --jade-hover: #2a7a61;
-  --jade-bg: #f4f8f5;
-  --terracotta: #b86b3d;
-  --terracotta-light: #f4e4d8;
-  --terracotta-bg: #fdf3e3;
-  --indigo: #2d4a7a;
-  --indigo-light: #e2e8f2;
-  --indigo-bg: #eef2f8;
+  /* —— 主题色（深青蓝 + 琥珀金，对齐看板配色） —— */
+  --jade: #2b5876;
+  --jade-deep: #16384d;
+  --jade-light: #eaf1f6;
+  --jade-hover: #3a6e8f;
+  --jade-bg: #f2f7fa;
+  --terracotta: #e0b459;
+  --terracotta-light: #f7eedc;
+  --terracotta-bg: #fbf6ea;
+  --indigo: #5a9cb8;
+  --indigo-light: #e8f1f6;
+  --indigo-bg: #f2f8fb;
 
-  /* —— 语义色 —— */
-  --income: #1f5c48;
+  /* —— 语义色（统一 token，页面禁止再写死 hex） ——
+      收入/成功=主题主色；支出/欠款/危险=低饱和砖红；
+      临期/警告=琥珀系暖橙；链接/信息=雾蓝；投资收益=灰紫 */
+  --income:  #2b5876;
   --expense: #a33a2d;
-  --asset: #7a502d;
-  --warning: #b86b3d;
+  --asset:   #9a7fb0;
+  --warning: #b06a1f;
+  --success: #2b5876;
+  --danger:  #a33a2d;
+  --warn:    #b06a1f;
+  --info:    #5a9cb8;
+  --accent:  #9a7fb0;
+  /* 高低向语义（仅统计/趋势标注用） */
+  --trend-up:   #0e8a67;
+  --trend-down: #c0392b;
 
   /* —— 圆角 —— */
   --r-xs: 4px;

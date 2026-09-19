@@ -20,6 +20,7 @@
         <van-button
           round
           block
+          plain
           type="primary"
           size="small"
           :loading="backingUp"
@@ -32,7 +33,8 @@
           <span class="backup-size">{{ formatBytes(b.sizeBytes) }}</span>
         </template>
         <template #right-icon>
-          <van-button size="mini" plain type="warning" @click="restoreBackup(b)">恢复</van-button>
+          <van-button size="mini" plain @click="downloadBackup(b)">下载</van-button>
+          <van-button size="mini" plain @click="restoreBackup(b)">恢复</van-button>
           <van-button
             size="mini"
             plain
@@ -81,6 +83,7 @@
           <van-button
             round
             block
+            plain
             type="primary"
             size="small"
             :loading="saving"
@@ -123,7 +126,7 @@
     </van-cell-group>
 
     <div style="margin: 16px; padding: 0 16px">
-      <van-button round block type="danger" @click="handleLogout">登出</van-button>
+      <van-button round block plain type="primary" @click="handleLogout">登出</van-button>
     </div>
 
     <div class="version">v{{ APP_VERSION }}</div>
@@ -166,7 +169,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../auth/store'
 import { APP_VERSION } from '../../version'
-import { api } from '../../lib/http'
+import { api, downloadFile } from '../../lib/http'
 import { formatFen } from '../../types/api'
 import type { ApiResponse } from '../../types/api'
 import { showToast, showDialog } from 'vant'
@@ -345,6 +348,22 @@ async function deleteBackup(b: BackupItem) {
   }
 }
 
+async function downloadBackup(b: BackupItem) {
+  try {
+    const { blob, filename } = await downloadFile(`/backups/${encodeURIComponent(b.id)}/download`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || b.id
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e: any) {
+    showToast(e.message || '下载失败')
+  }
+}
+
 function formatBackupTime(ts: string): string {
   if (!ts) return ts
   // jz-backup-YYYYMMDD-HHMMSS.db → YYYY-MM-DD HH:MM
@@ -428,19 +447,24 @@ padding-bottom: 60px;
   font-weight: 600;
 }
 
-/* 高级设置折叠头 */
+/* 高级设置折叠头：文字居中 + 浅色背景 */
 .adv-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 8px;
   padding: 12px 16px;
   cursor: pointer;
   user-select: none;
+  background: var(--jade-light);
+  border-radius: var(--r-md);
 }
 .adv-head .adv-title {
   padding: 0;
   font-size: 13px;
-  color: var(--ink-900, #1f2329);
+  color: var(--jade);
+  font-weight: 600;
 }
 .adv-arrow {
   color: var(--ink-muted, #969799);

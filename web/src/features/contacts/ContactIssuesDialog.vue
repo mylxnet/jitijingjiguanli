@@ -144,7 +144,7 @@ function goExpiring() {
 .ci-miss {
   margin-top: 3px;
   font-size: 12px;
-  color: #ee0a24;
+  color: var(--danger);
 }
 .ci-tip {
   margin-top: 10px;

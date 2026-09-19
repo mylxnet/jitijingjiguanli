@@ -7,7 +7,7 @@
       </div>
       <div class="cp-header-actions">
         <van-button size="small" icon="downloader" @click="exportZip">导出</van-button>
-        <van-button type="primary" size="small" icon="plus" @click="openUpload(null)">＋ 上传合同</van-button>
+        <van-button type="primary" size="small" icon="plus" @click="openUpload(null)">上传合同</van-button>
       </div>
     </div>
 
@@ -152,7 +152,7 @@
           <button class="preview-close-btn" @click="previewVisible = false">关闭</button>
         </div>
         <div v-if="previewLoading" class="preview-body">
-          <van-loading size="36px" color="#1989fa" />
+          <van-loading size="36px" color="var(--info)" />
           <p>正在加载 {{ previewFileName }}...</p>
         </div>
         <div v-else-if="previewFileData" class="preview-body">
@@ -796,9 +796,9 @@ onUnmounted(() => {
 .cp-chev { font-size: 11px; color: #969799; width: 14px; }
 .cp-party-name { font-weight: 600; color: #1f2329; }
 .cp-party-type { font-size: 11px; padding: 1px 7px; border-radius: 10px; }
-.tag-invest   { background: #e6f1ff; color: #1989fa; }
-.tag-reinvest { background: #f0e6ff; color: #764ba2; }
-.tag-flow     { background: #fff2e6; color: #ff6034; }
+.tag-invest   { background: #e6f1ff; color: var(--info); }
+.tag-reinvest { background: #f0e6ff; color: var(--accent); }
+.tag-flow     { background: #fff2e6; color: var(--warn); }
 .tag-other    { background: #f2f3f5; color: #646566; }
 .cp-count { font-size: 12px; color: #969799; }
 
@@ -813,7 +813,7 @@ onUnmounted(() => {
   width: 36px; height: 36px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 16px; color: #fff; flex-shrink: 0;
-  background: #1989fa;
+  background: var(--info);
 }
 .cp-file-ic.ic-doc, .cp-file-ic.ic-docx { background: #2b579a; }
 .cp-file-ic.ic-pdf { background: #d4380d; }
@@ -821,7 +821,7 @@ onUnmounted(() => {
 .cp-file-ic.ic-archived { background: #c8c9cc; }
 .cp-file-info { flex: 1; min-width: 0; }
 .cp-file-name { font-weight: 500; color: #1f2329; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.cp-file-name:hover { color: #1989fa; }
+.cp-file-name:hover { color: var(--info); }
 .cp-file-name.cp-file-archived { color: #c8c9cc; font-weight: 400; }
 .cp-file-meta { font-size: 11px; color: #969799; margin-top: 2px; }
 .cp-file-actions { display: flex; gap: 6px; flex-shrink: 0; }
@@ -852,9 +852,9 @@ onUnmounted(() => {
 .up-field > label { display: block; font-size: 12px; color: #646566; margin-bottom: 6px; }
 .up-party-fixed { padding: 8px 12px; background: #f7f8fa; border-radius: 6px; font-size: 13px; color: #1f2329; }
 .up-select { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
-.up-select:focus { border-color: #1989fa; }
+.up-select:focus { border-color: var(--info); }
 .up-name-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
-.up-name-input:focus { border-color: #1989fa; }
+.up-name-input:focus { border-color: var(--info); }
 .up-hint { font-size: 11px; color: #969799; margin-top: 4px; }
 
 /* 单位行到期状态标签（跟单位，按最新期至） */
@@ -863,15 +863,15 @@ onUnmounted(() => {
   border-radius: 8px; font-size: 11px; font-weight: 500; white-space: nowrap;
   background: #ebedf0; color: #969799;
 }
-.party-expiry-tag.pet-expired { background: #ffece8; color: #ee0a24; font-weight: 600; }
+.party-expiry-tag.pet-expired { background: #ffece8; color: var(--danger); font-weight: 600; }
 .party-expiry-tag.pet-pending { background: #fff7e6; color: #ed6a0c; font-weight: 600; }
-.party-expiry-tag.pet-ok { background: #e8f9f5; color: #07c160; }
+.party-expiry-tag.pet-ok { background: #e8f9f5; color: var(--success); }
 
 /* 合同期至调整弹窗 */
 .ee-body { padding: 12px 8px; min-width: 260px; }
 .ee-sub { font-size: 12px; color: #969799; margin-bottom: 10px; word-break: break-all; }
 .ee-date { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 6px; font-size: 13px; color: #1f2329; background: #fff; outline: none; }
-.ee-date:focus { border-color: #1989fa; }
+.ee-date:focus { border-color: var(--info); }
 .ee-tip { font-size: 11px; color: #969799; margin-top: 6px; }
 
 /* 删除二次验证弹窗 */
@@ -882,10 +882,10 @@ onUnmounted(() => {
 .cfe-state { color: #646566; }
 .cp-file-expiry.ce-none .cfe-date { color: #c8c9cc; }
 .cp-file-expiry.ce-warn .cfe-date,
-.cp-file-expiry.ce-warn .cfe-state { color: #ee0a24; font-weight: 600; }
+.cp-file-expiry.ce-warn .cfe-state { color: var(--danger); font-weight: 600; }
 .dc-body { padding: 12px 16px 4px; text-align: center; }
 .dc-file { font-size: 13px; font-weight: 600; color: #1f2329; word-break: break-all; margin-bottom: 8px; }
-.dc-warn { font-size: 13px; color: #ee0a24; line-height: 1.5; }
+.dc-warn { font-size: 13px; color: var(--danger); line-height: 1.5; }
 .dc-count { font-size: 12px; color: #969799; margin-top: 10px; }
 .dc-btns { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
 .up-drop {
@@ -937,7 +937,7 @@ onUnmounted(() => {
   padding: 4px 12px; border: 1px solid #dcdfe6; background: #fff; border-radius: 4px;
   font-size: 12px; color: #646566; cursor: pointer;
 }
-.excel-tab.active { background: #1989fa; color: #fff; border-color: #1989fa; }
+.excel-tab.active { background: var(--info); color: #fff; border-color: var(--info); }
 .excel-scroll { flex: 1; overflow: auto; padding: 12px; background: #fafbfc; }
 .excel-table { border-collapse: collapse; font-size: 12px; background: #fff; }
 .excel-table td, .excel-table th { border: 1px solid #d0d0d0; padding: 4px 8px; white-space: nowrap; }
@@ -953,7 +953,7 @@ onUnmounted(() => {
 .preview-office-tip .office-sub { font-size: 13px; color: #969799; margin-top: 8px; }
 .download-btn {
   display: inline-block; margin-top: 28px; padding: 12px 32px;
-  background: #1989fa; color: #fff; font-size: 14px;
+  background: var(--info); color: #fff; font-size: 14px;
   text-decoration: none; border-radius: 6px;
   transition: background .15s;
 }
@@ -990,7 +990,7 @@ onUnmounted(() => {
   background: #fff; border: 1px solid #dcdfe6; border-radius: 4px;
   color: #646566; cursor: pointer; transition: all .15s;
 }
-.preview-close-btn:hover { background: #f5f7fa; border-color: #1989fa; color: #1989fa; }
+.preview-close-btn:hover { background: #f5f7fa; border-color: var(--info); color: var(--info); }
 
 .preview-body {
   flex: 1 !important;

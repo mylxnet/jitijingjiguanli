@@ -162,11 +162,12 @@ func (h *Handler) ResetPassword(c *gin.Context) {
 // setSessionCookie 写入会话 Cookie。
 // HttpOnly + SameSite=Lax；Secure 仅在显式开启 HTTPS（APP_SECURE_COOKIE=1）时设置，
 // 因为局域网 HTTP 直连场景下 Secure 会导致 Cookie 不被保存。
+// maxAge=0：不写 Max-Age/Expires，纯会话级 Cookie，浏览器关闭窗口即失效，下次需重新登录。
+// 服务端 session.expires_at 仍保留 7 天兜底（cookie 未清时 7 天后再校验超时）。
 func setSessionCookie(c *gin.Context, token string, expiresAt time.Time) {
 	secure := os.Getenv("APP_SECURE_COOKIE") == "1"
-	maxAge := int(time.Until(expiresAt).Seconds())
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(CookieName, token, maxAge, "/", "", secure, true)
+	c.SetCookie(CookieName, token, 0, "/", "", secure, true)
 }
 
 func clearSessionCookie(c *gin.Context) {

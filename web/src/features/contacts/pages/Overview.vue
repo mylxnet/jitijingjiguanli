@@ -202,10 +202,10 @@ const serviceCount    = computed(() => yearReceivables.value.filter(r => r.kind 
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px; color: #fff;
 }
-.ov-hub-ic.blue   { background: linear-gradient(135deg, #1989fa, #0074d9); }
-.ov-hub-ic.green  { background: linear-gradient(135deg, #07c160, #06ad56); }
-.ov-hub-ic.orange { background: linear-gradient(135deg, #ff6034, #ee3f12); }
-.ov-hub-ic.purple { background: linear-gradient(135deg, #764ba2, #667eea); }
+.ov-hub-ic.blue   { background: linear-gradient(135deg, var(--info), #0074d9); }
+.ov-hub-ic.green  { background: linear-gradient(135deg, var(--success), #06ad56); }
+.ov-hub-ic.orange { background: linear-gradient(135deg, var(--warn), #ee3f12); }
+.ov-hub-ic.purple { background: linear-gradient(135deg, var(--accent), #667eea); }
 .ov-hub-card h3 { font-size: 14px; font-weight: 600; color: var(--ink-900, #1f2329); margin: 0; }
 .ov-hub-card p  { font-size: 12px; color: var(--ink-300, #969799); margin: 0; line-height: 1.6; }
 .ov-hub-meta { display: flex; align-items: center; justify-content: space-between; }

@@ -408,12 +408,12 @@ onMounted(load)
 }
 .rl-stat-label { font-size: 12px; color: #969799; }
 .rl-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, #1f2329); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.rl-stat-value.paid     { color: #07c160; }
-.rl-stat-value.unpaid   { color: #ee0a24; }
-.rl-stat-value.writeoff { color: #b8860b; }
+.rl-stat-value.paid     { color: var(--success); }
+.rl-stat-value.unpaid   { color: var(--danger); }
+.rl-stat-value.writeoff { color: var(--warn); }
 .rl-stat.clickable { cursor: pointer; }
 .rl-stat.clickable:hover { filter: brightness(0.97); }
-.rl-stat-hint { font-size: 11px; color: #b8860b; margin-top: 2px; }
+.rl-stat-hint { font-size: 11px; color: var(--warn); margin-top: 2px; }
 .rl-stats .rl-stat { border-color: transparent; }
 .rl-stats .rl-stat:nth-child(1) { background: #f1edfc; }
 .rl-stats .rl-stat:nth-child(2) { background: #eaf5ed; }
@@ -433,7 +433,7 @@ onMounted(load)
   font-size: 13px; color: #1f2329; background: #fff; outline: none;
   -webkit-appearance: auto; appearance: auto;
 }
-.rl-year-native:focus { border-color: #1989fa; }
+.rl-year-native:focus { border-color: var(--info); }
 .rl-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .rl-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rl-badge { flex-shrink: 0; border-radius: 999px; }
@@ -447,10 +447,10 @@ onMounted(load)
 .rl-progress { width: 224px; height: 9px; background: #f0f1f2; border-radius: 4px; margin: 4px 0 2px; overflow: hidden; }
 .rl-progress-bar { height: 100%; transition: width .3s; }
 /* 进度条着色：未收红 / 部分收橙 / 结清绿 / 坏账金 */
-.rl-progress-bar.st-open     { background: #ee0a24; }
+.rl-progress-bar.st-open     { background: var(--danger); }
 .rl-progress-bar.st-partial  { background: #ff976a; }
 .rl-progress-bar.st-closed   { background: var(--jade, #07c160); }
-.rl-progress-bar.st-writeoff { background: #b8860b; }
+.rl-progress-bar.st-writeoff { background: var(--warn); }
 .rl-amount-sub { font-size: 11px; color: #969799; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) {
   .rl-amounts { width: 150px; }
@@ -478,7 +478,7 @@ onMounted(load)
   width: 100px; padding: 4px 6px; border: 1px solid #dcdee0; border-radius: 4px;
   font-size: 13px; text-align: right; outline: none; font-variant-numeric: tabular-nums;
 }
-.accrue-input:focus { border-color: #1989fa; }
+.accrue-input:focus { border-color: var(--info); }
 .accrue-unit { font-size: 12px; color: #969799; }
 .accrue-exists { font-size: 11px; color: #969799; background: #e8e8e8; padding: 2px 8px; border-radius: 4px; }
 </style>

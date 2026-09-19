@@ -315,7 +315,7 @@ function exportCsv() {
 }
 
 .oplog-effect-entity {
-  color: #1989fa;
+  color: var(--info);
   font-weight: 500;
   margin-right: 4px;
 }

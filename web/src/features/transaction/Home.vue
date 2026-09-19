@@ -1,56 +1,57 @@
 <template>
   <div class="home-page">
+    <!-- 顶栏：标题 + 副时间线 + 记一笔 -->
     <div class="page-header">
-      <h3>看板</h3>
-      <span class="today">{{ todayStr() }}</span>
+      <div class="ph-left">
+        <h3>看板</h3>
+        <span class="today">{{ rangeLabel }}</span>
+      </div>
+      <van-button size="small" class="record-btn" @click="openRecord">
+        <van-icon name="plus" /> 记一笔
+      </van-button>
     </div>
 
-    <!-- 资产快览 -->
-    <div class="cards">
-      <div class="dash-card clickable" @click="openBankFlow">
-        <div class="dash-label">银行存款</div>
-        <div class="dash-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
-        <div class="dash-more">查看流水 ›</div>
-      </div>
-      <div v-if="(capital?.assetTotalCents ?? 0) !== 0" class="dash-card asset">
-        <div class="dash-label">长期投资（在外）</div>
-        <div class="dash-value">{{ formatFen(capital?.assetTotalCents ?? 0) }}</div>
-      </div>
-      <div class="dash-card owe">
-        <div class="dash-label">待收欠款</div>
-        <div class="dash-value">{{ formatFen(owedTotal) }}</div>
-      </div>
-      <div class="dash-card equity">
-        <div class="dash-label">净资产</div>
-        <div class="dash-value">{{ formatFen(capital?.equityTotalCents ?? 0) }}</div>
+    <!-- 银行存款主卡（独占一行，点击打开银行流水明细弹窗） -->
+    <div class="bank-card" @click="openBankFlow">
+      <div class="bank-label">银行存款</div>
+      <div class="bank-value">{{ formatFen(capital?.bankBalanceCents ?? 0) }}</div>
+      <div class="bank-more">查看流水 ›</div>
+    </div>
+
+    <!-- 环形构成 2×2：资金 / 在外投资 / 欠款 / 可支出 -->
+    <div class="donut-grid">
+      <div class="donut-card" v-for="(blk, bi) in blocks" :key="blk.title">
+        <div class="donut-title">{{ blk.title }}</div>
+        <div class="donut-body">
+          <svg viewBox="0 0 120 120" class="donut-svg">
+            <circle cx="60" cy="60" r="44" fill="none" :stroke="'var(--jade-light)'" stroke-width="22" />
+            <circle
+              v-for="(seg, si) in blk.segs"
+              :key="si"
+              cx="60" cy="60" r="44" fill="none"
+              :stroke="seg.color" stroke-width="22"
+              :stroke-dasharray="donutDash(seg)"
+              :stroke-dashoffset="donutOffset(seg)"
+              transform="rotate(-90 60 60)"
+              stroke-linecap="butt"
+            />
+          </svg>
+          <div class="donut-center">
+            <div class="donut-total">{{ formatShort(blk.total) }}</div>
+            <div class="donut-total-label">合计</div>
+          </div>
+        </div>
+        <div class="donut-legend">
+          <div v-for="(seg, si) in blk.segs" :key="si" class="legend-row">
+            <span class="legend-dot" :style="{ background: seg.color }"></span>
+            <span class="legend-name">{{ seg.name }}</span>
+            <span class="legend-val">{{ formatFen(seg.value) }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- 本年收益 -->
-    <div class="income-strip">
-      <span>本年收益（到账）</span>
-      <strong>{{ formatFen(summary?.incomeTotal ?? 0) }}</strong>
-      <span class="sub">收 {{ formatFen(summary?.incomeTotal ?? 0) }} · 支 {{ formatFen(summary?.expenseTotal ?? 0) }}</span>
-    </div>
-
-    <!-- 最新流水 -->
-    <div class="section-head">
-      <span>最新流水</span>
-      <span class="more" @click="goTransactions">查看全部 ›</span>
-    </div>
-    <div v-if="latestTxn" class="latest-txn" @click="goTransactions">
-      <div class="latest-main">
-        <span class="latest-date">{{ latestTxn.txnDate }}</span>
-        <span class="latest-cat">{{ latestCatName }}</span>
-        <span v-if="latestTxn.note" class="latest-note">{{ latestTxn.note }}</span>
-      </div>
-      <span class="latest-amount" :class="latestTxn.direction">
-        {{ latestTxn.direction === 'income' ? '+' : '-' }}{{ formatFen(latestTxn.amountCents) }}
-      </span>
-    </div>
-    <div v-else class="owe-empty">暂无流水</div>
-
-    <!-- 欠款明细 -->
+    <!-- 欠款明细 TOP -->
     <div class="section-head">
       <span>欠款明细</span>
       <span class="more" @click="goContacts">查看全部 ›</span>
@@ -63,7 +64,7 @@
           <span class="owe-kind" :class="row.recvKind">{{ recvKindLabel[row.recvKind] }}</span>
           <span class="owe-title">{{ row.title }}</span>
         </div>
-        <span class="owe-amount">{{ formatFen(row.outstanding) }}</span>
+        <span class="owe-amount" :class="{ danger: row.outstanding > 0 }">{{ formatFen(row.outstanding) }}</span>
       </div>
     </div>
 
@@ -73,7 +74,7 @@
       <van-button size="small" type="primary" @click="goCategories">去建科目</van-button>
     </div>
 
-    <!-- 银行存款流水弹窗：日期 / 收入 / 支出 / 余额 -->
+    <!-- 银行存款流水弹窗 -->
     <van-popup v-model:show="showBankFlow" :position="popupPos()" round :style="{ maxHeight: '80vh' }">
       <div class="bf-popup">
         <div class="bf-head">
@@ -104,12 +105,6 @@
         </div>
       </div>
     </van-popup>
-
-    <!-- 记一笔（悬浮于底部） -->
-    <div class="quick-record" @click="openRecord">
-      <van-icon name="plus" class="quick-icon" />
-      <span>记一笔</span>
-    </div>
   </div>
 </template>
 
@@ -119,10 +114,9 @@ import { useRouter } from 'vue-router'
 import { api } from '../../lib/http'
 import { popupPos } from '../../composables/useScreen'
 import { formatFen, todayStr, recvKindLabel } from '../../types/api'
-import type { Category, Receivable, ReceivableListResponse, RecvKind, Transaction } from '../../types/api'
+import type { ApiResponse, Category, ReceivableListResponse, RecvKind, Transaction } from '../../types/api'
 
 const router = useRouter()
-
 const openRecord = inject<() => void>('openRecord', () => {})
 
 interface Cap {
@@ -130,57 +124,92 @@ interface Cap {
   assetTotalCents: number
   equityTotalCents: number
 }
+interface Slice { name: string; value: number }
+interface Composition {
+  fund: Slice[]
+  invest: Slice[]
+  owe: Slice[]
+  expense: Slice[]
+}
 interface SummaryPayload {
   incomeTotal: number
   expenseTotal: number
   capital: Cap
+  composition: Composition
 }
 
 const capital = ref<Cap | null>(null)
 const summary = ref<SummaryPayload | null>(null)
 const oweRows = ref<{ key: string; partyName: string; recvKind: RecvKind; title: string; outstanding: number }[]>([])
 const noCategory = ref(false)
-const latestTxn = ref<Transaction | null>(null)
-const latestCatName = ref('')
-const owedTotal = computed(() => oweRows.value.reduce((s, r) => s + r.outstanding, 0))
 const fullCats = ref<Category[]>([])
+
+const rangeLabel = todayStr()
+
+// —— 环形构成调色板（对齐看板配色） ——
+const PALETTE = [ '#2B5876', '#E0B459', '#5A9CB8', '#9A7FB0', '#C9D2DA' ]
+
+interface Seg { name: string; value: number; color: string; cumulative: number; frac: number; total: number }
+interface DonutBlock { title: string; total: number; segs: Seg[] }
+
+function slicesToSegs(title: string, slices?: Slice[]): DonutBlock {
+  // 保留全部非零分项（含负数，如实反映余额）；负数在环形图上不画扇区，但计入合计与图例
+  const list = (slices || []).filter(s => s.value !== 0)
+  const total = list.reduce((sum, s) => sum + s.value, 0)
+  let acc = 0
+  const segs = list.map((s, i) => {
+    const frac = total > 0 ? s.value / total : 0
+    const seg: Seg = { name: s.name, value: s.value, color: PALETTE[i % PALETTE.length], cumulative: acc, frac: frac > 0 ? frac : 0, total }
+    if (s.value > 0) acc += s.value
+    return seg
+  })
+  return { title, total, segs }
+}
+
+const blocks = computed<DonutBlock[]>(() => {
+  const c = summary.value?.composition
+  return [
+    slicesToSegs('资金构成', c?.fund),
+    slicesToSegs('在外投资构成', c?.invest),
+    slicesToSegs('欠款构成', c?.owe),
+    slicesToSegs('可支出构成', c?.expense),
+  ]
+})
+
+// SVG 环形表
+const R = 44
+const CIRC = 2 * Math.PI * R
+function donutDash(seg: Seg): string {
+  const len = seg.frac * CIRC
+  return `${len} ${CIRC - len}`
+}
+function donutOffset(seg: Seg): string {
+  // 逆时针累计角度换算成 dashoffset（防止除零）
+  if (!seg.total) return '0'
+  const offset = -(seg.cumulative / seg.total) * CIRC
+  return `${offset}`
+}
+
+// 大额简写（万）
+function formatShort(cents: number): string {
+  if (cents === 0) return '0'
+  const yuan = cents / 100
+  if (Math.abs(yuan) >= 10000) return (yuan / 10000).toFixed(1) + '万'
+  if (Math.abs(yuan) >= 1000) return (yuan / 1000).toFixed(1) + '千'
+  return String(Math.round(yuan))
+}
 
 onMounted(loadAll)
 
 async function loadAll() {
   await Promise.all([loadSummary(), loadOwed(), loadCats()])
-  await loadLatest()
-}
-
-async function loadLatest() {
-  try {
-    const res = await api.get<ApiResponse<{ items: Transaction[]; total: number }>>('/transactions', { pageSize: 1 })
-    const t = res.data.items?.[0] || null
-    latestTxn.value = t
-    latestCatName.value = ''
-    if (t) {
-      for (const l1 of fullCats.value) {
-        if (l1.children) {
-          const l2 = l1.children.find(c => c.id === t.categoryId)
-          if (l2) {
-            latestCatName.value = `${l1.name} / ${l2.name}`
-            break
-          }
-        }
-      }
-    }
-  } catch {
-    latestTxn.value = null
-    latestCatName.value = ''
-  }
 }
 
 async function loadSummary() {
   try {
     const y = new Date().getFullYear()
     const from = `${y}-01-01`
-    const to = todayStr()
-    const res = await api.get<ApiResponse<SummaryPayload>>('/summary', { from, to })
+    const res = await api.get<ApiResponse<SummaryPayload>>('/summary', { from, to: todayStr() })
     summary.value = res.data
     capital.value = res.data.capital
   } catch {
@@ -209,12 +238,11 @@ async function loadOwed() {
 async function loadCats() {
   try {
     const res = await api.get<ApiResponse<Category[]>>('/categories')
-    const cats = res.data
-    fullCats.value = cats
+    fullCats.value = res.data
     const options: { text: string; value: number }[] = []
     const companies: { text: string; value: number }[] = []
     const INVEST_L1_NAMES = ['长期投资', '对外投资']
-    for (const l1 of cats) {
+    for (const l1 of res.data) {
       const isInvest = INVEST_L1_NAMES.includes(l1.name)
       if (l1.children) {
         for (const l2 of l1.children) {
@@ -222,10 +250,7 @@ async function loadCats() {
           if (l2.kind === 'equity') {
             if (isInvest) {
               const invested = (l2.balanceCents ?? 0) < 0 ? -l2.balanceCents! : 0
-              companies.push({
-                text: invested > 0 ? `${l2.name}（已投 ${formatFen(invested)}）` : l2.name,
-                value: l2.id,
-              })
+              companies.push({ text: invested > 0 ? `${l2.name}（已投 ${formatFen(invested)}）` : l2.name, value: l2.id })
             } else {
               options.push({ text: `${l1.name} / ${l2.name}`, value: l2.id })
             }
@@ -239,19 +264,10 @@ async function loadCats() {
   }
 }
 
-function goContacts() {
-  router.push('/contacts')
-}
+function goContacts() { router.push('/contacts') }
+function goCategories() { router.push('/categories') }
 
-function goTransactions() {
-  router.push('/transactions')
-}
-
-function goCategories() {
-  router.push('/categories')
-}
-
-// ---- 银行存款流水弹窗（日期 / 收入 / 支出 / 余额）----
+// ---- 银行存款流水弹窗（沿用老看板）----
 interface BankFlowRow { id: number; date: string; incomeCents: number; expenseCents: number; balanceCents: number }
 const showBankFlow = ref(false)
 const bankFlowLoading = ref(false)
@@ -262,7 +278,6 @@ async function openBankFlow() {
   if (bankFlowRows.value.length > 0) return
   bankFlowLoading.value = true
   try {
-    // 起点 = 设置里填写的银行存款期初余额
     let opening = 0
     try {
       const setRes = await api.get<ApiResponse<{ bankOpeningBalanceCents: number }>>('/settings')
@@ -272,7 +287,6 @@ async function openBankFlow() {
     }
     const res = await api.get<ApiResponse<{ items: Transaction[] }>>('/transactions', { pageSize: 10000 })
     const list = (res.data.items || []).slice()
-    // 按时间升序（同日按 id），以银行期初为起点逐笔增减
     list.sort((a, b) => (a.txnDate === b.txnDate ? a.id - b.id : (a.txnDate < b.txnDate ? -1 : 1)))
     let running = opening
     const asc: BankFlowRow[] = list.map(t => {
@@ -281,7 +295,7 @@ async function openBankFlow() {
       running += income - expense
       return { id: t.id, date: t.txnDate, incomeCents: income, expenseCents: expense, balanceCents: running }
     })
-    bankFlowRows.value = asc.reverse() // 最新在上
+    bankFlowRows.value = asc.reverse()
   } catch {
     bankFlowRows.value = []
   } finally {
@@ -295,289 +309,120 @@ async function openBankFlow() {
   padding: 16px;
   padding-bottom: 110px;
   min-height: 100vh;
-  background: #f7f7f5;
+  background: var(--jade-bg, #f2f7fa);
 }
 
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
+.ph-left { display: flex; flex-direction: column; gap: 2px; }
+.page-header h3 { font-size: 18px; font-weight: 600; color: var(--jade-deep, #16384d); margin: 0; }
+.today { font-size: 12px; color: var(--ink-muted, #7a7770); }
 
-.page-header h3 {
-  font-size: 16px;
-  font-weight: 500;
-  color: #2c2c2a;
-  margin: 0;
-}
-
-.today {
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.cards {
+.record-btn {
+  color: #fff;
+  --van-button-default-color: #fff;
+  border-radius: 999px;
+  background: var(--jade, #2b5876);
+  border: none;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 4px;
 }
+.record-btn .van-button__text { color: #fff; }
+.record-btn .van-icon { color: #fff; }
+.record-btn:active { background: var(--jade-hover, #3a6e8f); }
 
-.dash-card {
-  flex: 1 1 calc(50% - 8px);
-  box-sizing: border-box;
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px;
-}
-
-.dash-card.asset {
-  background: #fdf3e3;
-}
-
-.dash-card.clickable {
+/* 银行存款主卡（浅色，略深） */
+.bank-card {
+  background: #d6e4ef;
+  color: var(--jade-deep, #16384d);
+  border: 1px solid var(--jade-bg, #f2f7fa);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
   cursor: pointer;
+  position: relative;
+  box-shadow: var(--shadow-sm);
   transition: box-shadow .15s;
 }
-.dash-card.clickable:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
-}
-.dash-more {
-  font-size: 11px;
-  color: #1989fa;
-  margin-top: 2px;
-}
+.bank-card:hover { box-shadow: var(--shadow-lg); }
+.bank-label { font-size: 13px; opacity: .85; }
+.bank-value { font-size: 30px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.bank-more { position: absolute; right: 20px; bottom: 20px; font-size: 12px; opacity: .85; }
 
-/* 银行存款流水弹窗 */
+/* 环形构成 2×2 */
+.donut-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.donut-card {
+  background: var(--paper, #fff);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.donut-title { font-size: 13px; font-weight: 600; color: var(--ink-soft, #3a3936); margin-bottom: 10px; }
+.donut-body { position: relative; display: flex; justify-content: center; }
+.donut-svg { width: 120px; height: 120px; display: block; }
+.donut-center {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center; pointer-events: none;
+}
+.donut-total { font-size: 16px; font-weight: 700; color: var(--ink, #1a1a18); font-variant-numeric: tabular-nums; }
+.donut-total-label { font-size: 10px; color: var(--ink-muted, #7a7770); }
+.donut-legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+.legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.legend-name { color: var(--ink-soft, #3a3936); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend-val { color: var(--ink, #1a1a18); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 欠款明细 */
+.section-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 0 8px; font-size: 14px; font-weight: 600; color: var(--ink-soft, #3a3936); }
+.more { font-size: 12px; color: var(--jade, #2b5876); font-weight: 500; cursor: pointer; }
+.owe-list { background: var(--paper, #fff); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.owe-empty { text-align: center; color: var(--ink-muted, #7a7770); font-size: 13px; padding: 24px 0; }
+.owe-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line, #e8e3d8); cursor: pointer; }
+.owe-row:last-child { border-bottom: none; }
+.owe-main { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.owe-party { font-size: 14px; font-weight: 500; color: var(--ink, #1a1a18); }
+.owe-kind { font-size: 11px; border-radius: 99px; padding: 1px 8px; border: 1px solid var(--line, #e8e3d8); color: var(--ink-muted, #7a7770); }
+.owe-kind.rent { border-color: #e0b459; color: #b08a2a; background: var(--terracotta-bg, #fbf6ea); }
+.owe-kind.dividend { border-color: var(--indigo, #5a9cb8); color: var(--indigo, #5a9cb8); background: var(--indigo-bg, #f2f8fb); }
+.owe-kind.other { border-color: var(--line, #e8e3d8); color: var(--ink-muted, #7a7770); }
+.owe-title { font-size: 12px; color: var(--ink-muted, #7a7770); }
+.owe-amount { font-size: 14px; font-weight: 600; color: var(--expense, #a33a2d); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.empty-guide { text-align: center; background: var(--paper, #fff); border-radius: 14px; padding: 24px; margin-top: 12px; color: var(--ink-muted, #7a7770); box-shadow: var(--shadow-sm); }
+
+/* 银行流水弹窗 */
 .bf-popup { padding: 14px 12px 18px; }
 .bf-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.bf-title { font-size: 15px; font-weight: 600; color: #1f2329; }
-.bf-close { font-size: 18px; color: #969799; cursor: pointer; padding: 2px; }
-.bf-loading, .bf-empty { padding: 40px 0; text-align: center; color: #969799; font-size: 13px; }
-.bf-table-wrap { max-height: 62vh; overflow-y: auto; border: 1px solid #f0f1f2; border-radius: 8px; }
+.bf-title { font-size: 15px; font-weight: 600; color: var(--ink, #1a1a18); }
+.bf-close { font-size: 18px; color: var(--ink-muted, #7a7770); cursor: pointer; padding: 2px; }
+.bf-loading, .bf-empty { padding: 40px 0; text-align: center; color: var(--ink-muted, #7a7770); font-size: 13px; }
+.bf-table-wrap { max-height: 62vh; overflow-y: auto; border: 1px solid var(--line, #e8e3d8); border-radius: 8px; }
 .bf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .bf-table th {
   position: sticky; top: 0; z-index: 1;
-  background: #f7f8fa; color: #969799; font-weight: 500; font-size: 11px;
-  padding: 8px 8px; text-align: left; border-bottom: 1px solid #ebedf0; white-space: nowrap;
+  background: var(--jade-light, #eaf1f6); color: var(--ink-muted, #7a7770); font-weight: 500; font-size: 11px;
+  padding: 8px 8px; text-align: left; border-bottom: 1px solid var(--line, #e8e3d8); white-space: nowrap;
 }
-.bf-table td { padding: 8px 8px; border-bottom: 1px solid #f2f3f5; color: #1f2329; white-space: nowrap; }
+.bf-table td { padding: 8px 8px; border-bottom: 1px solid var(--line, #e8e3d8); color: var(--ink, #1a1a18); white-space: nowrap; }
 .bf-table tr:last-child td { border-bottom: none; }
 .bf-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.bf-table td.income { color: #07c160; }
-.bf-table td.expense { color: #ee0a24; }
+.bf-table td.income { color: var(--jade, #2b5876); }
+.bf-table td.expense { color: var(--expense, #a33a2d); }
 .bf-table td.balance { font-weight: 600; }
 
-.dash-card.owe {
-  background: #fcebeb;
-}
-
-.dash-card.equity {
-  background: #eaf5ed;
-}
-
-.dash-label {
-  font-size: 11px;
-  color: #8f8e88;
-  margin-bottom: 4px;
-}
-
-.dash-value {
-  font-size: 17px;
-  font-weight: 600;
-  color: #2c2c2a;
-  font-variant-numeric: tabular-nums;
-}
-
-.income-strip {
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  font-size: 13px;
-  color: #5f5e5a;
-  flex-wrap: wrap;
-}
-
-.income-strip strong {
-  color: #0f6e56;
-  font-size: 18px;
-}
-
-.income-strip .sub {
-  margin-left: auto;
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #2c2c2a;
-}
-
-.more {
-  font-size: 12px;
-  color: #0f6e56;
-}
-
-.owe-list {
-  background: #fff;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.latest-txn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  cursor: pointer;
-}
-
-.latest-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.latest-date {
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.latest-cat {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.latest-note {
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.latest-amount {
-  font-size: 16px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.latest-amount.income {
-  color: #185fa5;
-}
-
-.latest-amount.expense {
-  color: #a32d2d;
-}
-
-.owe-empty {
-  text-align: center;
-  color: #8f8e88;
-  font-size: 13px;
-  padding: 24px 0;
-}
-
-.owe-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid #f0f0eb;
-  cursor: pointer;
-}
-
-.owe-row:last-child {
-  border-bottom: none;
-}
-
-.owe-main {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.owe-party {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.owe-kind {
-  font-size: 11px;
-  border-radius: 99px;
-  padding: 1px 8px;
-  border: 1px solid #e3e2dd;
-  color: #8f8e88;
-}
-
-.owe-kind.rent { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
-.owe-kind.dividend { border-color: #0f6e56; color: #0f6e56; background: #eaf5ed; }
-.owe-kind.other { border-color: #8f8e88; color: #5f5e5a; }
-
-.owe-title {
-  font-size: 12px;
-  color: #8f8e88;
-}
-
-.owe-amount {
-  font-size: 14px;
-  font-weight: 600;
-  color: #a32d2d;
-  font-variant-numeric: tabular-nums;
-}
-
-.empty-guide {
-  text-align: center;
-  background: #fff;
-  border-radius: 12px;
-  padding: 24px;
-  margin-top: 12px;
-  color: #8f8e88;
-}
-
-.quick-record {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 76px;
-  z-index: 50;
-  background: #0f6e56;
-  color: #fff;
-  border-radius: 999px;
-  padding: 12px 26px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-}
-
-.quick-icon {
-  font-size: 18px;
-}
-
 @media (min-width: 992px) {
-  .quick-record {
-    bottom: 40px;
-  }
-
-  .cards .dash-card {
-    flex: 1 1 23%;
-  }
+  .donut-grid { grid-template-columns: repeat(4, 1fr); }
+  .home-page { max-width: none; }
 }
 </style>

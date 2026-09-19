@@ -396,7 +396,7 @@ padding-bottom: 60px;
 }
 
 .capital-card.warning {
-  border: 1px solid #e88a3a;
+  border: 1px solid var(--warn);
 }
 
 .capital-card.asset {
@@ -434,11 +434,11 @@ padding-bottom: 60px;
 
 .warning-banner {
   background: #fef3e8;
-  border: 1px solid #e88a3a;
+  border: 1px solid var(--warn);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #a8601a;
+  color: var(--warn);
   margin-bottom: 12px;
   display: flex;
   align-items: center;
@@ -562,7 +562,7 @@ padding-bottom: 60px;
 .l2-chip.residual { border-color: var(--jade); color: var(--jade); }
 .l2-chip.spending { border-color: var(--indigo); color: var(--indigo); }
 .l2-chip.equity { border-color: var(--jade); color: var(--jade); background: var(--jade-light); }
-.l2-chip.asset { border-color: #7a4f0f; color: #7a4f0f; background: #fdf3e3; }
+.l2-chip.asset { border-color: var(--warn); color: var(--warn); background: #fdf3e3; }
 .l2-chip.reconcile { border-color: var(--indigo); color: var(--indigo); background: var(--indigo-light); }
 
 .l2-count {

@@ -179,7 +179,7 @@ async function onLogout() {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #ee0a24;
+  background: var(--danger);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -191,7 +191,7 @@ async function onLogout() {
   flex-shrink: 0;
 }
 .side-badge:hover {
-  background: #d80a1f;
+  background: var(--danger);
 }
 
 .side-link.active .side-nav-icon {

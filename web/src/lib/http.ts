@@ -83,3 +83,30 @@ export const api = {
   del: <T>(path: string) =>
     request<T>(path, { method: 'DELETE' }),
 }
+
+// 下载文件：返回二进制 Blob 与建议文件名（从 Content-Disposition 解析，缺省用 path 末尾段）
+export async function downloadFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+  if (res.status === 401) {
+    if (onUnauthorized) onUnauthorized()
+    throw new Error('请先登录')
+  }
+  if (!res.ok) {
+    const errData = await res.json().catch(() => null)
+    const msg = errData?.error?.message || errData?.data?.message || `请求失败 (${res.status})`
+    const err: any = new Error(msg)
+    err.status = res.status
+    throw err
+  }
+  // 解析 Content-Disposition: attachment; filename="xxx.db"
+  let filename = path.slice(path.lastIndexOf('/') + 1)
+  const cd = res.headers.get('Content-Disposition')
+  if (cd) {
+    const m = cd.match(/filename\*?=(?:"([^"]+)"|([^;]+))/i)
+    if (m) filename = (m[1] || m[2] || '').trim() || filename
+  }
+  return { blob: await res.blob(), filename }
+}

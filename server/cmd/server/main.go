@@ -214,6 +214,18 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		platform.OK(c, gin.H{"ok": true, "message": "恢复成功，请重新登录"})
 	})
 
+	authed.GET("/api/backups/:id/download", func(c *gin.Context) {
+		id := filepath.Base(c.Param("id"))
+		backupPath := filepath.Join(a.cfg.BackupDir, id)
+		info, err := os.Stat(backupPath)
+		if err != nil || info.IsDir() {
+			platform.Fail(c, http.StatusNotFound, "BACKUP_NOT_FOUND", "备份不存在")
+			return
+		}
+		// FileAttachment 自动写入 Content-Disposition: attachment，并流式发送
+		c.FileAttachment(backupPath, id)
+	})
+
 	authed.DELETE("/api/backups/:id", func(c *gin.Context) {
 		id := filepath.Base(c.Param("id"))
 		items, err := repo.List()
