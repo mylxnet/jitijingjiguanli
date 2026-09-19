@@ -1,0 +1,23 @@
+# 用 GitHub Releases 下载的单文件可执行程序直接打包运行镜像（无需源码编译）。
+# 前置：从 https://github.com/mylxnet/jitijingjiguanli/releases 下载 `jitizhang`
+#       放到本目录（deploy/），再执行：
+#   docker build -f deploy/Dockerfile.release -t jititaizhang:release .
+#   docker run -d --name jt -p 8080:8080 -v jt_data:/data -v jt_backups:/backups \
+#        -e DATA_DIR=/data -e APP_BACKUP_DIR=/backups -e APP_AUTO_BACKUP=1 \
+#        jititaizhang:release
+
+FROM alpine:3.20
+# 使用阿里云 Alpine 源 + 安装时区(tzdata)与证书（项目统一东八区时间）
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates tzdata
+# 直接复用 release 二进制，保证与 GitHub 产物完全一致
+COPY jitizhang /jitizhang
+RUN chmod +x /jitizhang
+EXPOSE 8080
+VOLUME ["/data", "/backups"]
+ENV APP_PORT=8080 \
+    DATA_DIR=/data \
+    APP_BACKUP_DIR=/backups \
+    APP_KEEP_BACKUP=30 \
+    APP_AUTO_BACKUP=1
+ENTRYPOINT ["/jitizhang"]

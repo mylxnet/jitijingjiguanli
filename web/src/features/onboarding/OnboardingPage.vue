@@ -634,13 +634,13 @@ export default { methods: { groupByL1 } }
 <style scoped>
 /* ========== 引导页局部变量（对齐 demo 配色，不污染全局主题） ========== */
 .onboarding-page {
-  --jade: #1f5c48;
-  --jade-deep: #143d30;
-  --jade-soft: #e5f5f4;
-  --blue: #2f6fb2;
-  --blue-soft: #eaf1fa;
-  --violet: #7a5fa8;
-  --violet-soft: #f1eafc;
+  --jade: #2b5876;
+  --jade-deep: #16384d;
+  --jade-soft: #eaf1f6;
+  --blue: #5a9cb8;
+  --blue-soft: #e8f1f6;
+  --violet: #9a7fb0;
+  --violet-soft: #f1edfc;
   --radius: 16px;
 
   min-height: 100vh;
@@ -655,7 +655,7 @@ export default { methods: { groupByL1 } }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand .logo {
   width: 42px; height: 42px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--jade), #2f9e77); color: #fff;
+  background: linear-gradient(135deg, var(--jade), var(--indigo)); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 20px; font-weight: 700;
 }
@@ -773,7 +773,7 @@ td { padding: 10px; border-top: 1px solid var(--line, #efe9dd); }
 /* ===== 导入汇总/错误 ===== */
 .sum-line { font-size: 13px; padding: 12px; background: var(--paper, #faf8f4); border-radius: 10px; margin-top: 12px; }
 .sum-line strong { color: var(--jade); }
-.err-line { color: #c0392b; background: #fdf0ee; padding: 6px 10px; border-radius: 6px; margin: 4px 0; font-size: 12px; }
+.err-line { color: var(--danger, #a33a2d); background: #fdf3f1; padding: 6px 10px; border-radius: 6px; margin: 4px 0; font-size: 12px; }
 
 /* ===== footer ===== */
 .footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line, #efe9dd); }
@@ -797,7 +797,7 @@ td { padding: 10px; border-top: 1px solid var(--line, #efe9dd); }
 .yuan-input { width: 120px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; text-align: right; }
 .yuan-input.big { width: 160px; font-size: 16px; padding: 10px 14px; }
 .yuan-tail { color: var(--ink-muted); font-size: 12px; }
-.bank-block { background: linear-gradient(135deg, #eef6f1 0%, #fdf4ec 100%); border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.bank-block { background: linear-gradient(135deg, var(--jade-bg, #f2f7fa) 0%, var(--terracotta-bg, #fbf6ea) 100%); border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .bank-title { font-weight: 600; flex: 1; }
 .group-title { font-size: 12px; font-weight: 600; color: var(--terracotta, #b86b3d); padding: 8px 0 4px; border-bottom: 1px dashed #eee; }
 .presets-title { font-weight: 600; color: var(--terracotta, #b86b3d); margin-bottom: 8px; }
