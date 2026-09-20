@@ -364,6 +364,7 @@ import { todayStr } from '../../../types/api'
 interface Category {
   id: number; name: string; level: number; parentId?: number;
   children?: Category[]; balanceCents?: number;
+  kind?: 'equity' | 'asset';
 }
 interface Party {
   id: number; name: string; type: string; types: string[];
@@ -795,7 +796,7 @@ function exportCSV(tab: string) {
 async function load() {
   try {
     const [cats, p] = await Promise.all([
-      api.get('/categories'),
+      api.get<{ data: Category[] } | Category[]>('/categories'),
       api.get<{ data: Party[] } | Party[]>('/parties'),
     ])
     categories.value = Array.isArray(cats) ? cats : (cats?.data || [])

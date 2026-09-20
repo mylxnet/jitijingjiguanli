@@ -8,6 +8,27 @@
 > v0.20 合同到期管理与归档、v0.21 看板环形构成改造+全站配色归一与浅色化、v0.22 全站配色 token 化改造与对比度达标(WCAG AA)。
 > 自 v0.23 起恢复逐版记录。
 
+## [0.23.1]
+
+### 修复
+- **汇总页下钻跳转失败**：`web/src/features/summary/SummaryPage.vue` 的 `goListWithFilter()` 把 query 写成
+  `from: range.from, to: range.to`，而该组件不存在 `range` 变量 —— 点任意一条流水即在 `router.push` 前抛
+  `ReferenceError: range is not defined`，跳转与筛选全部失效。改为使用函数内已算好的整年局部常量
+  `from`/`to`（`${年}-01-01` ~ `${年}-12-31`），与函数注释「带该科目 + 该年筛选」的原意一致。
+  ⚠️ 该 bug 已随 0.23.0 进入 Releases 产物与 ACR 镜像，**线上必须升到本版本才算修掉**。
+- 前端类型检查 8 处报错全部清零（`npx vue-tsc --noEmit` → 0），涉及 5 个文件：
+  `ContractsPage.vue`（mammoth `ArrayBufferLike` 入参、`expiresAt` 可空性）、`ReceivablesList.vue`
+  （`van-tag` 的 `type` 收紧为 `TagProps['type']`）、`InvestmentsPage.vue`（本地 `Category` 缺 `kind`、
+  `/categories` 响应泛型）、`OperationLogDialog.vue`（`/operation-logs` 响应泛型）。均为类型层收口，运行时行为不变。
+
+### 工具链
+- `cd web && npm run build`（= `vue-tsc -b && vite build`）此前因这 8 处错误长期必失败，**现恢复可用**，
+  本地验收改回以它为准；CI 的 `npx vite build`（跳过类型检查）保留为遗留收紧项。
+
+### 影响面
+- 5 个前端文件，+14 / −8；接口契约、数据模型、迁移文件均未变（`schema_migrations` 仍 19 个迁移）。
+- 逐条根因、修法与实机验收证据见 `docs/22-前端待修类型错误清单.md` §8。
+
 ## [0.23.0]
 
 ### 修复

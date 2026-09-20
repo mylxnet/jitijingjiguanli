@@ -339,7 +339,8 @@ function detectPreviewKind(mime: string, fileName: string): 'text' | 'image' | '
 // ============ 异步渲染器 ============
 async function renderWord(dataUrl: string) {
   const bytes = base64DataUrlToUint8(dataUrl)
-  const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer })
+  // Uint8Array.buffer 的类型是 ArrayBufferLike，mammoth 只收 ArrayBuffer（运行时同物，仅收口类型）
+  const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer as ArrayBuffer })
   previewHtmlContent.value = result.value
   // mammoth 可以继续解析 warnings，但我们只需要 HTML
 }
@@ -480,7 +481,7 @@ function isArchivedContract(c: Contract): boolean {
   const [ty, tm, td] = cnToday().split('-').map(Number)
   const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000)
   if (days >= 0) return false
-  return contracts.value.some(o => o.partyId === c.partyId && o.expiresAt !== null && o.expiresAt > c.expiresAt!)
+  return contracts.value.some(o => o.partyId === c.partyId && o.expiresAt != null && o.expiresAt > c.expiresAt!)
 }
 // 三类统计单位数（去重）；无到期日合同的单位不计入三卡
 const expiryStats = computed(() => {

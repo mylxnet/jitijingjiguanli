@@ -105,7 +105,8 @@ function toggleExpand(id: number) {
 async function fetchLogs() {
   loading.value = true
   try {
-    const res = await api.get('/operation-logs')
+    // 后端为 { data: { items } }；历史上也直出过裸 { items }，两种形状都兜住
+    const res = await api.get<{ data?: { items?: OpLog[] }; items?: OpLog[] }>('/operation-logs')
     const data = res.data || res
     logs.value = data.items || []
   } catch {

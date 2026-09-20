@@ -107,6 +107,7 @@
 import { ref, computed, watch, onMounted, defineProps, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showDialog } from 'vant'
+import type { TagProps } from 'vant'
 import { api } from '../../../lib/http'
 
 // 统一从 API 响应里提取数组（兼容 data / data.items / data.Items / 直接数组）
@@ -146,8 +147,10 @@ type YearKey = 'all' | 'none' | number
 const activeYear = ref<YearKey>('all')
 
 // 状态判定：按已收/未收对照应收金额；坏账结清单独标识
-const statusOf = (r: Receivable) => r.outstandingCents <= 0 ? ((r.writeoffCents || 0) > 0 ? 'writeoff' : 'closed') : (r.paidCents > 0 ? 'partial' : 'open')
-const statusMeta: Record<string, { text: string; type: string }> = {
+type RecvStatus = 'open' | 'partial' | 'closed' | 'writeoff'
+type TagType = TagProps['type']
+const statusOf = (r: Receivable): RecvStatus => r.outstandingCents <= 0 ? ((r.writeoffCents || 0) > 0 ? 'writeoff' : 'closed') : (r.paidCents > 0 ? 'partial' : 'open')
+const statusMeta: Record<RecvStatus, { text: string; type: TagType }> = {
   open:     { text: '未收',   type: 'danger' },
   partial:  { text: '部分收', type: 'warning' },
   closed:   { text: '结清',   type: 'success' },

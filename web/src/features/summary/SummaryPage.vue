@@ -275,8 +275,8 @@ function goListWithFilter(t: Transaction) {
   router.push({
     path: '/transactions',
     query: {
-      from: range.from,
-      to: range.to,
+      from,
+      to,
       categoryId: String(drillCat.value.id),
       categoryName: drillCat.value.name,
     },
