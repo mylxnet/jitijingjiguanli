@@ -127,7 +127,8 @@ DATA_DIR=/var/lib/jitai APP_BACKUP_DIR=/var/backups/jitai ./jitizhang
 **B. Docker 预构建镜像（阿里云 ACR）**：镜像 `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z`（同时维护 `latest`），容器内约定 `DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`。挂好这两个目录后：
 
 ```bash
-docker compose -f deploy/docker-compose.hub.yml up -d   # 先把 image 换成上面的仓库地址与标签
+docker login registry.cn-hangzhou.aliyuncs.com    # 凭据不入库
+docker compose -f deploy/docker-compose.hub.yml up -d   # image 已写好当前版本，升级只改标签
 ```
 
 **C. 本机自行构建**（三步，手工执行）：
