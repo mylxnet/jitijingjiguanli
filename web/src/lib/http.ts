@@ -14,6 +14,10 @@ interface RequestOptions {
   params?: Record<string, string | number | boolean | undefined>
 }
 
+// 免登录的认证接口：它们返回 401 是业务结果（如"账号或密码错误"），不是会话失效，
+// 不能触发 onUnauthorized，也不能把服务端的 message 换成"请先登录"。
+const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/reset-password']
+
 let onUnauthorized: (() => void) | null = null
 
 export function setOnUnauthorized(fn: () => void) {
@@ -49,7 +53,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       : undefined,
   })
 
-  if (res.status === 401) {
+  if (res.status === 401 && !PUBLIC_AUTH_PATHS.includes(path)) {
     if (onUnauthorized) {
       onUnauthorized()
     }

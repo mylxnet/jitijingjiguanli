@@ -1,11 +1,11 @@
 <img width="1157" height="842" alt="image" src="https://github.com/user-attachments/assets/e3f776bd-16b7-4ca6-9428-5906ebfd6667" />
 本系统是村级集体经济组织的记账管理平台，管钱、管单位、管投资，每一笔账都留痕、可回滚。
 
-当前版本：v0.22.0
+当前版本：v0.23.0
 
 ## 1 第一次使用，三分钟建好账
 
-打开系统后进入登录页。首次使用点注册，注册一个组织，系统会按集体经济常用科目预设好账套，不用自己建科目。
+打开系统后进入登录页。首次使用点注册，注册一个组织，系统会按集体经济常用科目预设好账套，不用自己建科目。「注册组织」入口只在系统里还没有任何账号时出现，注册成功后自动隐藏；忘了密码可点登录页「忘记密码？」，密码会重置为默认口令 `admin888`，登录后请立即在设置里改掉。
 
 注册登录后，首次进入会出现建账向导，可二选一。
 
@@ -110,4 +110,36 @@
 | web/src/components/ | 无业务含义的通用 UI 组件 | 含业务逻辑的组件 |
 | server/internal/ | 后端 handler / service / repo | 配置与迁移 |
 | server/migrations/ | 版本化 SQL 迁移 | 手工 SQL |
-| deploy/ | Dockerfile / compose / env 样例 | 真实密钥 |
+| deploy/ | Dockerfile / compose / env 样例 / CHANGELOG | 真实密钥 |
+| docs/ | 需求 / PRD / 设计 / 开发技术文档 / 操作手册 / 各版本方案与验收记录 | 临时脚本 |
+| web/dist、server/cmd/server/web/ | 前端构建产物与后端内嵌目录（构建生成，不入库） | 手写代码 |
+
+## 9 部署与升级
+
+默认端口 8080；数据目录必须放本地盘（禁 SMB/NFS）。凭据只在部署时按环境自行设置，不写进仓库。
+
+**A. 单文件可执行（GitHub Releases）**：下载 `jitizhang`（Linux amd64，已内嵌前端），赋可执行权限后运行：
+
+```bash
+DATA_DIR=/var/lib/jitai APP_BACKUP_DIR=/var/backups/jitai ./jitizhang
+```
+
+**B. Docker 预构建镜像（阿里云 ACR）**：镜像 `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z`（同时维护 `latest`），容器内约定 `DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`。挂好这两个目录后：
+
+```bash
+docker compose -f deploy/docker-compose.hub.yml up -d   # 先把 image 换成上面的仓库地址与标签
+```
+
+**C. 本机自行构建**（三步，手工执行）：
+
+```bash
+cd web && npm ci && npx vite build                                   # 不要用 npm run build：它带 vue-tsc，会因 docs/22 登记的 8 处历史类型错误失败
+rm -rf ../server/cmd/server/web && mkdir -p ../server/cmd/server/web
+cp -r dist/. ../server/cmd/server/web/                               # 必须先清空，否则旧 chunk 堆积
+cd ../server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../jitizhang ./cmd/server
+```
+
+镜像：`deploy/build-image.sh`，或按 `docs/04-dev-manual.md` §8.5 用 `deploy/Dockerfile.local` 构建。
+⚠️ `scripts/build.sh` 仍是早期 Windows exe 版本（走 `npm run build`、产物 `server/bin/jititaizhang.exe`），待后续统一。
+
+升级与换库：`docker pull` 新标签 → `docker compose up -d`。**外部替换/删除 `/data` 下的库文件后必须重启容器**——迁移只在进程启动时执行一次，不重启会表现为「注册 400、登录 401」这类看着像密码错误的现象。备份默认每日 03:00 自动执行、保留 30 份（`APP_AUTO_BACKUP=0` 关闭，`APP_KEEP_BACKUP` 调份数）。

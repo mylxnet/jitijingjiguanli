@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.1（对齐代码 **v0.5.0**，2026-09-03 核对） |
+| 文档版本 | v1.2（**§2.1/§3.3/§6/§8/§10 认证与部署链路已对齐代码 v0.23.0**，2026-09-20 核对；§1.3 里程碑摘要之外的历史版本明细以 `git log` 为准） |
 | 项目代号 | 集体台账（jititaizhang） |
 | 定位 | 集体经济组织内部收支台账：多组织自注册、移动优先、局域网自托管 |
-| 关联文档 | [需求澄清 01](./01-requirements.md) · [PRD 02](./02-prd.md) · [设计 03](./03-design.md) · [CHANGELOG](../CHANGELOG.md) |
+| 关联文档 | [需求澄清 01](./01-requirements.md) · [PRD 02](./02-prd.md) · [设计 03](./03-design.md) · [CHANGELOG](../deploy/CHANGELOG.md) · [v0.23 认证页修订](./23-v0.23-认证页错误提示与会话拦截修复.md) · [前端待修类型错误清单 22](./22-前端待修类型错误清单.md) |
 | 编写原则 | 本文档按**当前代码与测试实况**撰写；「待办/未实现」均显式标注，不与设计稿混淆 |
 
 ---
@@ -44,7 +44,11 @@
 | v0.3.7 | 往来只单位、新增二级科目单位下拉、汇总点科目看当月流水 | ✅ |
 | v0.4 | 模型重构（资产/权益、到账算收益、破坏性迁移 006）、看板、批量计提+标准一键结转、双端壳 | ✅ |
 | v0.4.1 | 桌面去手机感、底部弹层居中、原生下拉（NativeSelect）、快速记账（10 业务模板自动入账） | ✅ |
-| — | Docker/embed 一体化部署、PWA 收尾 | ⬜ 待办骨架（见 §9.5） |
+| v0.5 ~ v0.13 | 科目期初、往来单位类型化与资料扩展、年度结转预览、历年欠款分年度管理与整额跨单核销、投资管理 + 532 分配、引导页 Excel 导入建账（统一东八区/版本号/备份约定） | ✅（明细见 `git log` 与 `deploy/CHANGELOG.md` 顶部说明） |
+| v0.14 ~ v0.18 | 再投资收益闭环、引导页服务端权威标记、看板银行流水弹窗、往来单位数据缺失提醒、移动端 tab 改「投资/流转」、登录页去预填凭据与注册入口按需显示 | ✅ |
+| v0.19 ~ v0.22 | 坏账核销 + 往来单位删除 + 快速记账新模板、合同到期管理与归档 + 删除二次验证、看板环形构成改造（资金/在外投资/欠款/可支出）+ 全站配色归一与浅色化、全站配色 token 化改造与对比度达标（WCAG AA）；交付链路改为 WSL 构建 + GitHub Actions 产物 + 阿里云 ACR 镜像 | ✅ |
+| v0.23 | 认证页错误提示同行化（登录/注册）、公开认证接口不再误判 401 为会话失效、认证页容器去重复导致的整页可滚与点击跳动 | ✅ |
+| — | PWA 收尾 | ⬜ 待办 |
 
 ---
 
@@ -58,8 +62,10 @@
 
 | 功能 | 说明 | 约束 |
 |---|---|---|
-| 自助注册 | 组织名 + 管理员账号 + 密码 → 单事务建组织 + 账号 + 预置科目并自动登录 | 账号全局唯一；密码 ≥ 6 位；组织名可重复 |
+| 自助注册 | 组织名 + 管理员账号 + 密码 → 单事务建组织 + 账号 + 预置科目并自动登录 | 账号全局唯一；密码 ≥ 6 位；组织名可重复；**仅系统中尚无用户时开放**（`GET /api/auth/registration-status`，`CountUsers()>0` 即 `REGISTRATION_CLOSED`） |
 | 登录/登出 | HttpOnly Cookie（`jt_session`），7 天有效 | 登录错误统一 401，不区分账号是否存在（防枚举） |
+| 忘记密码 | 登录页「忘记密码？」→ `/reset-password` 页自动 `POST /api/auth/reset-password`（**公开接口，无需登录**），成功后密码重置为 `admin888` 并 3 秒跳回登录页 | 后端 `FindAnyUser()` 按 `id ASC LIMIT 1` 取用户，即**只重置最早注册的那个账号**；多组织部署时不保证命中的就是发起者的账号，且任何人可达该接口 —— 仅限可信内网自托管，重置后应立即在「设置 → 修改密码」换掉 |
+| 认证页错误提示 | 与输入框**同一行右侧**显示，透传服务端 `error.message`；不撑高布局、不产生页面滚动 | 公开认证路径（login/register/reset-password）的 401/400 **不触发**「请先登录 + 跳登录页」；详见 `23-v0.23-认证页错误提示与会话拦截修复.md` |
 | 修改密码 | 校验原口令后更新 bcrypt 哈希 | 新密码 ≥ 6 位 |
 | 组织隔离 | 会话携带 orgID，服务层所有 SQL 按 org 过滤 | 跨组织访问一律 404/不可见（含测试覆盖） |
 
@@ -188,14 +194,14 @@ Go 后端（Gin）
 
 | 路径 | 内容 |
 |---|---|
-| `src/features/auth/` | Login / Register / Pinia store |
+| `src/features/auth/` | Login / Register / ResetPassword / Pinia store（错误提示与输入框同行右侧，见 `23-v0.23-...`） |
 | `src/features/transaction/` | Home 记账、List 流水（含筛选/编辑/作废/留痕/导出） |
 | `src/features/summary/` | 汇总页（四卡资金构成、科目余额、区间收支、导出） |
 | `src/features/category/` | 科目管理（含科目间转账、资金划转、资产二级、留痕） |
 | `src/features/contacts/` | 往来页（对象列表/详情、登记应收、收款/抵销、核销记录） |
 | `src/features/settings/` | 设置页（银行期初、科目入口、改密、备份恢复、登出） |
 | `src/components/` | 跨特性通用组件（BottomNav、ChangeLogDialog 等） |
-| `src/lib/` | http 封装（同源 /api、401 拦截）、download |
+| `src/lib/` | http 封装（同源 /api、401 会话失效拦截，**公开认证路径 `/auth/login`·`/auth/register`·`/auth/reset-password` 例外**）、download |
 | `src/types/api.ts` | 前后端契约 + 金额/日期工具 |
 
 ---
@@ -261,12 +267,17 @@ Go 后端（Gin）
 
 统一响应：成功 `{"data":...}`；失败 `{"error":{"code","message","details?"}}`。
 公共：401 未登录；400 参数/业务拒绝（多数带中文 message）；404 资源不存在或**跨组织不可见**；409 冲突；500 服务异常。
+⚠️ 前端的 401＝会话失效这一等式**只对需登录接口成立**；`/auth/login`·`/auth/register`·`/auth/reset-password` 的 401/400 是业务结果，透传 `error.message`（v0.23 修复，见 `23-v0.23-认证页错误提示与会话拦截修复.md`）。
+下表为**主干接口**，各版本新增接口以代码 `*/handler.go` 的 `Register` 为准。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | 健康检查 |
-| POST | `/api/auth/register` | 注册组织（自动登录） |
+| POST | `/api/auth/register` | 注册组织（自动登录）；系统已有用户 → `REGISTRATION_CLOSED` |
 | POST | `/api/auth/login` / `logout` | 登录/登出 |
+| GET | `/api/auth/registration-status` | 公开：系统是否仍可注册（前端据此决定「注册组织」入口是否显示） |
+| POST | `/api/auth/reset-password` | 公开：忘记密码，重置**最早注册的那个账号**为 `admin888` |
+| GET | `/api/me`（别名 `/api/auth/me`） | 需登录：`{userID, orgID, orgName, onboarded}` |
 | PUT | `/api/auth/password` | 修改密码（需登录） |
 | GET/POST/PUT/DELETE | `/api/categories` `/api/categories/:id` | 科目树/建/改/删 |
 | GET/POST/PUT | `/api/transactions` `/api/transactions/:id` | 流水列表/记一笔/编辑作废 |
@@ -368,36 +379,50 @@ Go 后端（Gin）
 | `APP_AUTO_BACKUP` | 1 | 每日 03:00 自动备份开关（0 关闭） |
 | `APP_SECURE_COOKIE` | 空 | =1 时 Cookie 加 Secure（HTTPS 场景） |
 
-### 8.2 本地开发启动
+### 8.2 本地开发启动（当前实机环境：WSL）
+
+工具链在 **WSL 发行版 `lxsyzd`（root）**：Go 1.27.0（`/usr/local/go`）、Node v22.23.2（`/usr/local/node`），均软链到 `/usr/local/bin`；`GOPROXY=https://goproxy.cn,direct`。Windows 侧通过 WSL 自动端口转发直接访问 `http://localhost:8080`。
 
 ```bash
-# 后端（Windows 本机 Go 1.27 或 .tools/go；模块走 goproxy.io）
-cd server
-APP_PORT=8080 DATA_DIR=../data go run ./cmd/server
-# 前端
-cd web && npm install && npm run dev   # http://localhost:5173，/api 代理到 :8080
+# 后端（:8080）。⚠️ SQLite 数据目录必须在 WSL 本地盘（如 ~/jitai-debug/data），
+#    绝不能放 /mnt/e（SMB）；调试用副本要连同 .db-wal/.db-shm 一起拷，否则读到旧库。
+cd /mnt/e/traework/jizhang/server
+DATA_DIR=~/jitai-debug/data APP_AUTO_BACKUP=0 APP_PORT=8080 go run ./cmd/server
+
+# 前端热更新（:5173，/api 代理到 :8080，hash 路由 → http://localhost:5173/#/login）
+cd /mnt/e/traework/jizhang/web && npm ci && npm run dev
 ```
+
+**改前端要让 :8080 看到（go:embed 单二进制）**：`npx vite build` → **先清空**再复制 `web/dist/.` 到 `server/cmd/server/web/` → 重启 `go run` → `curl :8080/api/health` → 到下发的那个 css/js 里 `grep -F` 新类名确认真的换掉了。`scripts/build.sh` 已包含该复制步骤；`server/cmd/server/web/*` 在 `.gitignore` 中（构建产物不入库，CI 自行生成）。
 
 ### 8.3 质量关卡
 
 ```bash
-cd server && go vet ./... && go test ./...   # 12 个包
-cd web && npx vue-tsc -b && npx vite build
+cd server && go vet ./... && go test ./...   # 12 个包，全绿约 4 分钟
+cd web && npx vite build                     # 构建验收用这条
+cd web && npx vue-tsc --noEmit               # 类型检查：当前有 8 处既有报错（清单见 docs/22），不阻塞发布
 ```
+
+⚠️ `npm run build` = `vue-tsc -b && vite build`，因上述 8 处历史类型错误**必然失败**；CI 与本地验收一律走 `npx vite build`（`.github/workflows/release.yml` 同口径）。
 
 ### 8.4 数据安全注意
 
 - 数据目录与备份目录都要有异地/异盘副本（需求 R3：备份不与数据同盘）。
 - 禁止把 `data/` 放到 NFS/SMB 网络盘（SQLite 锁不可靠）。
 - `data/`、`backups/`、`web/node_modules`、`.tools/` 均不入库（`.gitignore`）。
+- **迁移只在进程启动时执行一次**（`platform.Migrate`，见 `server/cmd/server/main.go`）。容器运行期间在外部删除/替换 `/data` 下的库文件，进程仍握着已删除的 inode，会出现「注册 400、登录 401」这类看似凭据错误的现象 —— 换库/挂错卷/手工塞回备份文件后**必须 `docker restart`（或重启进程）**再验，不要先怀疑密码。（该场景源于 2026-09-20 生产事故排查，实机复核待完成。）
+- 迁移失败会 `log.Fatalf`，配合 `restart: unless-stopped` 会形成重启循环；此时先查日志而不是反复重建容器。
 
-### 8.5 ⬜ 待办：Docker / 一体化部署
+### 8.5 交付产物与镜像（已实装）
 
-- `deploy/Dockerfile`、`docker-compose.yml`、`scripts/build.sh` 目前为**骨架占位**：
-  - 后端尚未 embed 前端产物（main.go 无静态资源托管）；
-  - Dockerfile 仅有 `FROM scratch`，未完成多阶段构建。
-- 到达成设计稿的「单容器 + 内嵌静态资源 + scratch」前，请以 §8.2 开发态运行。
-- README「本地启动」小节亦待补（由部署收尾一并完成）。
+| 链路 | 触发 | 产物 |
+|---|---|---|
+| GitHub Releases | **推送新的 `v*` 标签**（重复推同一标签不会重跑 CI） | 单文件可执行 `jitizhang`（Linux amd64，内嵌前端，监听 :8080），`generate_release_notes: true` |
+| 阿里云 ACR 镜像 | 在 WSL 手工构建：`docker build --provenance=false --sbom=false -f deploy/Dockerfile.local` | `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z` + `latest`（同一 digest）；镜像仓库地址与口令在**仓库外**的本机规则文件，不入库、不进命令行回显 |
+| 直接打包 GitHub 产物 | `deploy/Dockerfile.release` | 用 Releases 已构建的二进制做薄镜像（无需在 NAS 上编译） |
+
+编排文件：`deploy/docker-compose.yml`（本地构建）、`docker-compose.hub.yml`（拉公共仓库）、`docker-compose.nas.yml`、`deploy/.env.example`、`deploy/fnos.sh`、`scripts/docker-push.sh`。
+容器内约定：`DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`、`APP_KEEP_BACKUP=30`、`APP_AUTO_BACKUP=1`（当前镜像以 root 运行，如需非 root 要自行调整挂载目录属主）。
 
 ---
 
@@ -405,7 +430,7 @@ cd web && npx vue-tsc -b && npx vite build
 
 ### 9.1 环境与约定
 
-- Go：`go.mod` 声明 go 1.27；本机无全局 Go 时用托管工具链 `E:\work\jizhang\.tools\go\bin\go.exe`，模块下载 `GOPROXY=https://goproxy.io,direct`。
+- Go：`go.mod` 声明 go 1.27；当前实机用 WSL `lxsyzd` 的 `/usr/local/go`（见 §8.2），模块下载 `GOPROXY=https://goproxy.cn,direct`。仓库曾位于 `E:\work\jizhang`，其托管工具链 `.tools/go` 方案已废弃。
 - 新增后端特性包步骤：`model.go → repo.go → handler.go`；handler 提供 `NewHandler(db) *Handler` 与 `Register(r gin.IRouter)`；在 `cmd/server/main.go buildRouter` 里 `x.NewHandler(a.db).Register(authed)` 接线。
 - 每个列表/写接口都带 org 过滤；跨组织返回 404；新模块补「跨组织不可见」测试。
 - 写操作（建/改/作废）调用 `changelog.LogCreate/LogChangeVoid/LogUpdateField` 留痕。
@@ -425,6 +450,7 @@ cd web && npx vue-tsc -b && npx vite build
 4. D11：登记欠款 → 现金收一部分 → 抵销 → 结清 → 作废核销回滚。
 5. F7：立即备份 → 改动数据 → 恢复 → 数据回退、强制重登。
 6. F5：导出收支汇总/科目余额表 xlsx 直接可打印。
+7. 认证页：错误口令 → 提示出现在密码行右侧且按钮不位移；`/api/me` 等需登录接口在会话失效时仍跳登录页；`#/register` 空表提交后卡片高与按钮 top 不变、页面无可滚区。
 
 ---
 
@@ -433,11 +459,14 @@ cd web && npx vue-tsc -b && npx vite build
 | 项 | 状态 |
 |---|---|
 | Vite 实装 6.4.3 vs 设计 8.2.1 | 待用户拍板（可暂不处理） |
-| Docker/embed 一体化部署 | 骨架占位，见 §8.5 |
-| 生产静态资源托管（单二进制） | 未实现（开发态 = Vite + Go 双进程） |
+| Docker/内嵌一体化部署 | **已实装**（go:embed 单二进制 + GitHub Actions 产物 + ACR 镜像），见 §8.5 |
+| 前端类型检查欠账 | `npx vue-tsc --noEmit` 有 **8 处既有报错**（6 个文件），用户指示暂不改；清单与修法见 `docs/22-前端待修类型错误清单.md`。其中 `SummaryPage.vue:278-279` 的 `range` 未定义是**运行时真 bug**，优先级最高 |
+| `http.ts` 的 `downloadFile()` | 内部仍有一份「401 → 请先登录」逻辑未纳入 v0.23 改造（下载接口均需登录，暂无误判场景）；后续若要复用需同步白名单 |
+| `/api/auth/reset-password` 设计取向 | 公开、无限流、只重置 `id` 最小的账号为 `admin888` —— 属**可信内网自托管**取舍；公网暴露前应加限流/验证码或改为需组织者凭证 |
+| 生产「删库后登录失败」事故 | 未结案：判断为需 `docker restart`（§8.4），待实机复核；`/backups` 侧数据救援另计 |
 | PWA 收尾、启动自检（网络盘检测） | 设计有、未实现 |
 | 变更历史查看覆盖范围 | 流水/转账（流水页编辑弹层）、资金划转（科目页留痕）已可用；应收核销/科目自身留痕存于库中，暂未全部做成界面 |
-| 本机测试数据 | `data/` 含冒烟组织（迁移 006 后仅 demo/test1234），正式使用建议删除重建 |
+| 本机测试数据 | 调试库副本在 WSL `~/jitai-debug/data`（不入库）；仓库根 `data/` 为开发库，正式使用建议删除重建 |
 
 ---
 
@@ -447,3 +476,4 @@ cd web && npx vue-tsc -b && npx vite build
 |---|---|
 | 2026-09-03 | v1.0：按 v0.3.6 代码实况撰写（需求/架构/数据/接口/操作/部署/开发指南），待办显式标注 |
 | 2026-09-03 | v1.1：同步 v0.3.7 / v0.4 / v0.4.1 —— 迁移 005/006、资产权益模型与看板/批量计提/标准结转、双端适配与快速记账、接口与操作补充 |
+| 2026-09-20 | v1.2：§1.3 补 v0.5~v0.23 里程碑摘要；§2.1 补注册开放条件、忘记密码与认证页提示口径；§3.3/§6 标注 401 白名单与新增认证接口；§8.2~§8.5 重写为 WSL 工具链、内嵌产物构建链路与 Releases/ACR 交付现状；§8.4 补「迁移只在启动时执行」运维红线；§9.1 更新环境路径；§10 更新已知项 |

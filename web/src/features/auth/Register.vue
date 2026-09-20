@@ -6,7 +6,7 @@
         <div class="register-subtitle">一个组织一个账号，注册后即可开始记账</div>
       </div>
 
-      <van-form @submit="handleRegister">
+      <van-form @submit="handleRegister" @failed="onValidateFailed" :show-error-message="false">
         <van-cell-group inset>
           <van-field
             v-model="orgName"
@@ -14,14 +14,22 @@
             label="组织名称"
             placeholder="如：XX村"
             :rules="[{ required: true, message: '请填写组织名称' }]"
-          />
+          >
+            <template #extra>
+              <span v-if="error && errorField === 'orgName'" class="field-error" :title="error">{{ error }}</span>
+            </template>
+          </van-field>
           <van-field
             v-model="username"
             name="username"
             label="账号"
             placeholder="登录账号"
             :rules="[{ required: true, message: '请填写账号' }]"
-          />
+          >
+            <template #extra>
+              <span v-if="error && errorField === 'username'" class="field-error" :title="error">{{ error }}</span>
+            </template>
+          </van-field>
           <van-field
             v-model="password"
             type="password"
@@ -29,7 +37,11 @@
             label="密码"
             placeholder="至少 6 位"
             :rules="[{ required: true, message: '请填写密码' }, { validator: (v) => v.length >= 6, message: '密码至少 6 位' }]"
-          />
+          >
+            <template #extra>
+              <span v-if="error && errorField === 'password'" class="field-error" :title="error">{{ error }}</span>
+            </template>
+          </van-field>
           <van-field
             v-model="confirm"
             type="password"
@@ -37,10 +49,12 @@
             label="确认密码"
             placeholder="再次输入密码"
             :rules="[{ required: true, message: '请再次输入密码' }, { validator: (v) => v === password, message: '两次输入的密码不一致' }]"
-          />
+          >
+            <template #extra>
+              <span v-if="error && errorField === 'confirm'" class="field-error" :title="error">{{ error }}</span>
+            </template>
+          </van-field>
         </van-cell-group>
-
-        <div v-if="error" class="register-error">{{ error }}</div>
 
         <div style="margin: 16px">
           <van-button round block type="primary" native-type="submit" :loading="loading">
@@ -56,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore, ORG_NAME_KEY } from './store'
 import { api } from '../../lib/http'
@@ -66,12 +80,34 @@ import type { ApiResponse } from '../../types/api'
 const router = useRouter()
 const auth = useAuthStore()
 
+type Field = 'orgName' | 'username' | 'password' | 'confirm'
+
 const orgName = ref('')
 const username = ref('')
 const password = ref('')
 const confirm = ref('')
 const loading = ref(false)
 const error = ref('')
+// 错误提示与输入框同行右侧显示，errorField 决定挂在哪一行
+const errorField = ref<Field>('orgName')
+
+function showError(field: Field, message: string) {
+  errorField.value = field
+  error.value = message
+}
+
+// 必填/格式校验失败：Vant 的默认消息渲染在字段下方会撑高布局，改由 @failed 取字段名后同行显示
+function onValidateFailed(payload: { errors: Array<{ name?: string; message: string }> }) {
+  const first = payload?.errors?.[0]
+  const field: Field =
+    first?.name === 'username' || first?.name === 'password' || first?.name === 'confirm'
+      ? first.name
+      : 'orgName'
+  showError(field, first?.message || '请检查输入')
+}
+
+// flush:sync —— 保证清空与写入提示的先后顺序不被异步队列打乱
+watch([orgName, username, password, confirm], () => { error.value = '' }, { flush: 'sync' })
 
 async function handleRegister() {
   loading.value = true
@@ -92,11 +128,12 @@ async function handleRegister() {
     }
   } catch (e: any) {
     if (e?.response?.code === 'USERNAME_TAKEN') {
-      error.value = '该账号已被注册，请换一个账号'
-    } else if (e?.response?.code === 'REGISTRATION_CLOSED') {
-      error.value = '系统已注册，禁止重复注册'
+      showError('username', '该账号已被注册，请换一个账号')
     } else {
-      error.value = e.message || '注册失败'
+      // 注册关闭与网络/服务端异常都属于整单失败，落在首行
+      showError('orgName', e?.response?.code === 'REGISTRATION_CLOSED'
+        ? '系统已注册，禁止重复注册'
+        : (e.message || '注册失败'))
     }
   } finally {
     loading.value = false
@@ -110,12 +147,12 @@ function goLogin() {
 
 <style scoped>
 .register-page {
-  min-height: 100vh;
+  /* 外层 .auth-wrap(App.vue) 已负责 100vh 居中 + 24px padding，#app/body 已铺 --paper 底。
+     这里再声明一遍会让总高超出 100vh，页面凭空多出可滚区，点提交时整页跳动。 */
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--paper);
-  padding: 24px;
 }
 
 .register-card {
@@ -143,10 +180,14 @@ function goLogin() {
   margin-top: 6px;
 }
 
-.register-error {
-  color: var(--expense);
-  font-size: 13px;
-  text-align: center;
-  padding: 8px 16px 0;
+/* 与输入框同行、靠右的错误提示：不占行高（line-height 继承 .van-cell），出现/消失都不推移布局 */
+.field-error {
+  color: var(--danger-deep);
+  font-size: 12px;
+  line-height: inherit;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
