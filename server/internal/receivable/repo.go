@@ -171,6 +171,8 @@ func (r *Repo) FindPartyByID(id int64) (*Party, error) {
 
 // ListParties 查询某组织往来单位（含欠款合计 = Σ未核销应收余额）。
 // keyword 非空时按名称模糊过滤。投资公司附带长期投资同名科目累计投出。
+// 另返回「已收投资收益 / 已收再投资收益」：口径为该单位 recv_kind 对应应收下的
+// normal 核销合计，排除坏账冲销（method=writeoff 不是收到钱），跨全部年度累计。
 func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	where := "WHERE p.org_id = ?"
 	var args []any
@@ -178,6 +180,13 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 	if keyword != "" {
 		where += " AND p.name LIKE ?"
 		args = append(args, "%"+keyword+"%")
+	}
+
+	// kind 为编译期字面量，不接受外部入参
+	receivedSum := func(kind string) string {
+		return `COALESCE((SELECT SUM(rc.amount_cents) FROM receipt rc JOIN receivable rr ON rr.id = rc.receivable_id
+		    WHERE rr.org_id = p.org_id AND rr.party_id = p.id AND rr.recv_kind = '` + kind + `'
+		      AND rc.org_id = p.org_id AND rc.status = 'normal' AND rc.method <> 'writeoff'), 0)`
 	}
 
 	rows, err := r.db.Query(
@@ -189,7 +198,9 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 		            SELECT SUM(re2.amount_cents) FROM receipt re2
 		            WHERE re2.org_id = p.org_id AND re2.receivable_id = rec.id AND re2.status = 'normal'
 		        ), 0)) FROM receivable rec
-		        WHERE rec.org_id = p.org_id AND rec.party_id = p.id AND rec.status = 'open'), 0) AS outstanding
+		        WHERE rec.org_id = p.org_id AND rec.party_id = p.id AND rec.status = 'open'), 0) AS outstanding,
+		        `+receivedSum("dividend")+` AS dividend_received,
+		        `+receivedSum("reinvest_dividend")+` AS reinvest_received
 		 FROM party p `+where+` ORDER BY p.id DESC`, args...,
 	)
 	if err != nil {
@@ -203,7 +214,8 @@ func (r *Repo) ListParties(orgID int64, keyword string) ([]Party, error) {
 		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Type, &p.ContactPhone, &p.AreaMu, &p.Note, &p.CreatedAt, &p.UpdatedAt,
 			&p.InvestAmountCents, &p.ReturnRateBps, &p.ExpectedReturnCents,
 			&p.LandMu, &p.LandFeePerMuCents, &p.ExpectedLandFeeCents,
-			&p.MgmtFeePerMuCents, &p.ExpectedMgmtFeeCents, &p.OutstandingCents); err != nil {
+			&p.MgmtFeePerMuCents, &p.ExpectedMgmtFeeCents, &p.OutstandingCents,
+			&p.DividendReceivedCents, &p.ReinvestReceivedCents); err != nil {
 			return nil, fmt.Errorf("扫描往来单位行失败: %w", err)
 		}
 		items = append(items, p)
@@ -251,8 +263,8 @@ func (r *Repo) UpdateParty(id, orgID int64, updates map[string]any) error {
 // 覆盖两条来源：建单位联动（typeToL1）与收款时动态建科目（recvKindToL1）。
 var partyCategoryL1 = map[string][]string{
 	"flow":     {"土地流转费收入", "流转管理费"},
-	"invest":   {"长期投资", "投资收益", "再投资"},
-	"reinvest": {"再投资", "投资收益"},
+	"invest":   {"长期投资", "投资收益", "再投资", "再投资收益"},
+	"reinvest": {"再投资", "再投资收益", "投资收益"},
 }
 
 // 删除单位时，其科目上的历史流水改挂到此归档容器，科目本身真删（流水一条不丢）。
@@ -819,11 +831,13 @@ type CreateOutcome struct {
 
 // recvKindToL1 应收类型 → 收入入账容器 L1（与预置科目名一致的容器）。
 // 现金收款无预设入账科目时，按此定位该单位同名的收入二级科目并自动入账。
+// 收益两类分开：dividend→「投资收益」，reinvest_dividend→「再投资收益」。
+// 再投资收益此前误落「再投资」本金容器，会虚增该单位再投资本金（迁移 020 已回填，见 docs/25）。
 var recvKindToL1 = map[string]string{
 	"rent":              "土地流转费收入",
 	"service":           "流转管理费",
 	"dividend":          "投资收益",
-	"reinvest_dividend": "再投资",
+	"reinvest_dividend": "再投资收益",
 }
 
 // ResolveIncomeCategory 按应收类型自动定位（必要时自动创建）该单位的收入二级科目，

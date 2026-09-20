@@ -25,6 +25,10 @@ type Party struct {
 	ReturnRateBps        int    `json:"returnRateBps"`        // 收益率基点（500 = 5.00%）
 	ExpectedReturnCents  int64  `json:"expectedReturnCents"`  // 年收益（自动算=本金×收益率/10000，可手动改）
 
+	// 已收（实收）：由 receipt 聚合，口径见 ListParties 注释
+	DividendReceivedCents int64 `json:"dividendReceivedCents"` // 已收投资收益（recv_kind=dividend，排除坏账，跨全部年度）
+	ReinvestReceivedCents int64 `json:"reinvestReceivedCents"` // 已收再投资收益（recv_kind=reinvest_dividend，口径同上）
+
 	// --- 土地流转专属字段（flow 类型用）---
 	LandMu                   float64 `json:"landMu"`                   // 流转亩数
 	LandFeePerMuCents        int64   `json:"landFeePerMuCents"`        // 每亩年流转费

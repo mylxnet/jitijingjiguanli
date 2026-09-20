@@ -104,10 +104,10 @@ test('预置：本金 L1 下有 上级补助 + 待投资 两个 preset L2', () =
   for (const l2 of fund.children) assert.equal(l2.preset, true, `${l2.name} 应为 preset`)
 })
 
-test('预置：8 个 L1 按 sort 排序', () => {
-  assert.equal(allCats.length, 8)
+test('预置：9 个 L1 按 sort 排序', () => {
+  assert.equal(allCats.length, 9)
   const names = allCats.map(c => c.name)
-  assert.deepEqual(names, ['本金', '长期投资', '再投资', '经营收入', '投资收益', '土地流转费收入', '流转管理费', '分配与支出'])
+  assert.deepEqual(names, ['本金', '长期投资', '再投资', '经营收入', '投资收益', '再投资收益', '土地流转费收入', '流转管理费', '分配与支出'])
 })
 
 // ============= 二、模板 1/6/7/8/9/5/11：纯 preset L2（无自动建） =============

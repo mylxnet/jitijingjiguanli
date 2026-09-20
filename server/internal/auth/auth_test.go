@@ -59,7 +59,7 @@ func TestRegisterOrg(t *testing.T) {
 		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", userID, orgID)
 	}
 
-	// 预置科目（8 一级 + 9 二级 = 17，preset=1）
+	// 预置科目（9 一级 + 9 二级 = 18，preset=1）
 	var presetCount, l1Count, l2Count int
 	if err := svc.repo.db.QueryRow(
 		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
@@ -67,8 +67,8 @@ func TestRegisterOrg(t *testing.T) {
 	}
 	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 1`, orgID).Scan(&l1Count)
 	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 2`, orgID).Scan(&l2Count)
-	if presetCount != 17 || l1Count != 8 || l2Count != 9 {
-		t.Errorf("预置科目应为 17 个（8 一级 + 9 二级），实际 总数%d（一级%d 二级%d）", presetCount, l1Count, l2Count)
+	if presetCount != 18 || l1Count != 9 || l2Count != 9 {
+		t.Errorf("预置科目应为 18 个（9 一级 + 9 二级），实际 总数%d（一级%d 二级%d）", presetCount, l1Count, l2Count)
 	}
 
 	// 密码过短

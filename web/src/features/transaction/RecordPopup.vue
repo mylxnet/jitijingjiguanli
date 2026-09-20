@@ -446,7 +446,10 @@ async function saveQuick() {
         categoryId = quick.value.companyId!
       } else if (biz.autoBuildL1) {
         if (!quick.value.partyId) throw new Error('缺少往来单位')
-        const l2 = await ensureL2InL1(biz.autoBuildL1, partyName)
+        const l1 = biz.key === 'dividend'
+          ? (resolveRecvKind('dividend') === 'reinvest_dividend' ? '再投资收益' : '投资收益')
+          : biz.autoBuildL1
+        const l2 = await ensureL2InL1(l1, partyName)
         categoryId = l2.id
       } else {
         if (!biz.catName) throw new Error('模板缺少 catName')

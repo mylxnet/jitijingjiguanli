@@ -905,11 +905,13 @@ func TestFeeClearAndImplicit(t *testing.T) {
 // TestReinvestDividendAccrual 验证再投资收益全链路：年收益→reinvest_dividend 标准→预览→结转→应收→收款核销。
 func TestReinvestDividendAccrual(t *testing.T) {
 	db, r := newEnv(t)
-	// 收入容器「再投资」L1（自动入账与标准结转定位用）
-	if _, err := db.Exec(
-		`INSERT INTO category(org_id,name,level,parent_id,status,kind,sort_order,created_at,updated_at)
-		 VALUES(1,'再投资',1,NULL,'active','equity',0,'2026-09-01','2026-09-01')`); err != nil {
-		t.Fatalf("插入再投资 L1 失败: %v", err)
+	// 「再投资」为本金容器（建单位联动建同名二级），收益入账走「再投资收益」容器
+	for _, l1 := range []string{"再投资", "再投资收益"} {
+		if _, err := db.Exec(
+			`INSERT INTO category(org_id,name,level,parent_id,status,kind,sort_order,created_at,updated_at)
+			 VALUES(1,?,1,NULL,'active','equity',0,'2026-09-01','2026-09-01')`, l1); err != nil {
+			t.Fatalf("插入 %s L1 失败: %v", l1, err)
+		}
 	}
 	party := createPartyWithType(t, r, "戊公司", "reinvest")
 

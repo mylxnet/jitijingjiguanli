@@ -37,7 +37,7 @@
             />
           </svg>
           <div class="donut-center">
-            <div class="donut-total">{{ formatShort(blk.total) }}</div>
+            <div class="donut-total" :title="formatFen(blk.total)">{{ formatShort(blk.total) }}</div>
             <div class="donut-total-label">合计</div>
           </div>
         </div>
@@ -88,6 +88,7 @@
             <thead>
               <tr>
                 <th>日期</th>
+                <th>摘要</th>
                 <th class="num">收入</th>
                 <th class="num">支出</th>
                 <th class="num">余额</th>
@@ -96,6 +97,7 @@
             <tbody>
               <tr v-for="r in bankFlowRows" :key="r.id">
                 <td>{{ r.date }}</td>
+                <td class="note" :title="r.note">{{ r.note || '—' }}</td>
                 <td class="num income">{{ r.incomeCents ? formatFen(r.incomeCents) : '—' }}</td>
                 <td class="num expense">{{ r.expenseCents ? formatFen(r.expenseCents) : '—' }}</td>
                 <td class="num balance">{{ formatFen(r.balanceCents) }}</td>
@@ -158,10 +160,13 @@ function slicesToSegs(title: string, slices?: Slice[]): DonutBlock {
   // 保留全部非零分项（含负数，如实反映余额）；负数在环形图上不画扇区，但计入合计与图例
   const list = (slices || []).filter(s => s.value !== 0)
   const total = list.reduce((sum, s) => sum + s.value, 0)
+  // 扇区只由正分项构成，分母必须也用正分项之和：用净值当分母会让 frac > 1，
+  // stroke-dasharray 出现负值即被 SVG 判为非法，整环渲染失效。
+  const positiveTotal = list.reduce((sum, s) => sum + (s.value > 0 ? s.value : 0), 0)
   let acc = 0
   const segs = list.map((s, i) => {
-    const frac = total > 0 ? s.value / total : 0
-    const seg: Seg = { name: s.name, value: s.value, color: PALETTE[i % PALETTE.length], cumulative: acc, frac: frac > 0 ? frac : 0, total }
+    const frac = positiveTotal > 0 && s.value > 0 ? s.value / positiveTotal : 0
+    const seg: Seg = { name: s.name, value: s.value, color: PALETTE[i % PALETTE.length], cumulative: acc, frac: frac > 0 ? frac : 0, total: positiveTotal }
     if (s.value > 0) acc += s.value
     return seg
   })
@@ -192,13 +197,11 @@ function donutOffset(seg: Seg): string {
   return `${offset}`
 }
 
-// 大额简写（万）
+// 环形中心简写：1 万以内一律给准确数（原「千」档会把 5,999 四舍五入成 6.0千，与图例对不上）
 function formatShort(cents: number): string {
-  if (cents === 0) return '0'
   const yuan = cents / 100
   if (Math.abs(yuan) >= 10000) return (yuan / 10000).toFixed(1) + '万'
-  if (Math.abs(yuan) >= 1000) return (yuan / 1000).toFixed(1) + '千'
-  return String(Math.round(yuan))
+  return yuan.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 }
 
 onMounted(loadAll)
@@ -270,7 +273,7 @@ function goContacts() { router.push('/contacts') }
 function goCategories() { router.push('/categories') }
 
 // ---- 银行存款流水弹窗（沿用老看板）----
-interface BankFlowRow { id: number; date: string; incomeCents: number; expenseCents: number; balanceCents: number }
+interface BankFlowRow { id: number; date: string; note: string; incomeCents: number; expenseCents: number; balanceCents: number }
 const showBankFlow = ref(false)
 const bankFlowLoading = ref(false)
 const bankFlowRows = ref<BankFlowRow[]>([])
@@ -295,7 +298,7 @@ async function openBankFlow() {
       const income = t.direction === 'income' ? t.amountCents : 0
       const expense = t.direction === 'expense' ? t.amountCents : 0
       running += income - expense
-      return { id: t.id, date: t.txnDate, incomeCents: income, expenseCents: expense, balanceCents: running }
+      return { id: t.id, date: t.txnDate, note: t.note || '', incomeCents: income, expenseCents: expense, balanceCents: running }
     })
     bankFlowRows.value = asc.reverse()
   } catch {
@@ -409,8 +412,8 @@ async function openBankFlow() {
 .bf-title { font-size: 15px; font-weight: 600; color: var(--ink, #1a1a18); }
 .bf-close { font-size: 18px; color: var(--ink-muted, #7a7770); cursor: pointer; padding: 2px; }
 .bf-loading, .bf-empty { padding: 40px 0; text-align: center; color: var(--ink-muted, #7a7770); font-size: 13px; }
-.bf-table-wrap { max-height: 62vh; overflow-y: auto; border: 1px solid var(--line, #e8e3d8); border-radius: 8px; }
-.bf-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bf-table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--line, #e8e3d8); border-radius: 8px; }
+.bf-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12.5px; }
 .bf-table th {
   position: sticky; top: 0; z-index: 1;
   background: var(--jade-light, #eaf1f6); color: var(--ink-muted, #7a7770); font-weight: 500; font-size: 11px;
@@ -422,6 +425,7 @@ async function openBankFlow() {
 .bf-table td.income { color: var(--jade, #2b5876); }
 .bf-table td.expense { color: var(--expense, #a33a2d); }
 .bf-table td.balance { font-weight: 600; }
+.bf-table td.note { white-space: normal; min-width: 150px; max-width: 260px; line-height: 1.45; }
 
 @media (min-width: 992px) {
   .donut-grid { grid-template-columns: repeat(4, 1fr); }

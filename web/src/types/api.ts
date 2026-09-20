@@ -57,6 +57,8 @@ export interface Party {
   investAmountCents: number // 投资本金
   returnRateBps: number // 收益率基点（500 = 5.00%）
   expectedReturnCents: number // 年收益（自动算=本金×收益率/10000，可手动改）
+  dividendReceivedCents: number // 已收投资收益（receipt 聚合，排除坏账，跨全部年度）
+  reinvestReceivedCents: number // 已收再投资收益（口径同上）
 
   // 土地流转专属字段（flow 类型用）
   landMu: number // 流转亩数

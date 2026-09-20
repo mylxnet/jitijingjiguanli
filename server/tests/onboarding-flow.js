@@ -92,8 +92,8 @@ const req = (m,p,b) => new Promise(r=>{
   let allOk = true;
   const checks = [];
 
-  // 1. 8 个 L1
-  checks.push(['8 个 L1', finalCats.length === 8]);
+  // 1. 9 个 L1
+  checks.push(['9 个 L1', finalCats.length === 9]);
   // 2. 长期投资有 2+ 示例 L2（原有 + 新建）
   const investCount = finalCats.find(c=>c.name==='长期投资').children.length;
   checks.push(['长期投资 ≥ 2 个 L2', investCount >= 2]);

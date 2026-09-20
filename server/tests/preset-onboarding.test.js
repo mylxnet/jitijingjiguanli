@@ -1,10 +1,10 @@
 ﻿/**
  * 预置科目 + preset 守卫 + 引导页路由 测试
  * 覆盖：
- *   1. 预置科目数据结构（8 个 L1，preset 字段正确）
+ *   1. 预置科目数据结构（9 个 L1，preset 字段正确）
  *   2. /api/categories 返回结构中 preset 字段传递给前端
  *   3. mock.js 中 GET/POST/PUT/DELETE categories 路由响应契约
- *   4. 空 L1 容器（投资收益/再投资）的 children 是空数组而非 undefined
+ *   4. 空 L1 容器（投资收益/再投资/再投资收益）的 children 是空数组而非 undefined
  *   5. 快速记账依赖的 L2 科目名都存在
  *   6. 引导页路由 /api/categories /api/parties /api/settings 契约
  */
@@ -67,17 +67,17 @@ test.after(async () => {
 
 // ================ 一、预置科目数据结构 ================
 
-test('预置科目：CATEGORIES 有 8 个 L1（本金/长期投资/再投资/经营收入/投资收益/土地流转费收入/流转管理费/分配与支出）', () => {
+test('预置科目：CATEGORIES 有 9 个 L1（本金/长期投资/再投资/经营收入/投资收益/再投资收益/土地流转费收入/流转管理费/分配与支出）', () => {
   const { CATEGORIES } = require('../mock')
   const l1Names = CATEGORIES.map(c => c.name).sort()
   assert.deepEqual(
     l1Names,
-    ['本金', '分配与支出', '再投资', '投资收益', '经营收入', '长期投资', '土地流转费收入', '流转管理费'].sort(),
-    `8 个 L1 名称错误，实际: ${l1Names.join(', ')}`
+    ['本金', '分配与支出', '再投资', '再投资收益', '投资收益', '经营收入', '长期投资', '土地流转费收入', '流转管理费'].sort(),
+    `9 个 L1 名称错误，实际: ${l1Names.join(', ')}`
   )
 })
 
-test('预置科目：全部 8 个 L1 的 level=1, kind=equity, preset=true', () => {
+test('预置科目：全部 9 个 L1 的 level=1, kind=equity, preset=true', () => {
   const { CATEGORIES } = require('../mock')
   for (const l1 of CATEGORIES) {
     assert.equal(l1.level, 1, `L1 ${l1.name} level 应为 1`)
@@ -95,14 +95,17 @@ test('预置科目："长期投资"下的富民公司/祥云合作社 preset=fal
   }
 })
 
-test('预置科目：空容器（再投资/投资收益）的 children 是空数组', () => {
+test('预置科目：空容器（再投资/投资收益/再投资收益）的 children 是空数组', () => {
   const { CATEGORIES } = require('../mock')
   const invInc = CATEGORIES.find(c => c.name === '投资收益')
   const reinv = CATEGORIES.find(c => c.name === '再投资')
+  const reinvInc = CATEGORIES.find(c => c.name === '再投资收益')
   assert.ok(Array.isArray(invInc.children), '投资收益 children 应是数组')
   assert.equal(invInc.children.length, 0, '投资收益应为空容器')
   assert.ok(Array.isArray(reinv.children), '再投资 children 应是数组')
   assert.equal(reinv.children.length, 0, '再投资应为空容器')
+  assert.ok(Array.isArray(reinvInc.children), '再投资收益 children 应是数组')
+  assert.equal(reinvInc.children.length, 0, '再投资收益应为空容器')
 })
 
 test('预置科目：经营收入 L1 下的 2 个二级名正确（其他财政收入/其他收入）', () => {
@@ -159,12 +162,12 @@ test('快速记账：所有启用中的快速记账模板依赖的二级科目�
 
 // ================ 三、HTTP 路由契约 ================
 
-test('GET /api/categories 返回 8 个 L1，preset 字段存在', async () => {
+test('GET /api/categories 返回 9 个 L1，preset 字段存在', async () => {
   const res = await httpReq('GET', '/api/categories')
   assert.equal(res.status, 200)
   const data = res.data.data // sendJSON 包了一层
   assert.ok(Array.isArray(data), 'categories 应是数组')
-  assert.equal(data.length, 8, `应返回 8 个 L1，实际 ${data.length}`)
+  assert.equal(data.length, 9, `应返回 9 个 L1，实际 ${data.length}`)
   for (const l1 of data) {
     assert.ok('preset' in l1, `L1 ${l1.name} 应有 preset 字段`)
     // preset 是 boolean
@@ -250,14 +253,14 @@ test('POST /api/categories 可以在长期投资下新建二级科目（引导�
 
 // ================ 四、GET /api/summary 结构验证（回归） ================
 
-test('GET /api/summary categories 是 8 个 L1 的 buildCategorySummary 结果', async () => {
+test('GET /api/summary categories 是 9 个 L1 的 buildCategorySummary 结果', async () => {
   const res = await httpReq('GET', '/api/summary')
   assert.equal(res.status, 200)
   const s = res.data.data
   assert.ok(s, 'summary 应有数据')
   assert.ok(Array.isArray(s.categories), 'categories 应是数组')
-  assert.equal(s.categories.length, 8, `summary.categories 应有 8 个 L1`)
-  // 投资收益和再投资是空 children
+  assert.equal(s.categories.length, 9, `summary.categories 应有 9 个 L1`)
+  // 投资收益、再投资收益和再投资是空 children
   for (const cat of s.categories) {
     assert.ok(Array.isArray(cat.children), `${cat.name} children 应是数组（空容器也应为 []）`)
   }

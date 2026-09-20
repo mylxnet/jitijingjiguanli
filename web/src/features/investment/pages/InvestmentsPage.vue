@@ -9,7 +9,7 @@
         </div>
         <van-button size="small" @click="exportCSV('longterm')">导出</van-button>
       </div>
-      <div class="ip-stats">
+      <div class="ip-stats ip-stats--5">
         <div class="ip-stat">
           <div class="ip-stat-label">投资笔数</div>
           <div class="ip-stat-value">{{ ltItems.length }}</div>
@@ -23,6 +23,11 @@
           <div class="ip-stat-value">{{ fmt(ltReturnTotal) }}</div>
         </div>
         <div class="ip-stat">
+          <div class="ip-stat-label">已收长期投资收益</div>
+          <div class="ip-stat-value">{{ fmt(ltReceivedTotal) }}</div>
+          <div class="ip-stat-sub">历年累计实收</div>
+        </div>
+        <div class="ip-stat">
           <div class="ip-stat-label">平均收益率</div>
           <div class="ip-stat-value">{{ ltAvgRate }}%</div>
         </div>
@@ -33,7 +38,7 @@
       <div class="ip-table-wrap">
         <table class="ip-table">
           <thead><tr>
-            <th>单位名称</th><th class="num">投资金额</th><th class="num">年收益率</th><th class="num">年收益</th>
+            <th>单位名称</th><th class="num">投资金额</th><th class="num">年收益率</th><th class="num">年预期收益</th><th class="num">已收</th>
           </tr></thead>
           <tbody>
             <tr v-for="item in ltFiltered" :key="item.id">
@@ -41,8 +46,9 @@
               <td class="num">{{ fmt(item.balanceCents) }}</td>
               <td class="num">{{ item.ratePct }}%</td>
               <td class="num">{{ fmt(item.expectedReturnCents) }}</td>
+              <td class="num">{{ fmt(item.receivedCents) }}</td>
             </tr>
-            <tr v-if="ltFiltered.length === 0"><td colspan="4" class="empty-cell">暂无数据</td></tr>
+            <tr v-if="ltFiltered.length === 0"><td colspan="5" class="empty-cell">暂无数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -57,7 +63,7 @@
         </div>
         <van-button size="small" @click="exportCSV('reinvest')">导出</van-button>
       </div>
-      <div class="ip-stats">
+      <div class="ip-stats ip-stats--5">
         <div class="ip-stat">
           <div class="ip-stat-label">再投资笔数</div>
           <div class="ip-stat-value">{{ riItems.length }}</div>
@@ -71,6 +77,11 @@
           <div class="ip-stat-value">{{ fmt(riReturnTotal) }}</div>
         </div>
         <div class="ip-stat">
+          <div class="ip-stat-label">已收再投资收益</div>
+          <div class="ip-stat-value">{{ fmt(riReceivedTotal) }}</div>
+          <div class="ip-stat-sub">历年累计实收</div>
+        </div>
+        <div class="ip-stat">
           <div class="ip-stat-label">平均收益率</div>
           <div class="ip-stat-value">{{ riAvgRate }}%</div>
         </div>
@@ -81,7 +92,7 @@
       <div class="ip-table-wrap">
         <table class="ip-table">
           <thead><tr>
-            <th>单位名称</th><th class="num">再投资金额</th><th class="num">年收益率</th><th class="num">年收益</th>
+            <th>单位名称</th><th class="num">再投资金额</th><th class="num">年收益率</th><th class="num">年预期收益</th><th class="num">已收</th>
           </tr></thead>
           <tbody>
             <tr v-for="item in riFiltered" :key="item.id">
@@ -89,8 +100,9 @@
               <td class="num">{{ fmt(item.balanceCents) }}</td>
               <td class="num">{{ item.ratePct }}%</td>
               <td class="num">{{ fmt(item.expectedReturnCents) }}</td>
+              <td class="num">{{ fmt(item.receivedCents) }}</td>
             </tr>
-            <tr v-if="riFiltered.length === 0"><td colspan="4" class="empty-cell">暂无数据</td></tr>
+            <tr v-if="riFiltered.length === 0"><td colspan="5" class="empty-cell">暂无数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -101,42 +113,55 @@
       <div class="page-header">
         <div>
           <h2 class="page-title">投资收益</h2>
-          <p class="page-sub">共 {{ retItems.length }} 笔收益</p>
+          <p class="page-sub">共 {{ retRows.length }} 个投资单位有已收收益（长期 + 再投资）</p>
         </div>
         <van-button size="small" @click="exportCSV('returns')">导出</van-button>
       </div>
-      <div class="ip-stats">
+      <div class="ip-stats ip-stats--5">
         <div class="ip-stat">
-          <div class="ip-stat-label">收益笔数</div>
-          <div class="ip-stat-value">{{ retItems.length }}</div>
+          <div class="ip-stat-label">已收收益合计</div>
+          <div class="ip-stat-value">{{ fmt(retReceivedTotal) }}</div>
+          <div class="ip-stat-sub">历年累计实收</div>
         </div>
         <div class="ip-stat">
-          <div class="ip-stat-label">收益总额</div>
-          <div class="ip-stat-value">{{ fmt(retTotal) }}</div>
+          <div class="ip-stat-label">已收长期投资收益</div>
+          <div class="ip-stat-value">{{ fmt(retLtTotal) }}</div>
         </div>
         <div class="ip-stat">
-          <div class="ip-stat-label">最高单笔</div>
-          <div class="ip-stat-value">{{ fmt(retMax) }}</div>
+          <div class="ip-stat-label">已收再投资收益</div>
+          <div class="ip-stat-value">{{ fmt(retRiTotal) }}</div>
         </div>
         <div class="ip-stat">
-          <div class="ip-stat-label">平均单笔</div>
-          <div class="ip-stat-value">{{ fmt(retAvg) }}</div>
+          <div class="ip-stat-label">已分配</div>
+          <div class="ip-stat-value">{{ fmt(totalAllocated) }}</div>
+        </div>
+        <div class="ip-stat">
+          <div class="ip-stat-label">未分配余额</div>
+          <div class="ip-stat-value">{{ fmt(remainingTotal) }}</div>
         </div>
       </div>
+      <div v-if="retReconDiff !== 0" class="ip-recon-hint">
+        收益科目已入账 {{ fmt(retBookedTotal) }}，与已收 {{ fmt(retReceivedTotal) }} 相差
+        {{ fmt(Math.abs(retReconDiff)) }} —— {{ retReconDiff > 0
+          ? '差额系直接入账、未挂应收单的收益，不计入可分配'
+          : '有已收收益未记入收益科目，请核对收款入账科目' }}
+      </div>
       <div class="ip-filter">
-        <van-search v-model="retKeyword" placeholder="搜索收益项目" shape="round" background="transparent" class="ip-search" />
+        <van-search v-model="retKeyword" placeholder="搜索单位名称" shape="round" background="transparent" class="ip-search" />
       </div>
       <div class="ip-table-wrap">
         <table class="ip-table">
           <thead><tr>
-            <th>已收收益</th><th class="num">金额</th>
+            <th>单位名称</th><th class="num">已收长期投资收益</th><th class="num">已收再投资收益</th><th class="num">合计</th>
           </tr></thead>
           <tbody>
-            <tr v-for="item in retFiltered" :key="item.id">
-              <td>{{ item.name }}</td>
-              <td class="num">{{ fmt(item.balanceCents) }}</td>
+            <tr v-for="row in retFiltered" :key="row.id">
+              <td>{{ row.name }}</td>
+              <td class="num">{{ fmt(row.ltCents) }}</td>
+              <td class="num">{{ fmt(row.riCents) }}</td>
+              <td class="num">{{ fmt(row.total) }}</td>
             </tr>
-            <tr v-if="retFiltered.length === 0"><td colspan="2" class="empty-cell">暂无数据</td></tr>
+            <tr v-if="retFiltered.length === 0"><td colspan="4" class="empty-cell">暂无数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -170,6 +195,7 @@
         <div class="ip-stat">
           <div class="ip-stat-label">年度总收益</div>
           <div class="ip-stat-value">{{ fmt(distTotalIncome) }}</div>
+          <div class="ip-stat-sub">已收长期 {{ fmt(retLtTotal) }} + 已收再投资 {{ fmt(retRiTotal) }}</div>
           <div class="ip-stat-sub" v-if="totalAllocated > 0">已分配 {{ fmt(totalAllocated) }} · 剩余 {{ fmt(remainingTotal) }}</div>
           <div class="ip-stat-sub na" v-else>未分配 · 可分配 {{ fmt(remainingTotal) }}</div>
         </div>
@@ -285,7 +311,7 @@
         <div v-if="distLocked" class="dist-dialog-lock">
           该方案已有支出记录，无法修改
         </div>
-        <div class="dist-dialog-hint">{{ distLocked ? '查看已分配的方案数据' : ('投资收益总余额 ' + fmt(distTotalIncome) + '，已分配 ' + fmt(totalAllocated) + '，剩余可分配 ' + fmt(remainingTotal) + '。按剩余可分配的 50%/30%/20% 生成初始方案，可手动修改') }}</div>
+        <div class="dist-dialog-hint">{{ distLocked ? '查看已分配的方案数据' : ('已收收益合计（长期+再投资） ' + fmt(distTotalIncome) + '，已分配 ' + fmt(totalAllocated) + '，剩余可分配 ' + fmt(remainingTotal) + '。按剩余可分配的 50%/30%/20% 生成初始方案，可手动修改') }}</div>
         <div class="dist-dialog-fields">
           <div class="dist-dialog-field">
             <label>再投资（50%）</label>
@@ -370,6 +396,7 @@ interface Party {
   id: number; name: string; type: string; types: string[];
   investAmountCents: number; returnRateBps: number; expectedReturnCents: number;
   contactPhone: string;
+  dividendReceivedCents: number; reinvestReceivedCents: number;
 }
 interface Distribution {
   id: number; itemName: string; year: number; category: string; amountCents: number;
@@ -396,7 +423,7 @@ function matchParty(name: string) {
   return parties.value.find(p => p.name === name)
 }
 
-function buildItems(catName: string) {
+function buildItems(catName: string, recvField: 'dividendReceivedCents' | 'reinvestReceivedCents') {
   const cat = findCat(catName)
   if (!cat || !cat.children) return []
   return cat.children.map(c => {
@@ -410,34 +437,55 @@ function buildItems(catName: string) {
       balanceCents,
       ratePct: (rateBps / 100).toFixed(2), rateBps,
       expectedReturnCents: expectedReturn,
+      // 已收（实收）：与往来页应收列表同源，按同名单位挂接；无同名单位时为 0
+      receivedCents: p?.[recvField] || 0,
     }
   })
 }
 
 // ====== 长期投资 ======
-const ltItems = computed(() => buildItems('长期投资'))
+const ltItems = computed(() => buildItems('长期投资', 'dividendReceivedCents'))
 const ltFiltered = computed(() => ltItems.value.filter(i => !ltKeyword.value || i.name.includes(ltKeyword.value)))
 const ltTotal = computed(() => ltItems.value.reduce((s, i) => s + i.balanceCents, 0))
 const ltReturnTotal = computed(() => ltItems.value.reduce((s, i) => s + i.expectedReturnCents, 0))
 const ltAvgRate = computed(() => ltTotal.value ? (ltReturnTotal.value / ltTotal.value * 100).toFixed(2) : '0.00')
+const ltReceivedTotal = computed(() => ltItems.value.reduce((s, i) => s + i.receivedCents, 0))
 
 // ====== 再投资 ======
-const riItems = computed(() => buildItems('再投资'))
+const riItems = computed(() => buildItems('再投资', 'reinvestReceivedCents'))
 const riFiltered = computed(() => riItems.value.filter(i => !riKeyword.value || i.name.includes(riKeyword.value)))
 const riTotal = computed(() => riItems.value.reduce((s, i) => s + i.balanceCents, 0))
 const riReturnTotal = computed(() => riItems.value.reduce((s, i) => s + i.expectedReturnCents, 0))
 const riAvgRate = computed(() => riTotal.value ? (riReturnTotal.value / riTotal.value * 100).toFixed(2) : '0.00')
+const riReceivedTotal = computed(() => riItems.value.reduce((s, i) => s + i.receivedCents, 0))
 
 // ====== 投资收益 ======
-const retItems = computed(() => {
-  const cat = findCat('投资收益')
-  if (!cat || !cat.children) return []
-  return cat.children.map(c => ({ id: c.id, name: c.name, balanceCents: c.balanceCents || 0 }))
-})
-const retFiltered = computed(() => retItems.value.filter(i => !retKeyword.value || i.name.includes(retKeyword.value)))
-const retTotal = computed(() => retItems.value.reduce((s, i) => s + i.balanceCents, 0))
-const retMax = computed(() => retItems.value.length ? Math.max(...retItems.value.map(i => i.balanceCents)) : 0)
-const retAvg = computed(() => retItems.value.length ? Math.round(retTotal.value / retItems.value.length) : 0)
+// 权威口径 = 往来单位的「已收」（receipt 聚合，与往来页同源），分长期(dividend)/再投资(reinvest_dividend)两类。
+// 不再按「投资收益」科目同名二级挂接；科目余额只用来做对账提示（直接入账未挂应收的收益不在已收内）。
+function isInvestParty(p: Party) {
+  const types = p.types && p.types.length ? p.types : (p.type ? [p.type] : [])
+  return types.includes('invest') || types.includes('reinvest')
+}
+
+interface RetRow { id: number; name: string; ltCents: number; riCents: number; total: number }
+const retRows = computed<RetRow[]>(() => parties.value
+  .filter(isInvestParty)
+  .map(p => {
+    const lt = p.dividendReceivedCents || 0
+    const ri = p.reinvestReceivedCents || 0
+    return { id: p.id, name: p.name, ltCents: lt, riCents: ri, total: lt + ri }
+  })
+  .filter(r => r.total !== 0)
+  .sort((a, b) => b.total - a.total))
+const retFiltered = computed(() => retRows.value.filter(r => !retKeyword.value || r.name.includes(retKeyword.value)))
+const retLtTotal = computed(() => retRows.value.reduce((s, r) => s + r.ltCents, 0))
+const retRiTotal = computed(() => retRows.value.reduce((s, r) => s + r.riCents, 0))
+const retReceivedTotal = computed(() => retLtTotal.value + retRiTotal.value)
+
+// 收益科目已入账（投资收益 + 再投资收益 两个容器的二级余额合计），仅用于对账提示
+const retBookedTotal = computed(() => ['投资收益', '再投资收益']
+  .reduce((s, n) => s + (findCat(n)?.children?.reduce((x, c) => x + (c.balanceCents || 0), 0) || 0), 0))
+const retReconDiff = computed(() => retBookedTotal.value - retReceivedTotal.value)
 
 // ====== 532分配 ======
 interface DistRecord {
@@ -468,11 +516,8 @@ const showDistDialog = ref(false)
 const distLocked = ref(false)
 const distForm = ref({ reinvest: 0, dividend: 0, welfare: 0 })
 
-// 投资收益总余额（累计的，所有可分配资金）
-const distTotalIncome = computed(() => {
-  const cat = findCat('投资收益')
-  return cat?.children?.reduce((s, c) => s + (c.balanceCents || 0), 0) || 0
-})
+// 可分配池 = 已收收益合计（长期 + 再投资），与投资收益页签同源
+const distTotalIncome = computed(() => retReceivedTotal.value)
 
 const distFormTotal = computed(() => distForm.value.reinvest + distForm.value.dividend + distForm.value.welfare)
 
@@ -775,14 +820,14 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 
 function exportCSV(tab: string) {
   if (tab === 'longterm') {
-    downloadCSV('长期投资.csv', ['单位名称', '投资金额', '年收益率', '年收益'],
-      ltFiltered.value.map(i => [i.name, fmt(i.balanceCents), i.ratePct + '%', fmt(i.expectedReturnCents)]))
+    downloadCSV('长期投资.csv', ['单位名称', '投资金额', '年收益率', '年预期收益', '已收收益'],
+      ltFiltered.value.map(i => [i.name, fmt(i.balanceCents), i.ratePct + '%', fmt(i.expectedReturnCents), fmt(i.receivedCents)]))
   } else if (tab === 'reinvest') {
-    downloadCSV('再投资.csv', ['单位名称', '再投资金额', '年收益率', '年收益'],
-      riFiltered.value.map(i => [i.name, fmt(i.balanceCents), i.ratePct + '%', fmt(i.expectedReturnCents)]))
+    downloadCSV('再投资.csv', ['单位名称', '再投资金额', '年收益率', '年预期收益', '已收收益'],
+      riFiltered.value.map(i => [i.name, fmt(i.balanceCents), i.ratePct + '%', fmt(i.expectedReturnCents), fmt(i.receivedCents)]))
   } else if (tab === 'returns') {
-    downloadCSV('投资收益.csv', ['收益项目', '金额'],
-      retFiltered.value.map(i => [i.name, fmt(i.balanceCents)]))
+    downloadCSV('投资收益.csv', ['单位名称', '已收长期投资收益', '已收再投资收益', '合计'],
+      retFiltered.value.map(r => [r.name, fmt(r.ltCents), fmt(r.riCents), fmt(r.total)]))
   } else if (tab === 'dist532') {
     if (!distData.value) { downloadCSV('532分配.csv', ['提示'], [['该年度尚未分配']]); return }
     downloadCSV('532分配.csv', ['分配项目', '比例', '金额', '实际占比'],
@@ -816,10 +861,12 @@ onMounted(load)
 .page-sub   { font-size: 12px; color: var(--ink-muted); margin: 4px 0 0; }
 
 .ip-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px;
 }
 .ip-stat {
   background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px;
+  /* 5 张卡时允许收缩：grid 项默认 min-width:auto 会被长金额顶破容器（同 docs/24 §4 P1-1 根因） */
+  min-width: 0;
 }
 .ip-stat-label { font-size: 12px; color: var(--ink-muted); }
 .ip-stat-value { font-size: 16px; font-weight: 600; color: var(--ink-900, var(--ink)); margin-top: 2px; font-variant-numeric: tabular-nums; }
@@ -831,8 +878,17 @@ onMounted(load)
 .ip-stats .ip-stat:nth-child(2) { background: var(--success-bg); }
 .ip-stats .ip-stat:nth-child(3) { background: var(--asset-bg); }
 .ip-stats .ip-stat:nth-child(4) { background: var(--warn-bg); }
+.ip-stats .ip-stat:nth-child(5) { background: var(--indigo-light); }
+/* 五卡的两张表在宽屏排一行，避免第 5 张掉到孤行（四卡页签不受影响） */
+@media (min-width: 800px) {
+  .ip-stats--5 { grid-template-columns: repeat(5, 1fr); }
+}
 
 .ip-filter { margin-bottom: 8px; }
+.ip-recon-hint {
+  font-size: 12px; line-height: 1.5; color: var(--warning);
+  background: var(--warn-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+}
 .ip-search { padding: 0; }
 
 .ip-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; }

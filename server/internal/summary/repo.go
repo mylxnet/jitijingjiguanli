@@ -255,7 +255,7 @@ func (r *Repo) calcComposition(orgID int64, bank int64) (*Composition, error) {
 		}
 		flowMgmt += bal
 	}
-	// 公益支出科目已出（direction=expense，全年 normal）
+	// 公益支出科目已出（direction=expense，历年累计，与下方分配额同区间）
 	var welfareSpent int64
 	if err := r.db.QueryRow(`SELECT COALESCE(SUM(t.amount_cents),0)
 		FROM txn t JOIN category c ON c.id = t.category_id
@@ -263,10 +263,10 @@ func (r *Repo) calcComposition(orgID int64, bank int64) (*Composition, error) {
 	).Scan(&welfareSpent); err != nil {
 		return nil, fmt.Errorf("聚合公益支出已出失败: %w", err)
 	}
-	// 532 分配的公益额度（取最近年度方案）
+	// 532 分配的公益额度：历年累计（与「已出」同为累计口径，否则跨年发放会把该项算成负数）
 	var welfareAlloc int64
-	if err := r.db.QueryRow(`SELECT welfare_cents FROM distribution_532 WHERE org_id=? ORDER BY year DESC LIMIT 1`, orgID,
-	).Scan(&welfareAlloc); err != nil && err != sql.ErrNoRows {
+	if err := r.db.QueryRow(`SELECT COALESCE(SUM(welfare_cents), 0) FROM distribution_532 WHERE org_id=?`, orgID,
+	).Scan(&welfareAlloc); err != nil {
 		return nil, fmt.Errorf("读取532公益分配失败: %w", err)
 	}
 	welfareNet := welfareAlloc - welfareSpent

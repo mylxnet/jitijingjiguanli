@@ -24,10 +24,11 @@ const REGISTERED_USERS = [
 let currentSessionUser = 'admin';
 
 // ========== 模拟数据 ==========
-// 预置科目与 Go seedPresetCategoriesTx 保持一致：8 个 L1
+// 预置科目与 Go seedPresetCategoriesTx 保持一致：9 个 L1
 //   1 本金(preset=1) / 2 长期投资(preset=1,空) / 3 再投资(preset=1,空)
 //   4 经营收入(preset=1,2个L2) / 5 投资收益(preset=1,空)
-//   6 土地流转费收入(preset=1,空) / 7 流转管理费(preset=1,空) / 8 分配与支出(preset=1,5个L2)
+//   6 再投资收益(preset=1,空) / 7 土地流转费收入(preset=1,空)
+//   8 流转管理费(preset=1,空) / 9 分配与支出(preset=1,5个L2)
 // 空容器按往来单位 type 自动建 L2：
 //   type=invest → 长期投资下建同名 L2
 //   type=flow → 土地流转费收入下建同名 L2 + 流转管理费下建同名 L2
@@ -44,6 +45,8 @@ const CATEGORIES = [
     { id: 42, name: '其他收入', level: 2, kind: 'equity', parentId: 4, preset: true, status: 'active', balanceCents: 0 },
   ]},
   { id: 5, name: '投资收益', level: 1, kind: 'equity', preset: true, status: 'active', children: [] },
+  // 再投资收益：Go 侧 sort=6；mock 的 id 仅用于内部引用，故续号 9 不打乱既有 id
+  { id: 9, name: '再投资收益', level: 1, kind: 'equity', preset: true, status: 'active', children: [] },
   { id: 6, name: '土地流转费收入', level: 1, kind: 'equity', preset: true, status: 'active', children: [] },
   { id: 7, name: '流转管理费', level: 1, kind: 'equity', preset: true, status: 'active', children: [] },
   { id: 8, name: '分配与支出', level: 1, kind: 'equity', preset: true, status: 'active', children: [
@@ -145,12 +148,23 @@ function collectData() {
   };
 }
 
+// 预置 L1 补齐：持久化快照可能早于新增的预置容器（如「再投资收益」）。
+// 与 Go 迁移 020 同思路——按种子顺序补建缺失的预置一级，已有数据一律不动。
+function backfillPresetL1() {
+  for (let i = 0; i < DATA_SEED.categories.length; i++) {
+    const seed = DATA_SEED.categories[i];
+    if (CATEGORIES.some(c => c.name === seed.name)) continue;
+    CATEGORIES.splice(i, 0, JSON.parse(JSON.stringify(seed)));
+  }
+}
+
 // 将收集的数据恢复到内存变量
 function restoreData(saved) {
   // 清空并恢复各数组
   const setArray = (arr, items) => { arr.length = 0; arr.push(...items); };
   setArray(REGISTERED_USERS, saved.registeredUsers);
   setArray(CATEGORIES, saved.categories);
+  backfillPresetL1();
   setArray(PARTIES, saved.parties || []);
   setArray(TRANSACTIONS, saved.transactions || []);
   setArray(RECEIVABLES, saved.receivables || []);

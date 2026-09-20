@@ -406,6 +406,31 @@ func TestCompositionExpense(t *testing.T) {
 	}
 }
 
+// TestCompositionWelfareCrossYear 可支出-公益支出：分配额与已出必须同为累计口径。
+// 旧实现分配额只取最近年度（ORDER BY year DESC LIMIT 1），跨年发放会把该项算成负数。
+func TestCompositionWelfareCrossYear(t *testing.T) {
+	db, org := openDB(t)
+
+	l1W := cat(t, db, org, "分配与支出", 1, nil, "equity")
+	wCat := cat(t, db, org, "公益支出", 2, l1W, "equity")
+
+	// 2025 年度拨 100000、当年花掉 30000；2026 年度拨 50000、当年花掉 40000
+	insert532(t, db, org, 2025, 200000, 100000, 50000, 100000)
+	txn(t, db, org, "2025-12-10", "expense", 30000, wCat)
+	insert532(t, db, org, 2026, 100000, 50000, 30000, 50000)
+	txn(t, db, org, "2026-08-02", "expense", 40000, wCat)
+
+	s := NewRepo(db)
+	resp, err := s.GetSummary(org, "2026-08-01", "2026-09-30")
+	if err != nil {
+		t.Fatalf("GetSummary: %v", err)
+	}
+	// 累计分配 150000 − 累计已出 70000 = 80000（旧口径会得 50000-70000 = -20000）
+	if got := sliceVal(resp.Composition.Expense, "公益支出"); got != 80000 {
+		t.Errorf("可支出-公益支出应 150000-70000=80000，实际 %d", got)
+	}
+}
+
 // TestCompositionInvestAbs v0.21 投资构成取余额绝对值。
 func TestCompositionInvestAbs(t *testing.T) {
 	db, org := openDB(t)

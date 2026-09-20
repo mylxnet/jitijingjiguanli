@@ -185,10 +185,11 @@ func (r *Repo) createUserTx(tx *sql.Tx, orgID int64, username, passwordHash stri
 }
 
 // seedPresetCategoriesTx 事务内写入预置科目。
-// 共 8 个一级，按 sort 排序：
+// 共 9 个一级，按 sort 排序：
 //   1 本金(空)  2 长期投资(空)  3 再投资(空)  4 经营收入(其他财政收入/其他收入)
-//   5 投资收益(空)  6 土地流转费收入(空)  7 流转管理费(空)  8 分配与支出(5个L2)
-// 空容器在业务操作时按往来单位名自动建二级（invest→长期投资；flow→土地流转费收入+流转管理费）。
+//   5 投资收益(空)  6 再投资收益(空)  7 土地流转费收入(空)  8 流转管理费(空)  9 分配与支出(5个L2)
+// 空容器在业务操作时按往来单位名自动建二级（invest→长期投资；flow→土地流转费收入+流转管理费；
+// 收益核销入账容器按 recv_kind 定位：dividend→投资收益，reinvest_dividend→再投资收益）。
 // 预置科目 preset=1，handler 层禁止删除和重命名（可停用、可改期初）。
 func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 	now := platform.Now()
@@ -205,17 +206,18 @@ func (r *Repo) seedPresetCategoriesTx(tx *sql.Tx, orgID int64) error {
 		return res.LastInsertId()
 	}
 
-	// 一级分组（8 个 equity 容器）
+	// 一级分组（9 个 equity 容器）
 	l1Fund, _ := insert("本金", 1, nil, "equity", 1)
 	_, _ = insert("长期投资", 1, nil, "equity", 2)
 	_, _ = insert("再投资", 1, nil, "equity", 3)
 	l1Income, _ := insert("经营收入", 1, nil, "equity", 4)
 	_, _ = insert("投资收益", 1, nil, "equity", 5)
-	_, _ = insert("土地流转费收入", 1, nil, "equity", 6)
-	_, _ = insert("流转管理费", 1, nil, "equity", 7)
-	l1Dist, _ := insert("分配与支出", 1, nil, "equity", 8)
+	_, _ = insert("再投资收益", 1, nil, "equity", 6)
+	_, _ = insert("土地流转费收入", 1, nil, "equity", 7)
+	_, _ = insert("流转管理费", 1, nil, "equity", 8)
+	l1Dist, _ := insert("分配与支出", 1, nil, "equity", 9)
 
-	// 二级预设（长期投资/再投资/投资收益/土地流转费收入/流转管理费 五个 L1 留空，业务时自动建）
+	// 二级预设（长期投资/再投资/投资收益/再投资收益/土地流转费收入/流转管理费 六个 L1 留空，业务时自动建）
 	presetL2 := []struct {
 		name     string
 		parentID int64
