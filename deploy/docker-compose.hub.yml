@@ -12,7 +12,7 @@
 
 services:
   jititaizhang:
-    image: registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:v0.24.0
+    image: registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:v0.24.1
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:8080"
