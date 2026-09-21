@@ -143,6 +143,8 @@ func buildRouter(a *app) *gin.Engine {
 }
 
 // registerStatic 托管内嵌前端：非 /api 请求返回静态文件，未命中回退 index.html（SPA hash 路由）。
+// assets/ 下的产物一律带内容哈希，未命中必须 404：回退 index.html 会让浏览器把 HTML 当 JS 模块加载，
+// 严格 MIME 校验直接拒绝，懒加载路由随之静默中止（换镜像后旧页面点 tab 没反应的成因）。
 func registerStatic(r *gin.Engine) {
 	r.NoRoute(func(c *gin.Context) {
 		p := c.Request.URL.Path
@@ -156,6 +158,10 @@ func registerStatic(r *gin.Engine) {
 		}
 		data, err := webFS.ReadFile("web/" + filepath.ToSlash(name))
 		if err != nil {
+			if strings.HasPrefix(name, "assets/") {
+				c.String(http.StatusNotFound, "asset not found")
+				return
+			}
 			data, err = webFS.ReadFile("web/index.html")
 			if err != nil {
 				c.Status(http.StatusNotFound)
@@ -166,6 +172,11 @@ func registerStatic(r *gin.Engine) {
 		ct := mime.TypeByExtension(filepath.Ext(name))
 		if ct == "" {
 			ct = "text/plain; charset=utf-8"
+		}
+		if name == "index.html" {
+			c.Header("Cache-Control", "no-cache")
+		} else {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
 		}
 		c.Data(http.StatusOK, ct, data)
 	})

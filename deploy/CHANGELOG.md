@@ -8,6 +8,25 @@
 > v0.20 合同到期管理与归档、v0.21 看板环形构成改造+全站配色归一与浅色化、v0.22 全站配色 token 化改造与对比度达标(WCAG AA)。
 > 自 v0.23 起恢复逐版记录。
 
+## [0.24.1]
+
+### 修复
+- **换镜像/升级后「点 tab 没反应」（手机端往来、合同等懒加载页）**：单二进制内嵌前端此前对**未命中的静态产物**一律回退 `index.html`，浏览器把 HTML 当 JS 模块加载会被严格 MIME 校验拒绝 → 懒加载路由的 `import()` 抛错 → Vue Router **静默中止跳转**，界面零提示、零日志。现改为：
+  - `/assets/*` 未命中 → **`404 asset not found`**（不再回退 HTML）；
+  - `index.html`（含 SPA 路由回退）→ `Cache-Control: no-cache`，换版本后旧 HTML 不再长期留存；
+  - 带内容哈希的产物 → `Cache-Control: public, max-age=31536000, immutable`；
+  - 其余非 `/api/` 路径仍回退 `index.html`（hash 路由不受影响）。
+  - 回归测试 `server/cmd/server/main_test.go`（`TestStaticAsset404AndCacheHeaders`）。
+- **手机端合同 PDF 打不开 / 白屏**：合同预览此前把 `data:application/pdf;base64,…` 直接塞进 `<iframe>`，而移动端内核不在 iframe 里渲染 PDF（安卓 Chrome 无内置 PDF 查看器、iOS Safari 只在顶层导航用 QuickLook、微信内直接白屏）。改为 **pdf.js 逐页画 canvas**（弹窗内可滚动、显示总页数），并给所有预览类型统一生成 **blob URL** 供 iframe 与「⬇ 下载」使用（绕开超长 data URL 被移动 WebView 拦截），渲染失败时保留下载入口而不是关掉弹窗。
+
+### 新增
+- 前端依赖 `pdfjs-dist@4.10.38`。按需**懒加载**：`pdf-*.js` 365 KB（仅打开 PDF 预览时下载）+ worker `pdf.worker.min-*.mjs` 1.37 MB；worker 经 Vite `?url` 打包为同源产物（不走 CDN），实测服务端下发 `text/javascript`，与上一条 MIME 口径配套。
+
+### 遗留
+- 真机（安卓 / 微信 WebView）渲染仍**未实机复核**：本机 QA 只有桌面 Chromium，且该窗口处于后台时 `requestAnimationFrame` 不触发、pdf.js 会无声卡死，自测需注入 rAF 垫片 —— 能证明逻辑正确，不等于实机通过。
+- 「版本漂移自愈」（拉不到入口 chunk 时提示刷新并自动重载一次）本次**未做**。
+- 详见 `docs/26-静态资源缓存与手机端合同PDF预览方案.md`。
+
 ## [0.24.0]
 
 ### 变更（功能口径）

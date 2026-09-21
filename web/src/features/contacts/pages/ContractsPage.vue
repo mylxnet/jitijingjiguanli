@@ -149,7 +149,7 @@
       <div v-if="previewVisible" class="preview-dialog" tabindex="-1">
         <div class="preview-header">
           <span class="preview-title">{{ previewFileName }}</span>
-          <button class="preview-close-btn" @click="previewVisible = false">关闭</button>
+          <button class="preview-close-btn" @click="closePreview">关闭</button>
         </div>
         <div v-if="previewLoading" class="preview-body">
           <van-loading size="36px" color="var(--info)" />
@@ -176,10 +176,19 @@
             <div class="office-ic">📄</div>
             <p>浏览器无法直接预览 <b>{{ previewFileName }}</b></p>
             <p class="office-sub">请下载后用 Microsoft Office 或 WPS 打开</p>
-            <a :href="previewFileData" :download="previewFileName" class="download-btn">⬇ 立即下载 {{ previewFileName }}</a>
+            <a :href="previewBlobUrl || previewFileData" :download="previewFileName" class="download-btn">⬇ 立即下载 {{ previewFileName }}</a>
           </div>
-          <!-- 其他：iframe（PDF 等浏览器原生支持的 MIME） -->
-          <iframe v-else :src="previewFileData" class="preview-iframe"></iframe>
+          <!-- PDF：pdf.js 逐页画成 canvas。手机浏览器不渲染 iframe 里的 PDF（安卓 Chrome 无内置查看器、
+               iOS Safari 只在顶层导航用 QuickLook、微信内直接白屏），所以不能只交给 iframe。 -->
+          <div v-else-if="previewKind === 'pdf'" class="preview-pdf-wrap">
+            <div class="pdf-bar">
+              <span class="pdf-meta">{{ pdfBarText }}</span>
+              <a v-if="previewBlobUrl" :href="previewBlobUrl" :download="previewFileName" class="download-btn pdf-dl">⬇ 下载</a>
+            </div>
+            <div ref="pdfPagesRef" class="preview-pdf"></div>
+          </div>
+          <!-- 其余浏览器原生可显示的类型：用 blob URL，避免超长 data URL 被移动 WebView 拦掉 -->
+          <iframe v-else :src="previewBlobUrl || previewFileData" class="preview-iframe"></iframe>
         </div>
         <div v-else class="preview-body preview-empty">暂无文件内容</div>
       </div>
@@ -242,9 +251,14 @@ const previewLoading = ref(false)
 const previewFileData = ref<string>('')
 const previewFileName = ref<string>('')
 const previewMime = ref<string>('')
-const previewKind = ref<'text' | 'image' | 'word' | 'excel' | 'office-download' | 'iframe'>('iframe')
+const previewKind = ref<'text' | 'image' | 'word' | 'excel' | 'office-download' | 'pdf' | 'iframe'>('iframe')
 const previewTextContent = ref<string>('')
 const previewHtmlContent = ref<string>('')
+// 移动 WebView 对超长 data URL 很不友好（iframe 里的 PDF 直接不渲染），统一再转一份 blob URL
+const previewBlobUrl = ref<string>('')
+const previewPdfPages = ref(0)
+const previewPdfError = ref('')
+const pdfPagesRef = ref<HTMLElement | null>(null)
 
 // Excel 多 sheet 支持
 const excelSheets = ref<string[]>([])
@@ -325,15 +339,39 @@ function base64DataUrlToUint8(dataUrl: string): Uint8Array {
   return bytes
 }
 
+// ============ 预览 URL 生命周期 ============
+function makePreviewBlobUrl(dataUrl: string, mime: string) {
+  revokePreviewBlobUrl()
+  try {
+    previewBlobUrl.value = URL.createObjectURL(new Blob([base64DataUrlToUint8(dataUrl).buffer as ArrayBuffer], { type: mime || 'application/octet-stream' }))
+  } catch {
+    previewBlobUrl.value = ''
+  }
+}
+function revokePreviewBlobUrl() {
+  if (previewBlobUrl.value) {
+    URL.revokeObjectURL(previewBlobUrl.value)
+    previewBlobUrl.value = ''
+  }
+}
+function closePreview() {
+  previewVisible.value = false
+  revokePreviewBlobUrl()
+  previewPdfPages.value = 0
+  previewPdfError.value = ''
+  if (pdfPagesRef.value) pdfPagesRef.value.innerHTML = ''
+}
+
 // ============ 类型判定 ============
-function detectPreviewKind(mime: string, fileName: string): 'text' | 'image' | 'word' | 'excel' | 'office-download' | 'iframe' {
+function detectPreviewKind(mime: string, fileName: string): 'text' | 'image' | 'word' | 'excel' | 'office-download' | 'pdf' | 'iframe' {
   const ext = fileExt(fileName)
   if (mime.startsWith('text/')) return 'text'
   if (mime.startsWith('image/')) return 'image'
   if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') return 'word'
   if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || ext === 'xlsx') return 'excel'
   if (OFFICE_DOWNLOAD_MIMES.includes(mime) || OFFICE_DOWNLOAD_EXT.includes(ext)) return 'office-download'
-  return 'iframe' // PDF 等浏览器原生支持
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
+  return 'iframe'
 }
 
 // ============ 异步渲染器 ============
@@ -353,6 +391,35 @@ async function renderExcel(dataUrl: string) {
   excelActiveSheet.value = 0
 }
 
+// PDF：手机浏览器不在 iframe 里渲染 PDF（安卓 Chrome 无内置查看器、iOS 只在顶层导航用 QuickLook、
+// 微信内直接白屏），所以用 pdf.js 自己把每页画成 canvas。pdfjs 体积大，按需懒加载。
+async function renderPdf(dataUrl: string) {
+  const bytes = base64DataUrlToUint8(dataUrl)
+  const pdfjs = await import('pdfjs-dist')
+  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+  const doc = await pdfjs.getDocument({ data: bytes }).promise
+  await nextTick()
+  const host = pdfPagesRef.value
+  if (!host) throw new Error('预览容器未就绪')
+  host.innerHTML = ''
+  const cssW = host.clientWidth || window.innerWidth
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n)
+    const scale = (cssW / page.getViewport({ scale: 1 }).width) * dpr
+    const vp = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.className = 'pdf-page'
+    canvas.width = Math.ceil(vp.width)
+    canvas.height = Math.ceil(vp.height)
+    canvas.style.width = '100%'
+    host.appendChild(canvas)
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise
+  }
+  previewPdfPages.value = doc.numPages
+}
+
 // 当前激活的 sheet 渲染成 HTML table
 const excelHtml = computed(() => {
   const wb = excelWorkbook.value
@@ -361,6 +428,12 @@ const excelHtml = computed(() => {
   const ws = wb.Sheets[sheetName]
   // 简单方式：用 XLSX.write 输出 HTML
   return XLSX.utils.sheet_to_html(ws, { editable: false })
+})
+
+const pdfBarText = computed(() => {
+  if (previewPdfError.value) return '无法在线渲染，请下载后查看'
+  if (!previewPdfPages.value) return '正在渲染…'
+  return '共 ' + previewPdfPages.value + ' 页'
 })
 
 // ============ 主逻辑 ============
@@ -633,17 +706,32 @@ async function viewContract(c: Contract) {
   previewFileName.value = target.fileName
   previewFileData.value = target.fileData
   previewMime.value = target.mimeType || 'application/octet-stream'
+  makePreviewBlobUrl(target.fileData, previewMime.value)
 
   const kind = detectPreviewKind(previewMime.value, previewFileName.value)
   previewKind.value = kind
   previewTextContent.value = ''
   previewHtmlContent.value = ''
+  previewPdfPages.value = 0
+  previewPdfError.value = ''
   excelSheets.value = []
   excelWorkbook.value = null
 
   // 同步类型：立即显示
   if (kind === 'iframe' || kind === 'image') {
     previewVisible.value = true
+    return
+  }
+
+  if (kind === 'pdf') {
+    // 不进 previewLoading：那条分支会把 canvas 容器整个替换掉，pdf.js 就没有地方落页
+    previewVisible.value = true
+    try {
+      await renderPdf(target.fileData)
+    } catch (e: any) {
+      // 渲染失败不关弹窗，保留下载入口让用户在外部阅读器打开
+      previewPdfError.value = e?.message || 'PDF 渲染失败'
+    }
     return
   }
 
@@ -670,7 +758,7 @@ async function viewContract(c: Contract) {
     }
   } catch (e: any) {
     alert('文件解析失败：' + (e?.message || '未知错误'))
-    previewVisible.value = false
+    closePreview()
   } finally {
     previewLoading.value = false
   }
@@ -758,7 +846,7 @@ function closeDeleteDialog() {
 // 全局 Escape 关闭预览
 function handleEscape(e: KeyboardEvent) {
   if (e.key === 'Escape' && previewVisible.value) {
-    previewVisible.value = false
+    closePreview()
   }
 }
 onMounted(() => {
@@ -767,6 +855,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscape)
+  revokePreviewBlobUrl()
   if (delTimer !== null) clearInterval(delTimer)
 })
 </script>
@@ -915,6 +1004,17 @@ onUnmounted(() => {
 .preview-img { flex: 1; display: block; object-fit: contain; background: #2b2b2b; }
 .preview-iframe { flex: 1; width: 100%; height: 100%; border: none; background: #fff; }
 .preview-empty { padding: 40px; text-align: center; color: var(--ink-muted); }
+
+/* PDF（pdf.js 逐页 canvas） */
+.preview-pdf-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--paper-warm); }
+.pdf-bar {
+  flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--paper-deep);
+}
+.pdf-meta { font-size: 12px; color: var(--ink-soft); }
+.pdf-dl { margin-top: 0; padding: 5px 12px; font-size: 12px; }
+.preview-pdf { flex: 1; overflow: auto; padding: 10px; }
+.pdf-page { display: block; width: 100%; margin: 0 auto 10px; box-shadow: 0 1px 4px rgba(0,0,0,.12); background: #fff; }
 
 /* Word 渲染样式（mammoth 转出来的 HTML） */
 .preview-docx {
