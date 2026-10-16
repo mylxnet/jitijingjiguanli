@@ -27,3 +27,6 @@ deploy/.env
 .vscode
 .DS_Store
 *.log
+
+# 测试/临时产物（不入镜像上下文）
+_scratch

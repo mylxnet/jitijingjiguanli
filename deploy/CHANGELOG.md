@@ -19,7 +19,7 @@
 - **操作日志新增「操作人」列**：`changelog.OpLog.Operator`，迁移前的历史记录为空、界面显示「迁移前」；CSV 导出同步新增该列。
 
 ### 变更
-- **后端为权限唯一权威**：路由按 `public / read / biz / admin / owner` 四组重组（`server/cmd/server/main.go`），配合 `RequireAuth` + `RequireWrite`（非 GET/HEAD 即写）+ `RequireRole(owner,admin)` 分级中间件（`server/internal/auth/middleware.go`）。`/api/me` 新增返回 `role` 与 `userID`。
+- **后端为权限唯一权威**：路由按 `public / read / biz / admin / owner` 五组重组（`server/cmd/server/main.go`），配合 `RequireAuth` + `RequireWrite`（非 GET/HEAD 即写）+ `RequireRole(owner,admin)` 分级中间件（`server/internal/auth/middleware.go`）。`/api/me` 新增返回 `role` 与 `userID`。
 - **前端按角色收口（仅体验层，不替代后端拦截）**：登录态记 `role` / `userId`（`features/auth/store.ts`）；路由 `meta.roles` 守卫，`viewer` 直访 `/users` 会重定向回看板并提示；侧边菜单隐藏「用户管理」与写入口「快速记账」；新增全局指令 `v-write`（不可写时 `display:none`）铺到各页写按钮；设置页 `viewer` 只留「修改密码 / 登出」，「恢复备份」「清除日志」「系统重置」仅 `owner` 可见。
 
 ### 影响面
@@ -29,11 +29,15 @@
 - 仓库新增 `.gitattributes`（`* text=auto eol=lf`），统一行尾为 LF，消除 Windows 端 CRLF 噪声。
 
 ### 验证
+- **升级兼容性（老库原地升级，真实实测）**：取一份 021 之前的真实库（`schema_migrations` 停在 020、org 6 / party 30 / category 155 / txn 21 / receivable 26 / receipt 5 / contract 1 / change_log 35 / recv_standard 26），直接用 v0.25.0 二进制启动 → 迁移 021 自动应用（20 → 21 条）；`user` 表增出 `role`/`status`，原唯一管理员自动升为 `owner`/`active`；`change_log` 增出 `operator`，35 条历史记录全为 NULL（界面按「迁移前」展示，不回填）；**各表行数与升级前逐项一致，零丢失**；老账号经公开重置口令后 `admin/admin888` 登录成功，`/api/me` 返回 `role=owner`，`/api/parties`、`/api/transactions`、`/api/receivables`、`/api/contracts`、`/api/categories` 均 200 且读到老数据。结论：**换镜像后原库文件可直接原地升级使用**。
 - 后端接口权限矩阵（WSL 内真实 Go 服务 + curl，三账号 `admin`=owner / `zhangkuaiji`=admin / `lichunna`=viewer）：`GET /api/users`、`GET /api/backups`、`GET /api/operation-logs` 对 viewer 一律 403；admin 建 admin 403、建 viewer 200；`DELETE /api/operation-logs`、`POST /api/system/reset` 对 admin 403。
 - 前端界面（真实 Chrome，Chrome DevTools 驱动）：viewer 无「用户管理 / 快速记账」菜单、直访 `/users` 被拦回看板、设置页只剩改密与登出；admin 统计卡 4/1/2/1、自己行显示「当前登录账号」、新建角色下拉仅「一般用户」、备份项无「恢复」、日志无「清除日志」；owner 三行均有「改角色」、角色下拉两项、备份项有「恢复」、高级设置含「危险操作 / 系统重置」、日志有「清除日志」与操作人。
 
+### 发布
+- **镜像已构建并推送阿里云 ACR**（本机 WSL `lxsyzd` 内构建，`--provenance=false --sbom=false`）：`registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:v0.25.0` 与 `:latest` 同 digest `sha256:f33b87d004762e2bcb3741684e36952f7dba1caa9f3a40f6e78cdf84e87140bb`；`deploy/docker-compose.hub.yml` 的 image 标签已同步为 `v0.25.0`。
+- **容器级升级兼容性（真镜像 + 挂载老库，实测通过）**：取 021 之前的老库（020、账号 1 个、org 6 / party 30 / category 155 / txn 21 / receivable 26 / receipt 5 / contract 1 / change_log 35 / recv_standard 26），用 `v0.25.0` 真镜像挂载 `${DATA_DIR}:/data` 启动容器 → 一次启动即完成：迁移自动升到 `021_user_roles.sql`；老账号 `admin` → `role=owner` / `status=active`；**各表行数与升级前逐项一致、零丢失**；老账号登录成功、`/api/me` 返回 `role=owner`；parties/transactions/receivables/contracts/categories/users/backups 全 200 且读到老数据；`GET /` 200。**升级只需把挂载目录换成同一份老库、重启容器即可，无需导出导入。**
+
 ### 遗留
-- **镜像标签未同步**：`deploy/docker-compose.hub.yml` 的 image 仍指向 `v0.24.1`；本版本尚未触发「打包镜像」，待构建并推送 ACR 后再改标签（避免指向不存在的镜像）。
 - 前端收口是体验层：`v-write` 只隐藏按钮，深链（如 `?editParty=<id>`）需靠页面内 `auth.isWritable` 兜底校验；真正的越权拦截以后端中间件为准。
 
 ## [0.24.1]

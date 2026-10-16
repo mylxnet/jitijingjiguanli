@@ -48,6 +48,8 @@ docker compose -f deploy/docker-compose.hub.yml up -d
 
 升级到某个版本只需改 `deploy/docker-compose.hub.yml` 的 image 标签，再 `pull` + `up -d`。请用 compose 启动：裸 `docker run` 漏掉挂载会丢数据目录。
 
+**升级不会动你的账本**：只要 `DATA_DIR` 仍指向原数据目录（同一份 `jititaizhang.db`），新镜像启动时会自动执行新增的数据库迁移（`schema_migrations` 表逐条记录、事务内执行），老数据原地升级、无需导出导入。升级前建议先在设置页做一次备份。若挂载目录被换掉或删空，程序会当作全新库并从注册页开始。
+
 ### C. 从源码构建
 
 ```bash
