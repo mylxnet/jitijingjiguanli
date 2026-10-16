@@ -33,17 +33,18 @@ func (r *Repo) CreateOrg(name string) (*Org, error) {
 }
 
 // CreateUser 创建用户（绑定组织）。
-func (r *Repo) CreateUser(orgID int64, username, passwordHash string) (*User, error) {
+func (r *Repo) CreateUser(orgID int64, username, passwordHash, role string) (*User, error) {
 	now := platform.Now()
 	res, err := r.db.Exec(
-		`INSERT INTO user(org_id, username, password_hash, created_at) VALUES(?, ?, ?, ?)`,
-		orgID, username, passwordHash, now,
+		`INSERT INTO user(org_id, username, password_hash, role, status, created_at)
+		 VALUES(?, ?, ?, ?, ?, ?)`,
+		orgID, username, passwordHash, role, StatusActive, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
 	id, _ := res.LastInsertId()
-	return &User{ID: id, OrgID: orgID, Username: username, CreatedAt: now}, nil
+	return &User{ID: id, OrgID: orgID, Username: username, Role: role, Status: StatusActive, CreatedAt: now}, nil
 }
 
 // CountUsers 统计用户总数（用于单用户注册限制）。
@@ -58,27 +59,21 @@ func (r *Repo) CountUsers() (int, error) {
 
 // FindByUsername 按用户名查找用户（含组织归属）。
 func (r *Repo) FindByUsername(username string) (*User, error) {
-	u := &User{}
-	err := r.db.QueryRow(
-		`SELECT id, org_id, username, password_hash, created_at FROM user WHERE username = ?`,
-		username,
-	).Scan(&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.CreatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("查找用户失败: %w", err)
-	}
-	return u, nil
+	return r.findUser(`SELECT id, org_id, username, password_hash, role, status, created_at
+		FROM user WHERE username = ?`, username)
 }
 
 // FindUserByID 按 ID 查找用户（含组织归属）。
 func (r *Repo) FindUserByID(id int64) (*User, error) {
+	return r.findUser(`SELECT id, org_id, username, password_hash, role, status, created_at
+		FROM user WHERE id = ?`, id)
+}
+
+// findUser 用户行查询公共实现（无匹配返回 nil, nil）。
+func (r *Repo) findUser(query string, args ...any) (*User, error) {
 	u := &User{}
-	err := r.db.QueryRow(
-		`SELECT id, org_id, username, password_hash, created_at FROM user WHERE id = ?`,
-		id,
-	).Scan(&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.CreatedAt)
+	err := r.db.QueryRow(query, args...).Scan(
+		&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -88,19 +83,85 @@ func (r *Repo) FindUserByID(id int64) (*User, error) {
 	return u, nil
 }
 
-// FindAnyUser 返回系统中任意一个用户（用于重置密码）。
-func (r *Repo) FindAnyUser() (*User, error) {
-	u := &User{}
-	err := r.db.QueryRow(
-		`SELECT id, org_id, username, password_hash, created_at FROM user ORDER BY id ASC LIMIT 1`,
-	).Scan(&u.ID, &u.OrgID, &u.Username, &u.PasswordHash, &u.CreatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+// ListByOrg 列出某组织全部账号（含角色/状态），按创建时间正序。
+func (r *Repo) ListByOrg(orgID int64) ([]*User, error) {
+	rows, err := r.db.Query(`SELECT id, org_id, username, role, status, created_at
+		FROM user WHERE org_id = ? ORDER BY id ASC`, orgID)
 	if err != nil {
-		return nil, fmt.Errorf("查找用户失败: %w", err)
+		return nil, fmt.Errorf("查询账号列表失败: %w", err)
 	}
-	return u, nil
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		u := &User{}
+		if err := rows.Scan(&u.ID, &u.OrgID, &u.Username, &u.Role, &u.Status, &u.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描账号行失败: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// CountActiveOwners 统计启用状态的 owner 数量（最后一个 owner 保护判据）。
+func (r *Repo) CountActiveOwners() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM user WHERE role = ? AND status = ?`,
+		RoleOwner, StatusActive).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("统计所有者数量失败: %w", err)
+	}
+	return n, nil
+}
+
+// CountOwners 统计 owner 角色账号数（忘记密码「仅单 owner 时可重置」判据）。
+func (r *Repo) CountOwners() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM user WHERE role = ?`, RoleOwner).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("统计所有者数量失败: %w", err)
+	}
+	return n, nil
+}
+
+// FindOwner 返回唯一 owner 账号；不存在或不唯一时返回 nil（忘记密码兜底）。
+func (r *Repo) FindOwner() (*User, error) {
+	rows, err := r.db.Query(`SELECT id, org_id, username, password_hash, role, status, created_at
+		FROM user WHERE role = ? ORDER BY id ASC`, RoleOwner)
+	if err != nil {
+		return nil, fmt.Errorf("查找所有者失败: %w", err)
+	}
+	defer rows.Close()
+
+	var u *User
+	for rows.Next() {
+		cur := &User{}
+		if err := rows.Scan(&cur.ID, &cur.OrgID, &cur.Username, &cur.PasswordHash, &cur.Role, &cur.Status, &cur.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描所有者行失败: %w", err)
+		}
+		if u != nil {
+			return nil, nil // 多个 owner，调用方按「不唯一」处理
+		}
+		u = cur
+	}
+	return u, rows.Err()
+}
+
+// UpdateRoleStatus 更新账号角色与状态（用户管理）。
+func (r *Repo) UpdateRoleStatus(userID int64, role, status string) error {
+	if _, err := r.db.Exec(`UPDATE user SET role = ?, status = ? WHERE id = ?`,
+		role, status, userID); err != nil {
+		return fmt.Errorf("更新账号失败: %w", err)
+	}
+	return nil
+}
+
+// DeleteSessionsByUser 删除账号的全部会话（停用/重置密码后强制下线，见方案 §8.3）。
+func (r *Repo) DeleteSessionsByUser(userID int64) error {
+	if _, err := r.db.Exec(`DELETE FROM session WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("清除会话失败: %w", err)
+	}
+	return nil
 }
 
 // UpdatePassword 更新口令哈希（修改密码）。
@@ -171,12 +232,13 @@ func (r *Repo) createOrgTx(tx *sql.Tx, name string) (int64, error) {
 	return res.LastInsertId()
 }
 
-// createUserTx 事务内建用户。
-func (r *Repo) createUserTx(tx *sql.Tx, orgID int64, username, passwordHash string) (int64, error) {
+// createUserTx 事务内建用户（注册首人固定为 owner）。
+func (r *Repo) createUserTx(tx *sql.Tx, orgID int64, username, passwordHash, role string) (int64, error) {
 	now := platform.Now()
 	res, err := tx.Exec(
-		`INSERT INTO user(org_id, username, password_hash, created_at) VALUES(?, ?, ?, ?)`,
-		orgID, username, passwordHash, now,
+		`INSERT INTO user(org_id, username, password_hash, role, status, created_at)
+		 VALUES(?, ?, ?, ?, ?, ?)`,
+		orgID, username, passwordHash, role, StatusActive, now,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("创建用户失败: %w", err)

@@ -8,6 +8,34 @@
 > v0.20 合同到期管理与归档、v0.21 看板环形构成改造+全站配色归一与浅色化、v0.22 全站配色 token 化改造与对比度达标(WCAG AA)。
 > 自 v0.23 起恢复逐版记录。
 
+## [0.25.0] - 2026-10-16
+
+> 版本号已建立：`web/src/version.ts` 的 `APP_VERSION` 与 `README.md` 顶部「当前版本」同步为 `0.25.0`。
+
+### 新增
+- **三角色权限体系**：`owner`（所有者 / 超管）、`admin`（高级用户）、`viewer`（一般用户，只读）；账号状态 `active` / `disabled`（软停用，不删数据）。迁移 `021_user_roles.sql` 给 `user` 表加 `role`，现有唯一账号自动升级为 `owner`。
+- **用户管理页** `/users`（`web/src/features/users/UsersPage.vue`）：账号统计卡（总数 / 高级用户 / 一般用户 / 已停用）、账号列表、新建账号、改角色、启用 / 停用、重置密码（回 `admin888` 并强制下线）。入口对 `owner` / `admin` 可见；`owner` 可创建高级用户与一般用户、管理除自己外的任何账号，`admin` 只能创建与管理一般用户。
+- **账号接口**（`server/internal/auth/users_handler.go`）：`GET /api/users`、`POST /api/users`、`PATCH /api/users/:id`、`DELETE /api/users/:id`（软停用）、`POST /api/users/:id/reset-password`；错误码 `USERNAME_TAKEN` / `INVALID_PASSWORD` / `FORBIDDEN` / `LAST_OWNER`（最后一个 owner 受保护）。
+- **操作日志新增「操作人」列**：`changelog.OpLog.Operator`，迁移前的历史记录为空、界面显示「迁移前」；CSV 导出同步新增该列。
+
+### 变更
+- **后端为权限唯一权威**：路由按 `public / read / biz / admin / owner` 四组重组（`server/cmd/server/main.go`），配合 `RequireAuth` + `RequireWrite`（非 GET/HEAD 即写）+ `RequireRole(owner,admin)` 分级中间件（`server/internal/auth/middleware.go`）。`/api/me` 新增返回 `role` 与 `userID`。
+- **前端按角色收口（仅体验层，不替代后端拦截）**：登录态记 `role` / `userId`（`features/auth/store.ts`）；路由 `meta.roles` 守卫，`viewer` 直访 `/users` 会重定向回看板并提示；侧边菜单隐藏「用户管理」与写入口「快速记账」；新增全局指令 `v-write`（不可写时 `display:none`）铺到各页写按钮；设置页 `viewer` 只留「修改密码 / 登出」，「恢复备份」「清除日志」「系统重置」仅 `owner` 可见。
+
+### 影响面
+- 后端：新增 `auth/users.go`、`auth/users_handler.go`、迁移 `021_user_roles.sql`；改动 `auth`（model / repo / service / handler / middleware）、`changelog` 及各业务 handler（统一记录操作人）。
+- 前端：`features/auth/store.ts`、`router/index.ts`、`components/SideNav.vue`、`features/users/UsersPage.vue`、`lib/permission.ts`、`lib/http.ts`（新增 `patch`）、`features/settings/*`，以及各页写入口加 `v-write`。
+- 方案与权限矩阵见 `docs/27-多用户与权限控制方案.md`；界面原型 `docs/users-demo/index.html`。
+- 仓库新增 `.gitattributes`（`* text=auto eol=lf`），统一行尾为 LF，消除 Windows 端 CRLF 噪声。
+
+### 验证
+- 后端接口权限矩阵（WSL 内真实 Go 服务 + curl，三账号 `admin`=owner / `zhangkuaiji`=admin / `lichunna`=viewer）：`GET /api/users`、`GET /api/backups`、`GET /api/operation-logs` 对 viewer 一律 403；admin 建 admin 403、建 viewer 200；`DELETE /api/operation-logs`、`POST /api/system/reset` 对 admin 403。
+- 前端界面（真实 Chrome，Chrome DevTools 驱动）：viewer 无「用户管理 / 快速记账」菜单、直访 `/users` 被拦回看板、设置页只剩改密与登出；admin 统计卡 4/1/2/1、自己行显示「当前登录账号」、新建角色下拉仅「一般用户」、备份项无「恢复」、日志无「清除日志」；owner 三行均有「改角色」、角色下拉两项、备份项有「恢复」、高级设置含「危险操作 / 系统重置」、日志有「清除日志」与操作人。
+
+### 遗留
+- **镜像标签未同步**：`deploy/docker-compose.hub.yml` 的 image 仍指向 `v0.24.1`；本版本尚未触发「打包镜像」，待构建并推送 ACR 后再改标签（避免指向不存在的镜像）。
+- 前端收口是体验层：`v-write` 只隐藏按钮，深链（如 `?editParty=<id>`）需靠页面内 `auth.isWritable` 兜底校验；真正的越权拦截以后端中间件为准。
+
 ## [0.24.1]
 
 ### 修复

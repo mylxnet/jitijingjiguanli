@@ -34,6 +34,8 @@ server/cmd/server/web/*
 
 # Go
 server/bin/
+# 本地手工构建的单文件产物（不入库）
+server/server-bin
 *.exe
 
 # 本机托管工具链（不入库）
@@ -41,6 +43,8 @@ server/bin/
 
 # AI 记忆与项目规则（含本机凭据，不入库）
 .trae/
+# 原型/文档分享包（工具产出，不入库）
+.trae-html-share-packages/
 
 # 系统
 .DS_Store

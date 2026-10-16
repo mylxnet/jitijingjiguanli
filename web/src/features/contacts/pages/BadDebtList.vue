@@ -62,6 +62,7 @@
         </div>
         <div class="bd-card-actions">
           <van-button
+            v-write
             size="mini"
             plain
             type="warning"

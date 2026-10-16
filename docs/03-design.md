@@ -853,6 +853,85 @@ change_log.entity_id                    逻辑关联，无外键约束
 
 ---
 
+## 10. 多用户与权限控制设计（2026-10-16）
+
+### 10.1 目标与定位
+
+三角色 RBAC（`owner` / `admin` / `viewer`）。**后端是权限的唯一权威**：越权访问一律由中间件与接口层拦截；**前端只做体验收口**（隐藏无权入口），不作为安全边界。
+
+### 10.2 角色与权限矩阵
+
+| 能力 | owner | admin | viewer |
+| --- | --- | --- | --- |
+| 查看全部业务数据、导出 | ✓ | ✓ | ✓ |
+| 记业务流水（记账、作废、单位/合同/应收等写操作） | ✓ | ✓ | ✗ |
+| 查看操作日志 | ✓ | ✓ | ✗ |
+| 备份：列表 / 立即备份 / 下载 / 删除 | ✓ | ✓ | ✗ |
+| 账号管理（新建 / 改角色 / 启停 / 重置密码） | 可管理除自己外任何人 | 只能建与管理一般用户 | ✗ |
+| 恢复备份、清空操作日志、系统重置 | ✓ | ✗ | ✗ |
+| 修改本人口令、登出 | ✓ | ✓ | ✓ |
+
+- `owner`：所有者 / 超管，可管理除自己外任何人；最后一个 `owner` 受保护。
+- `admin`：高级用户，能记业务流水、查日志、管备份，但只能创建与管理 `viewer`。
+- `viewer`：一般用户，只读（含导出）。
+
+### 10.3 数据模型
+
+- `user` 表新增 `role TEXT`（迁移 `021_user_roles.sql`），取值 `owner` / `admin` / `viewer`；升级时把现有唯一账号自动置为 `owner`。
+- 账号状态 `status` 取值 `active` / `disabled`（**软停用，不删数据**）。
+- **最后一个 `owner` 受保护**：不允许删除或降级唯一的 `owner`，返回错误码 `LAST_OWNER`。
+
+### 10.4 路由分级与中间件
+
+路由按权限分五组（`server/cmd/server/main.go`）：
+
+| 组 | 准入 | 覆盖 |
+| --- | --- | --- |
+| `public` | 无需登录 | 登录 / 注册 / 登出 / 忘记密码 |
+| `read` | 已登录（含 `viewer`），仅 GET | `/api/me`、`/api/auth/me`、`PUT /api/auth/password`（本人改密）、`GET /api/export` |
+| `biz` | 业务读写，`RequireWrite` 拦截 `viewer` | 记账 / 流水 / 科目 / 往来 / 应收等业务接口 |
+| `admin` | `owner` / `admin`（`RequireRole`） | `/api/operation-logs`、`/api/changelog`、`/api/backups` 系列、`/api/users` 系列 |
+| `owner` | 仅 `owner`（`RequireRole`） | `POST /api/backups/:id/restore`、`DELETE /api/operation-logs`、`POST /api/system/reset` |
+
+中间件（`server/internal/auth/middleware.go`）：`RequireAuth`（会话鉴权）、`RequireWrite()`（**非 GET/HEAD 一律视为写操作**）、`RequireRole(owner, admin)`（角色白名单）。
+
+### 10.5 接口清单（账号管理）
+
+`server/internal/auth/users_handler.go`：
+
+| 方法 | 路径 | 权限组 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/users` | admin | 账号列表 |
+| POST | `/api/users` | admin | 新建账号（`admin` 只能建 `viewer`） |
+| PATCH | `/api/users/:id` | admin | 改角色 / 启停（`owner` 可管理除自己外任何人；`admin` 只能管理 `viewer`） |
+| DELETE | `/api/users/:id` | admin | 软停用（不删数据） |
+| POST | `/api/users/:id/reset-password` | admin | 重置为 `admin888` 并强制下线 |
+
+错误码：`USERNAME_TAKEN`（账号重名）、`INVALID_PASSWORD`（口令不合规）、`FORBIDDEN`（越权）、`LAST_OWNER`（最后一个所有者保护）。`/api/me` 新增返回 `role` 与 `userID`。
+
+### 10.6 前端收口（体验层）
+
+- 登录态记 `role` / `userId`（`web/src/features/auth/store.ts`）。
+- 路由守卫按 `meta.roles` 收口：`viewer` 直访 `/users` 重定向回看板并提示。
+- 侧边菜单隐藏「用户管理」与写入口「快速记账」；新增全局指令 `v-write`（不可写时 `display:none`）铺到各页写按钮。
+- 设置页按角色分级：`viewer` 只留「修改密码 / 登出」；「恢复备份」「清除日志」「系统重置」仅 `owner` 可见。
+- 新增用户管理页 `web/src/features/users/UsersPage.vue`（路由 `/users`）。
+- 操作日志新增「操作人」列（`changelog.OpLog.Operator`；迁移前记录为空，界面显示「迁移前」），CSV 导出同步新增该列。
+
+### 10.7 验证口径
+
+- **后端接口权限矩阵**：`viewer` 对 `/api/users`、`/api/backups`、`/api/operation-logs` 一律 403；`admin` 建 `admin` 403、建 `viewer` 200；`DELETE /api/operation-logs`、`POST /api/system/reset` 对 `admin` 403。
+- **真实浏览器三角色界面核对**：全部通过。
+- 结论：**通过**。
+
+### 10.8 遗留
+
+- 前端角色收口属**体验层**，不替代后端拦截：`v-write` 只把写按钮设 `display:none`，深链（如 `?editParty=<id>`）靠页面内 `auth.isWritable` 兜底校验；真正的越权拦截以后端 `RequireWrite` / `RequireRole` 中间件为准。
+- 版本号本次**未递增**（项目规则：仅用户说「建立新版本」时升位），待「建立新版本」时再落位。
+- 完整方案与界面原型见 `docs/27-多用户与权限控制方案.md`、`docs/users-demo/index.html`。
+
+---
+
 ## 变更记录
 
 | 版本 | 日期 | 变更内容 | 变更原因 |
@@ -865,3 +944,4 @@ change_log.entity_id                    逻辑关联，无外键约束
 | 0.23 | 2026-09-20 | §2.2 会话过期规则补认证接口例外；§2.3 P1 登录页区块与状态更新；§4.4 增加认证页提示方式与例外；§9.4 注册页提示落点。详见 `23-v0.23-认证页错误提示与会话拦截修复.md` | 密码错误被显示成「请先登录」+ 错误提示撑高布局导致页面跳动 |
 | 0.24 | 2026-09-21 | **投资收益口径重定义**：投资收益 = 长期投资收益 + 再投资收益两类，新增预置一级「再投资收益」（预置共 9 一级 / 18 项），再投资容器从此只承载本金；**532 分配基数改为两类「已收」合计**，「已收」成为展示与分配的唯一权威口径、收益科目余额只作对账；迁移 020 一次性回填历史误挂容器。附带：看板银行存款流水新增摘要列、可支出构成（公益支出）累计口径修复与环形图负分项渲染修复。详见 `25-投资收益两类收益口径方案.md` | 投资管理页把两类收益混成长期一项，收益记进本金容器导致再投资总额虚增、532 基数漏算再投资 |
 | 0.24.1 | 2026-09-21 | **交付层两项修复**：① 内嵌静态资源口径 —— `/assets/*` 未命中返回 404（不再回退 index.html）、`index.html` 加 `no-cache`、带哈希产物加 `immutable`，配套测试 `server/cmd/server/main_test.go`；② 手机端合同 PDF 预览改由 pdf.js 逐页画 canvas，所有预览类型统一走 blob URL 并提供下载兜底。详见 `26-静态资源缓存与手机端合同PDF预览方案.md` | 换镜像后旧 HTML 引用缺失 chunk 被当 JS 加载 → 懒加载路由静默中止（表现为"点 tab 没反应"）；移动端内核不在 iframe 里渲染 data URL PDF，合同 PDF 白屏 |
+| 0.25.0 | 2026-10-16 | **多用户与权限控制**（详见 §10）：三角色 RBAC（`owner` / `admin` / `viewer`）、路由五组分级（`public` / `read` / `biz` / `admin` / `owner`）配 `RequireAuth` / `RequireWrite` / `RequireRole` 中间件、新增 `/api/users` 五个账号接口与迁移 `021_user_roles.sql`、前端按角色收口（`meta.roles` 守卫 + 菜单与写按钮隐藏 + 全局指令 `v-write`）、设置页按角色分级、操作日志新增「操作人」列。方案见 `27-多用户与权限控制方案.md` | 此前只有单一 admin 账号、无角色区分：任何登录者都能做全部写操作，也能做恢复备份、系统重置等系统级操作，无最小权限约束 |

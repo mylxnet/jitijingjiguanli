@@ -6,7 +6,8 @@
         <h3>看板</h3>
         <span class="today">{{ rangeLabel }}</span>
       </div>
-      <van-button size="small" class="record-btn" @click="openRecord">
+      <!-- 写入口，viewer 隐藏 -->
+      <van-button v-write size="small" class="record-btn" @click="openRecord">
         <van-icon name="plus" /> 记一笔
       </van-button>
     </div>

@@ -175,7 +175,7 @@
           <p class="page-sub">年度收益按 50% 再投资 · 30% 分红福利 · 20% 管理公益 分配</p>
         </div>
         <div class="ip-header-actions">
-          <van-button size="small" type="primary" plain @click="openDistDialog">确定分配</van-button>
+          <van-button v-write size="small" type="primary" plain @click="openDistDialog">确定分配</van-button>
           <van-button size="small" @click="exportCSV('dist532')">导出</van-button>
         </div>
       </div>
@@ -236,7 +236,7 @@
                 <td class="num">{{ fmt(distData.reinvestCents) }}</td>
                 <td class="num">{{ distPct(distData.reinvestCents) }}%</td>
                 <td>
-                  <van-button size="mini" plain :disabled="reinvestStat.remain <= 0"
+                  <van-button v-write size="mini" plain :disabled="reinvestStat.remain <= 0"
                     @click="recordDistExpense('再投资')">
                     {{ reinvestStat.remain <= 0 ? '已分配完' : '记账' }}
                   </van-button>
@@ -248,7 +248,7 @@
                 <td class="num">{{ fmt(distData.dividendCents) }}</td>
                 <td class="num">{{ distPct(distData.dividendCents) }}%</td>
                 <td>
-                  <van-button size="mini" plain :disabled="dividendStat.remain <= 0"
+                  <van-button v-write size="mini" plain :disabled="dividendStat.remain <= 0"
                     @click="recordDistExpense('成员分红')">
                     {{ dividendStat.remain <= 0 ? '已分配完' : '记账' }}
                   </van-button>
@@ -260,7 +260,7 @@
                 <td class="num">{{ fmt(distData.welfareCents) }}</td>
                 <td class="num">{{ distPct(distData.welfareCents) }}%</td>
                 <td>
-                  <van-button size="mini" plain :disabled="welfareStat.remain <= 0"
+                  <van-button v-write size="mini" plain :disabled="welfareStat.remain <= 0"
                     @click="recordDistExpense('公益支出')">
                     {{ welfareStat.remain <= 0 ? '已分配完' : '记账' }}
                   </van-button>

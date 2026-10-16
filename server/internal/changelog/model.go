@@ -13,6 +13,7 @@ type ChangeLog struct {
 	OldValue   *string `json:"oldValue"`
 	NewValue   *string `json:"newValue"`
 	ChangedAt  string  `json:"changedAt"`
+	Operator   *string `json:"operator"`
 }
 
 // OpLogEffect 单条影响明细（前端 OperationLogDialog 消费）。
@@ -29,6 +30,7 @@ type OpLogEffect struct {
 type OpLog struct {
 	ID        int64         `json:"id"`
 	Time      string        `json:"time"`
+	Operator  string        `json:"operator"` // 操作账号名快照；空表示迁移前的老日志
 	Operation string        `json:"operation"`
 	Summary   string        `json:"summary"`
 	Effects   []OpLogEffect `json:"effects"`
@@ -153,9 +155,15 @@ func toOpLog(cl ChangeLog, business string) OpLog {
 		}
 	}
 
+	operator := ""
+	if cl.Operator != nil {
+		operator = *cl.Operator
+	}
+
 	return OpLog{
 		ID:        cl.ID,
 		Time:      cl.ChangedAt,
+		Operator:  operator,
 		Operation: action,
 		Summary:   summary,
 		Effects:   []OpLogEffect{eff},

@@ -192,7 +192,7 @@ func (h *Handler) CreateFundMove(c *gin.Context) {
 		})
 		return
 	}
-	h.clRepo.LogCreate(orgID, "fund_move", created.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "fund_move", created.ID)
 
 	platform.SuccessResponse(c, created)
 }
@@ -291,7 +291,7 @@ func (h *Handler) UpdateFundMove(c *gin.Context) {
 		if *req.Status == "normal" {
 			action = "unvoid"
 		}
-		h.clRepo.LogChangeVoid(orgID, "fund_move", id, action, m.Status, *req.Status)
+		h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "fund_move", id, action, m.Status, *req.Status)
 	}
 
 	updated, err := h.repo.FindByID(id)

@@ -6,7 +6,7 @@
         <p class="page-sub">共 {{ rows.length }} 笔应收</p>
       </div>
       <div class="rl-header-actions">
-        <van-button type="primary" size="small" icon="plus" @click="openAddReceivable">登记欠款</van-button>
+        <van-button v-write type="primary" size="small" icon="plus" @click="openAddReceivable">登记欠款</van-button>
         <van-button size="small" @click="exportCSV">导出</van-button>
       </div>
     </div>
@@ -93,6 +93,7 @@
               <div class="rl-amount-sub">已 {{ fmt(cashPaid(r)) }} · 坏账 {{ fmt(r.writeoffCents || 0) }} · 未 {{ fmt(r.outstandingCents) }}</div>
             </div>
             <van-button
+              v-write
               size="mini" type="primary" :disabled="r.outstandingCents <= 0"
               @click="openCollect(r)"
             >收缴</van-button>

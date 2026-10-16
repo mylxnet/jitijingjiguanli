@@ -7,7 +7,7 @@
       </div>
       <div class="cp-header-actions">
         <van-button size="small" icon="downloader" @click="exportZip">导出</van-button>
-        <van-button type="primary" size="small" icon="plus" @click="openUpload(null)">上传合同</van-button>
+        <van-button v-write type="primary" size="small" icon="plus" @click="openUpload(null)">上传合同</van-button>
       </div>
     </div>
 
@@ -46,7 +46,7 @@
           <span class="cp-count">{{ g.files.length }}</span>
           <span class="party-expiry-tag" :class="partyStatusClass(g.partyId)">{{ partyStatusText(g.partyId) }}</span>
         </div>
-        <van-button size="mini" plain icon="plus" @click.stop="openUpload(g.partyId)">上传到此单位</van-button>
+        <van-button v-write size="mini" plain icon="plus" @click.stop="openUpload(g.partyId)">上传到此单位</van-button>
       </div>
       <div v-show="isExpanded(g.partyId)" class="cp-group-body">
         <div v-if="g.files.length === 0" class="cp-empty-group">（暂无合同）</div>
@@ -69,8 +69,8 @@
           </div>
           <div class="cp-file-actions">
             <van-button size="mini" @click="viewContract(c)">查看</van-button>
-            <van-button size="mini" plain @click.stop="openEditExpiry(c)">改期</van-button>
-            <van-button size="mini" type="danger" plain @click="remove(c)">删除</van-button>
+            <van-button v-write size="mini" plain @click.stop="openEditExpiry(c)">改期</van-button>
+            <van-button v-write size="mini" type="danger" plain @click="remove(c)">删除</van-button>
           </div>
         </div>
       </div>

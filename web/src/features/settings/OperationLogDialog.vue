@@ -8,7 +8,8 @@
         </div>
         <div class="oplog-actions">
           <van-button v-if="logs.length > 0" size="mini" plain @click="exportCsv">导出 CSV</van-button>
-          <van-button v-if="logs.length > 0" size="mini" plain class="oplog-clear-btn" @click="clearLogs">清除日志</van-button>
+          <!-- 清空操作日志为 owner 专属高危操作（docs/27 §3） -->
+          <van-button v-if="logs.length > 0 && auth.isOwner" size="mini" plain class="oplog-clear-btn" @click="clearLogs">清除日志</van-button>
         </div>
       </div>
 
@@ -33,6 +34,7 @@
           <div class="oplog-header" @click="toggleExpand(log.id)">
             <div class="oplog-meta">
               <span class="oplog-op">{{ log.operation }}</span>
+              <span class="oplog-operator">{{ operatorLabel(log.operator) }}</span>
               <span class="oplog-time">{{ formatDateTime(log.time) }}</span>
             </div>
             <div class="oplog-summary">{{ log.summary }}</div>
@@ -66,6 +68,7 @@ import { ref, watch } from 'vue'
 import { api } from '../../lib/http'
 import { showConfirmDialog } from 'vant'
 import { popupPos } from '../../composables/useScreen'
+import { useAuthStore } from '../auth/store'
 
 interface OpLogEffect {
   entity: string
@@ -79,9 +82,17 @@ interface OpLogEffect {
 interface OpLog {
   id: number
   time: string
+  operator?: string
   operation: string
   summary: string
   effects: OpLogEffect[]
+}
+
+const auth = useAuthStore()
+
+// 操作人留痕：多用户前的旧日志 operator 为空，统一显示「迁移前」占位（docs/27 §8.7）
+function operatorLabel(op?: string) {
+  return op && op.trim() ? op : '迁移前'
 }
 
 const props = defineProps<{ show: boolean }>()
@@ -152,16 +163,17 @@ function escapeCsv(v: string) {
 
 function exportCsv() {
   const rows: string[] = []
-  const header = ['时间', '操作', '摘要', '影响实体', '字段', '旧值', '新值', '影响描述']
+  const header = ['时间', '操作人', '操作', '摘要', '影响实体', '字段', '旧值', '新值', '影响描述']
   rows.push(header.map(escapeCsv).join(','))
 
   for (const log of logs.value) {
     if (log.effects.length === 0) {
-      rows.push([formatDateTime(log.time), log.operation, log.summary, '', '', '', ''].map(escapeCsv).join(','))
+      rows.push([formatDateTime(log.time), operatorLabel(log.operator), log.operation, log.summary, '', '', '', ''].map(escapeCsv).join(','))
     } else {
       for (const eff of log.effects) {
         rows.push([
           formatDateTime(log.time),
+          operatorLabel(log.operator),
           log.operation,
           log.summary,
           eff.entity + (eff.entityId ? ' #' + eff.entityId : ''),
@@ -271,6 +283,15 @@ function exportCsv() {
   font-weight: 600;
   font-size: 14px;
   color: var(--ink);
+  white-space: nowrap;
+}
+
+.oplog-operator {
+  font-size: 12px;
+  color: var(--jade);
+  background: var(--jade-light);
+  border-radius: 8px;
+  padding: 1px 8px;
   white-space: nowrap;
 }
 

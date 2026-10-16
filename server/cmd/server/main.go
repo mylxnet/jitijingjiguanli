@@ -80,6 +80,13 @@ func main() {
 }
 
 // buildRouter 依据当前 db/authSvc 组装路由（恢复后调用以切换新连接）。
+//
+// 路由按权限分四组（依据 docs/27 §5.2）：
+//   - public：登录/注册/登出/忘记密码，无需登录；
+//   - read  ：已登录即可（含 viewer），仅 GET：/api/me、导出、修改自己的密码；
+//   - biz   ：业务读写，viewer 的非 GET 请求由 RequireWrite 统一拦截；
+//   - admin ：owner/admin 专属（备份管理、操作日志查看、账号管理、读设置）；
+//   - owner ：owner 专属最高危操作（恢复备份、清空日志、系统重置）。
 func buildRouter(a *app) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -87,57 +94,77 @@ func buildRouter(a *app) *gin.Engine {
 	r.GET("/api/health", func(c *gin.Context) {
 		platform.OK(c, gin.H{"status": "ok"})
 	})
-	auth.NewHandler(a.authSvc).Register(r)
+	authHandler := auth.NewHandler(a.authSvc)
+	authHandler.Register(r) // 公开：login/register/logout/reset-password/registration-status
 
-	authed := r.Group("", auth.RequireAuth(a.authSvc))
+	// 只读组：所有已登录账号（含 viewer）均可访问。
+	read := r.Group("", auth.RequireAuth(a.authSvc))
 	meHandler := func(c *gin.Context) {
 		id, _ := auth.CurrentUserID(c)
 		orgID, ok := auth.CurrentOrgID(c)
+		role, _ := auth.CurrentRole(c)
 		var orgName string
 		var onboarded int
 		if ok {
 			_ = a.db.QueryRow(`SELECT name, onboarded FROM org WHERE id = ?`, orgID).Scan(&orgName, &onboarded)
 		}
-		platform.OK(c, gin.H{"userID": id, "orgID": orgID, "orgName": orgName, "onboarded": onboarded == 1})
-	}
-	authed.GET("/api/me", meHandler)
-	authed.GET("/api/auth/me", meHandler)
-	auth.NewHandler(a.authSvc).RegisterAuthed(authed)
-	category.NewHandler(a.db).Register(authed)
-	transaction.NewHandler(a.db).Register(authed)
-	summary.NewHandler(a.db).Register(authed)
-	// 系统重置：清空所有业务数据，保留预置科目，退出到登录页
-		authed.POST("/api/system/reset", func(c *gin.Context) {
-			var tables = []string{
-				"transaction", "receivable", "receivable_detail",
-				"distribution_532", "reinvest_allocation", "contract",
-				"operation_log", "changelog",
-			}
-			for _, t := range tables {
-				_, _ = a.db.Exec("DELETE FROM " + t)
-			}
-			// 重置科目余额
-			_, _ = a.db.Exec("UPDATE category SET balance_cents = 0, opening_balance_cents = 0 WHERE level = 2")
-			// 重置设置
-			_, _ = a.db.Exec("UPDATE settings SET bank_opening_balance_cents = 0, reinvest_ratio_bps = 0")
-			// 删除所有非预置单位（自动创建的 L2 科目由单位删除联动清除）
-			_, _ = a.db.Exec("DELETE FROM party WHERE preset = 0")
-			// 清除会话
-			_, _ = a.db.Exec("DELETE FROM session")
-			// 删除所有用户（包括默认 admin），强制重新注册
-			_, _ = a.db.Exec("DELETE FROM user")
-			_, _ = a.db.Exec("DELETE FROM org")
-			platform.OK(c, gin.H{"ok": true, "message": "系统已重置，请重新注册"})
+		platform.OK(c, gin.H{
+			"userID": id, "orgID": orgID, "orgName": orgName,
+			"role": role, "onboarded": onboarded == 1,
 		})
-	fundmove.NewHandler(a.db).Register(authed)
-	contract.NewHandler(a.db).Register(authed)
-	receivable.NewHandler(a.db).Register(authed)
-	settings.NewHandler(a.db).Register(authed)
-	changelog.NewHandler(a.db).Register(authed)
-	export.NewHandler(a.db).Register(authed)
-	onboarding.NewHandler(a.db).Register(authed)
+	}
+	read.GET("/api/me", meHandler)
+	read.GET("/api/auth/me", meHandler)
+	authHandler.RegisterAuthed(read)       // PUT /api/auth/password（自服务，viewer 可用）
+	export.NewHandler(a.db).Register(read) // GET /api/export（只读，viewer 可导出）
 
-	registerBackupRoutes(authed, a)
+	// 业务读写组。
+	biz := r.Group("", auth.RequireAuth(a.authSvc), auth.RequireWrite())
+	category.NewHandler(a.db).Register(biz)
+	transaction.NewHandler(a.db).Register(biz)
+	summary.NewHandler(a.db).Register(biz)
+	fundmove.NewHandler(a.db).Register(biz)
+	contract.NewHandler(a.db).Register(biz)
+	receivable.NewHandler(a.db).Register(biz)
+	onboarding.NewHandler(a.db).Register(biz)
+	settings.NewHandler(a.db).RegisterWrite(biz)
+
+	// 管理组：owner / admin。
+	admin := r.Group("", auth.RequireAuth(a.authSvc), auth.RequireRole(auth.RoleAdmin, auth.RoleOwner))
+	changelog.NewHandler(a.db).RegisterRead(admin)
+	settings.NewHandler(a.db).RegisterRead(admin)
+	authHandler.RegisterUsers(admin)
+
+	// 所有者专属组：最高危操作。
+	owner := r.Group("", auth.RequireAuth(a.authSvc), auth.RequireRole(auth.RoleOwner))
+
+	// 系统重置：清空所有业务数据与账号，保留预置科目结构，退出到注册页。
+	owner.POST("/api/system/reset", func(c *gin.Context) {
+		var tables = []string{
+			"transaction", "receivable", "receivable_detail",
+			"distribution_532", "reinvest_allocation", "contract",
+			"operation_log", "changelog",
+		}
+		for _, t := range tables {
+			_, _ = a.db.Exec("DELETE FROM " + t)
+		}
+		// 重置科目余额
+		_, _ = a.db.Exec("UPDATE category SET balance_cents = 0, opening_balance_cents = 0 WHERE level = 2")
+		// 重置设置
+		_, _ = a.db.Exec("UPDATE settings SET bank_opening_balance_cents = 0, reinvest_ratio_bps = 0")
+		// 删除所有非预置单位（自动创建的 L2 科目由单位删除联动清除）
+		_, _ = a.db.Exec("DELETE FROM party WHERE preset = 0")
+		// 清除会话
+		_, _ = a.db.Exec("DELETE FROM session")
+		// 删除所有用户（包括 owner），强制重新注册
+		_, _ = a.db.Exec("DELETE FROM user")
+		_, _ = a.db.Exec("DELETE FROM org")
+		platform.OK(c, gin.H{"ok": true, "message": "系统已重置，请重新注册"})
+	})
+
+	changelog.NewHandler(a.db).RegisterClear(owner)
+
+	registerBackupRoutes(admin, owner, a)
 	registerStatic(r)
 	return r
 }
@@ -182,11 +209,13 @@ func registerStatic(r *gin.Engine) {
 	})
 }
 
-// registerBackupRoutes 挂载备份三接口：列表 / 手动备份 / 一键恢复。
-func registerBackupRoutes(authed gin.IRouter, a *app) {
+// registerBackupRoutes 挂载备份接口：
+//   - 列表 / 立即备份 / 下载 / 删除 → admin 组（owner/admin 可管备份）；
+//   - 一键恢复（覆盖当前全部数据）→ owner 组（最高危操作）。
+func registerBackupRoutes(admin, owner gin.IRouter, a *app) {
 	repo := backup.New(a.db, a.cfg.DBPath(), a.cfg.BackupDir, a.cfg.KeepBackup)
 
-	authed.GET("/api/backups", func(c *gin.Context) {
+	admin.GET("/api/backups", func(c *gin.Context) {
 		items, err := repo.List()
 		if err != nil {
 			platform.Fail(c, http.StatusInternalServerError, "BACKUP_LIST_FAILED", "读取备份列表失败")
@@ -195,7 +224,7 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		platform.OK(c, gin.H{"items": items})
 	})
 
-	authed.POST("/api/backups", func(c *gin.Context) {
+	admin.POST("/api/backups", func(c *gin.Context) {
 		info, err := repo.Create()
 		if err != nil {
 			platform.Fail(c, http.StatusInternalServerError, "BACKUP_CREATE_FAILED", "备份失败: "+err.Error())
@@ -204,7 +233,7 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		platform.OK(c, info)
 	})
 
-	authed.POST("/api/backups/:id/restore", func(c *gin.Context) {
+	owner.POST("/api/backups/:id/restore", func(c *gin.Context) {
 		id := filepath.Base(c.Param("id"))
 		backupPath := filepath.Join(a.cfg.BackupDir, id)
 		info, err := os.Stat(backupPath)
@@ -225,7 +254,7 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		platform.OK(c, gin.H{"ok": true, "message": "恢复成功，请重新登录"})
 	})
 
-	authed.GET("/api/backups/:id/download", func(c *gin.Context) {
+	admin.GET("/api/backups/:id/download", func(c *gin.Context) {
 		id := filepath.Base(c.Param("id"))
 		backupPath := filepath.Join(a.cfg.BackupDir, id)
 		info, err := os.Stat(backupPath)
@@ -237,7 +266,7 @@ func registerBackupRoutes(authed gin.IRouter, a *app) {
 		c.FileAttachment(backupPath, id)
 	})
 
-	authed.DELETE("/api/backups/:id", func(c *gin.Context) {
+	admin.DELETE("/api/backups/:id", func(c *gin.Context) {
 		id := filepath.Base(c.Param("id"))
 		items, err := repo.List()
 		if err != nil {

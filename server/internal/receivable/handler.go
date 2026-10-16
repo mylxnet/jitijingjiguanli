@@ -217,7 +217,7 @@ func (h *Handler) CreateParty(c *gin.Context) {
 		h.internal(c, "同步计提标准失败")
 		return
 	}
-	h.clRepo.LogCreate(orgID, "party", created.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "party", created.ID)
 	platform.SuccessResponse(c, created)
 }
 
@@ -427,7 +427,7 @@ func (h *Handler) UpdateParty(c *gin.Context) {
 		if v != nil {
 			newNote = v.(string)
 		}
-		_ = h.clRepo.LogUpdateField(orgID, "party", id, "note", oldNote, newNote)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "party", id, "note", oldNote, newNote)
 	}
 
 	updated, _ := h.repo.FindPartyByID(id)
@@ -471,7 +471,7 @@ func (h *Handler) DeleteParty(c *gin.Context) {
 		return
 	}
 
-	_ = h.clRepo.LogChangeVoid(orgID, "party", id, "delete", "normal", "deleted")
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "party", id, "delete", "normal", "deleted")
 	platform.SuccessResponse(c, out)
 }
 
@@ -608,7 +608,7 @@ func (h *Handler) CreateReceivable(c *gin.Context) {
 		h.internal(c, "登记应收单失败")
 		return
 	}
-	h.clRepo.LogCreate(orgID, "receivable", created.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receivable", created.ID)
 	platform.SuccessResponse(c, created)
 }
 
@@ -649,7 +649,7 @@ func (h *Handler) BatchAccrue(c *gin.Context) {
 		h.internal(c, "批量计提失败")
 		return
 	}
-	_ = h.clRepo.LogCreate(orgID, "receivable_batch", int64(year))
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receivable_batch", int64(year))
 	platform.SuccessResponse(c, result)
 }
 
@@ -800,7 +800,7 @@ func (h *Handler) AccrueByStandards(c *gin.Context) {
 		h.internal(c, "一键结转失败")
 		return
 	}
-	_ = h.clRepo.LogCreate(orgID, "receivable_batch", int64(year))
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receivable_batch", int64(year))
 	platform.SuccessResponse(c, result)
 }
 
@@ -871,7 +871,7 @@ func (h *Handler) VoidReceivable(c *gin.Context) {
 		h.internal(c, "作废应收单失败")
 		return
 	}
-	_ = h.clRepo.LogUpdateField(orgID, "receivable", id, "status", "open", "voided")
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "receivable", id, "status", "open", "voided")
 	platform.SuccessResponse(c, gin.H{"ok": true})
 }
 
@@ -1074,12 +1074,12 @@ func (h *Handler) CreateReceipt(c *gin.Context) {
 		return
 	}
 
-	h.clRepo.LogCreate(orgID, "receipt", outcome.Receipt.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receipt", outcome.Receipt.ID)
 	if outcome.TxnCreated != nil {
-		_ = h.clRepo.LogCreate(orgID, "txn", *outcome.TxnCreated)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "txn", *outcome.TxnCreated)
 	}
 	if outcome.ReceivableStatus != rec.Status {
-		_ = h.clRepo.LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
 	}
 
 	platform.SuccessResponse(c, outcome.Receipt)
@@ -1138,14 +1138,14 @@ func (h *Handler) VoidReceipt(c *gin.Context) {
 		return
 	}
 
-	_ = h.clRepo.LogChangeVoid(orgID, "receipt", receiptID, "void", before.Status, outcome.Receipt.Status)
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "receipt", receiptID, "void", before.Status, outcome.Receipt.Status)
 	if outcome.TxnVoided != nil {
-		_ = h.clRepo.LogChangeVoid(orgID, "txn", *outcome.TxnVoided, "void", "normal", "voided")
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "txn", *outcome.TxnVoided, "void", "normal", "voided")
 	}
 
 	// 应收单状态变化留痕（closed→open 等）
 	if recBefore != nil && recBefore.OrgID == orgID && recBefore.Status != outcome.ReceivableStatus && outcome.ReceivableStatus != "" {
-		_ = h.clRepo.LogUpdateField(orgID, "receivable", before.ReceivableID, "status", recBefore.Status, outcome.ReceivableStatus)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "receivable", before.ReceivableID, "status", recBefore.Status, outcome.ReceivableStatus)
 	}
 
 	platform.SuccessResponse(c, outcome.Receipt)
@@ -1251,7 +1251,7 @@ func (h *Handler) CreateAllocation(c *gin.Context) {
 		h.internal(c, "新建再投资去向失败")
 		return
 	}
-	_ = h.clRepo.LogCreate(orgID, "reinvest_allocation", created.ID)
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "reinvest_allocation", created.ID)
 	platform.SuccessResponse(c, created)
 }
 
@@ -1281,7 +1281,7 @@ func (h *Handler) DeleteAllocation(c *gin.Context) {
 		})
 		return
 	}
-	_ = h.clRepo.LogChangeVoid(orgID, "reinvest_allocation", id, "delete", "normal", "deleted")
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "reinvest_allocation", id, "delete", "normal", "deleted")
 	platform.SuccessResponse(c, gin.H{"ok": true})
 }
 
@@ -1388,12 +1388,12 @@ func (h *Handler) CreateReceiptByReceivable(c *gin.Context) {
 		return
 	}
 
-	_ = h.clRepo.LogCreate(orgID, "receipt", outcome.Receipt.ID)
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receipt", outcome.Receipt.ID)
 	if outcome.TxnCreated != nil {
-		_ = h.clRepo.LogCreate(orgID, "txn", *outcome.TxnCreated)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "txn", *outcome.TxnCreated)
 	}
 	if outcome.ReceivableStatus != rec.Status {
-		_ = h.clRepo.LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "receivable", rec.ID, "status", rec.Status, outcome.ReceivableStatus)
 	}
 	platform.SuccessResponse(c, outcome.Receipt)
 }
@@ -1487,12 +1487,12 @@ func (h *Handler) CollectByParty(c *gin.Context) {
 	}
 
 	for _, it := range outcome.Items {
-		_ = h.clRepo.LogCreate(orgID, "receipt", it.ReceiptID)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "receipt", it.ReceiptID)
 		if it.TxnID != nil {
-			_ = h.clRepo.LogCreate(orgID, "txn", *it.TxnID)
+			_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "txn", *it.TxnID)
 		}
 	}
-	_ = h.clRepo.LogCreate(orgID, "party_collect", req.PartyID)
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "party_collect", req.PartyID)
 	platform.SuccessResponse(c, outcome)
 }
 
@@ -1630,6 +1630,6 @@ func (h *Handler) SaveDistribution532(c *gin.Context) {
 		h.internal(c, "服务暂时不可用")
 		return
 	}
-	h.clRepo.LogCreate(orgID, "distribution_532", saved.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "distribution_532", saved.ID)
 	platform.SuccessResponse(c, saved)
 }

@@ -192,7 +192,7 @@ func (h *Handler) CreateContract(c *gin.Context) {
 		h.internal(c, "新建合同失败")
 		return
 	}
-	_ = h.clRepo.LogCreate(orgID, "contract", created.ID)
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "contract", created.ID)
 	platform.SuccessResponse(c, created)
 }
 
@@ -354,7 +354,7 @@ func (h *Handler) DeleteContract(c *gin.Context) {
 		})
 		return
 	}
-	_ = h.clRepo.LogChangeVoid(orgID, "contract", id, "delete", "normal", "deleted")
+	_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChangeVoid(orgID, "contract", id, "delete", "normal", "deleted")
 	platform.SuccessResponse(c, gin.H{"ok": true})
 }
 
@@ -424,7 +424,7 @@ func (h *Handler) UpdateContractExpiry(c *gin.Context) {
 			})
 			return
 		}
-		_ = h.clRepo.LogUpdateField(orgID, "contract", id, "expires_at", oldVal, newVal)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "contract", id, "expires_at", oldVal, newVal)
 	}
 	platform.SuccessResponse(c, gin.H{"ok": true})
 }

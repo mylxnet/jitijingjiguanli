@@ -10,8 +10,8 @@
       <van-cell title="修改密码" is-link @click="openPwdDialog" />
     </van-cell-group>
 
-    <!-- 备份与恢复 -->
-    <van-cell-group inset style="margin-top: 16px">
+    <!-- 备份与恢复（仅可写账号 owner/admin 可见；「恢复」为 owner 专属高危操作） -->
+    <van-cell-group v-if="auth.isWritable" inset style="margin-top: 16px">
       <div class="section-label">备份与恢复</div>
       <div class="backup-tip">
         每日 03:00 自动备份，保留最近 {{ keepBackup }} 份；备份目录建议放在与数据不同的磁盘
@@ -34,7 +34,7 @@
         </template>
         <template #right-icon>
           <van-button size="mini" plain @click="downloadBackup(b)">下载</van-button>
-          <van-button size="mini" plain @click="restoreBackup(b)">恢复</van-button>
+          <van-button v-if="auth.isOwner" size="mini" plain @click="restoreBackup(b)">恢复</van-button>
           <van-button
             size="mini"
             plain
@@ -46,8 +46,8 @@
       </van-cell>
     </van-cell-group>
 
-    <!-- 操作日志 -->
-    <van-cell-group inset style="margin-top: 16px">
+    <!-- 操作日志（仅可写账号 owner/admin 可见） -->
+    <van-cell-group v-if="auth.isWritable" inset style="margin-top: 16px">
       <div class="section-label">操作日志</div>
       <div style="margin: 4px 16px 8px">
         <van-button
@@ -59,8 +59,8 @@
       </div>
     </van-cell-group>
 
-    <!-- 高级设置（默认收起） -->
-    <van-cell-group inset style="margin-top: 16px">
+    <!-- 高级设置（默认收起；仅可写账号 owner/admin 可见） -->
+    <van-cell-group v-if="auth.isWritable" inset style="margin-top: 16px">
       <div class="adv-head" @click="showAdvanced = !showAdvanced">
         <span class="section-label adv-title">高级设置</span>
         <van-icon :name="showAdvanced ? 'arrow-up' : 'arrow-down'" class="adv-arrow" />
@@ -108,20 +108,22 @@
         <div class="section-label">往来单位</div>
         <van-cell title="删除单位" is-link @click="showDelParty = true" />
 
-        <!-- 危险操作 -->
-        <div class="section-label danger">危险操作</div>
-        <div style="margin: 4px 16px 8px">
-          <van-button
-            round
-            block
-            size="small"
-            :loading="resetting"
-            @click="handleReset"
-          >系统重置</van-button>
-        </div>
-        <div class="reset-tip">
-          清空所有业务数据，保留预置科目结构。重置后需重新注册。
-        </div>
+        <!-- 危险操作（仅所有者可见） -->
+        <template v-if="auth.isOwner">
+          <div class="section-label danger">危险操作</div>
+          <div style="margin: 4px 16px 8px">
+            <van-button
+              round
+              block
+              size="small"
+              :loading="resetting"
+              @click="handleReset"
+            >系统重置</van-button>
+          </div>
+          <div class="reset-tip">
+            清空所有业务数据，保留预置科目结构。重置后需重新注册。
+          </div>
+        </template>
       </template>
     </van-cell-group>
 

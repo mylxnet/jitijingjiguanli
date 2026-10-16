@@ -22,7 +22,8 @@
     <!-- 空数据 -->
     <div v-else-if="mergedItems.length === 0" class="empty-state">
       <p>还没有流水</p>
-      <van-button type="primary" size="small" @click="goHome">去记一笔</van-button>
+      <!-- 写入口，viewer 隐藏 -->
+      <van-button v-write type="primary" size="small" @click="goHome">去记一笔</van-button>
     </div>
 
     <!-- 列表 -->
@@ -145,6 +146,7 @@
           </van-cell-group>
           <div class="edit-actions">
             <van-button
+              v-write
               v-if="editTransaction.status === 'normal'"
               type="danger"
               plain
@@ -153,6 +155,7 @@
               @click="handleVoidTransaction"
             >作废此流水</van-button>
             <van-button
+              v-write
               v-else-if="editTransaction.status === 'voided'"
               type="primary"
               plain

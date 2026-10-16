@@ -4,6 +4,7 @@ import Vant from 'vant'
 import App from './App.vue'
 import router from './router'
 import { setOnUnauthorized } from './lib/http'
+import { writeDirective } from './lib/permission'
 import { useAuthStore } from './features/auth/store'
 
 import 'vant/lib/index.css'
@@ -14,6 +15,9 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 app.use(Vant)
+
+// 写操作入口的角色收口（v-write），见 docs/27
+app.directive('write', writeDirective)
 
 setOnUnauthorized(() => {
   const auth = useAuthStore(pinia)

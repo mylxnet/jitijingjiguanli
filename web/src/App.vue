@@ -30,15 +30,23 @@
 <script setup lang="ts">
 import { computed, ref, provide } from 'vue'
 import { useRoute } from 'vue-router'
+import { showToast } from 'vant'
 import BottomNav from './components/BottomNav.vue'
 import SideNav from './components/SideNav.vue'
 import RecordPopup from './features/transaction/RecordPopup.vue'
+import { useAuthStore } from './features/auth/store'
 
 const route = useRoute()
+const auth = useAuthStore()
 const showNav = computed(() => !['/login', '/register', '/onboarding'].includes(route.path))
 
 const recordPopupRef = ref<InstanceType<typeof RecordPopup> | null>(null)
 provide('openRecord', (opts?: { biz?: string; partyId?: number; amount?: string }) => {
+  // 记账是写操作：只读账号（viewer）一律不放行（后端另会 403 兜底）
+  if (!auth.isWritable) {
+    showToast('当前账号无操作权限')
+    return
+  }
   recordPopupRef.value?.openRecord(opts)
 })
 </script>

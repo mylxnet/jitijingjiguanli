@@ -21,9 +21,13 @@ func NewHandler(db *sql.DB) *Handler {
 	return &Handler{repo: NewRepo(db)}
 }
 
-// Register 挂载路由。
-func (h *Handler) Register(r gin.IRouter) {
+// RegisterRead 挂载读取路由（admin 组：设置页整体对 viewer 隐藏，见 docs/27 §9.6）。
+func (h *Handler) RegisterRead(r gin.IRouter) {
 	r.GET("/api/settings", h.GetSettings)
+}
+
+// RegisterWrite 挂载修改路由（业务写组：viewer 被 RequireWrite 拦截）。
+func (h *Handler) RegisterWrite(r gin.IRouter) {
 	r.PUT("/api/settings", h.UpdateSettings)
 }
 

@@ -51,22 +51,26 @@ func TestRegisterOrg(t *testing.T) {
 		t.Fatal("注册后应签发会话（自动登录）")
 	}
 
-	userID, orgID, err := svc.Resolve(token)
+	id, err := svc.Resolve(token)
 	if err != nil {
 		t.Fatalf("会话校验失败: %v", err)
 	}
-	if userID <= 0 || orgID <= 0 {
-		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", userID, orgID)
+	if id.UserID <= 0 || id.OrgID <= 0 {
+		t.Errorf("注册应返回有效用户与组织 id，userID=%d orgID=%d", id.UserID, id.OrgID)
+	}
+	// 首个注册账号必须是 owner（见 docs/27 方案 §4/§5.1）
+	if id.Role != RoleOwner {
+		t.Errorf("首个注册账号角色应为 owner，实际 %s", id.Role)
 	}
 
 	// 预置科目（9 一级 + 9 二级 = 18，preset=1）
 	var presetCount, l1Count, l2Count int
 	if err := svc.repo.db.QueryRow(
-		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, orgID).Scan(&presetCount); err != nil {
+		`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1`, id.OrgID).Scan(&presetCount); err != nil {
 		t.Fatalf("统计预置科目失败: %v", err)
 	}
-	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 1`, orgID).Scan(&l1Count)
-	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 2`, orgID).Scan(&l2Count)
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 1`, id.OrgID).Scan(&l1Count)
+	_ = svc.repo.db.QueryRow(`SELECT COUNT(*) FROM category WHERE org_id = ? AND preset = 1 AND level = 2`, id.OrgID).Scan(&l2Count)
 	if presetCount != 18 || l1Count != 9 || l2Count != 9 {
 		t.Errorf("预置科目应为 18 个（9 一级 + 9 二级），实际 总数%d（一级%d 二级%d）", presetCount, l1Count, l2Count)
 	}
@@ -137,14 +141,14 @@ func TestLoginAndSession(t *testing.T) {
 		t.Fatalf("注册失败: %v", err)
 	}
 
-	if _, _, err := svc.Login("admin", "wrong"); err != ErrInvalidCredentials {
+	if _, _, _, err := svc.Login("admin", "wrong"); err != ErrInvalidCredentials {
 		t.Fatalf("错误密码应返回 ErrInvalidCredentials，实际 %v", err)
 	}
-	if _, _, err := svc.Login("nobody", "s3cret"); err != ErrInvalidCredentials {
+	if _, _, _, err := svc.Login("nobody", "s3cret"); err != ErrInvalidCredentials {
 		t.Fatalf("不存在账号应返回同一错误（避免账号枚举），实际 %v", err)
 	}
 
-	token, expires, err := svc.Login("admin", "s3cret")
+	token, expires, _, err := svc.Login("admin", "s3cret")
 	if err != nil {
 		t.Fatalf("正确口令登录失败: %v", err)
 	}
@@ -152,18 +156,18 @@ func TestLoginAndSession(t *testing.T) {
 		t.Fatal("登录应返回非空 token 与过期时间")
 	}
 
-	userID, orgID, err := svc.Resolve(token)
+	id, err := svc.Resolve(token)
 	if err != nil {
 		t.Fatalf("会话校验失败: %v", err)
 	}
-	if userID <= 0 || orgID <= 0 {
-		t.Errorf("Resolve 应返回用户与组织 id，userID=%d orgID=%d", userID, orgID)
+	if id.UserID <= 0 || id.OrgID <= 0 {
+		t.Errorf("Resolve 应返回用户与组织 id，userID=%d orgID=%d", id.UserID, id.OrgID)
 	}
 
 	if err := svc.Logout(token); err != nil {
 		t.Fatalf("登出失败: %v", err)
 	}
-	if _, _, err := svc.Resolve(token); err != ErrUnauthorized {
+	if _, err := svc.Resolve(token); err != ErrUnauthorized {
 		t.Errorf("登出后会话应失效，实际 %v", err)
 	}
 }

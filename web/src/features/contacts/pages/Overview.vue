@@ -5,7 +5,7 @@
         <h2 class="page-title">往来管理概览</h2>
         <p class="page-sub">一站式查看单位、应收、收缴与合同</p>
       </div>
-      <van-button type="primary" size="small" @click="$router.push('/contacts/parties')">＋ 新增单位</van-button>
+      <van-button v-write type="primary" size="small" @click="$router.push('/contacts/parties')">＋ 新增单位</van-button>
     </div>
 
     <div class="ov-stats">

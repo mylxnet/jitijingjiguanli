@@ -291,13 +291,13 @@ func (h *Handler) UpdateCategory(c *gin.Context) {
 	}
 
 	if v, ok := updates["name"]; ok {
-		_ = h.clog.LogUpdateField(orgID, "category", id, "name", cat.Name, v.(string))
+		_ = h.clog.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "category", id, "name", cat.Name, v.(string))
 	}
 	if v, ok := updates["status"]; ok {
-		_ = h.clog.LogUpdateField(orgID, "category", id, "status", cat.Status, v.(string))
+		_ = h.clog.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "category", id, "status", cat.Status, v.(string))
 	}
 	if v, ok := updates["opening_balance_cents"]; ok {
-		_ = h.clog.LogUpdateField(orgID, "category", id, "opening_balance_cents",
+		_ = h.clog.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "category", id, "opening_balance_cents",
 			strconv.FormatInt(cat.Opening, 10), strconv.FormatInt(v.(int64), 10))
 	}
 

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { api } from '../../lib/http'
 import type { ApiResponse } from '../../types/api'
 
@@ -12,6 +12,15 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref('')
   // 当前登录用户所属组织 id（用于组织维度场景）
   const orgId = ref<string | number | null>(null)
+  // 当前登录账号 id 与角色（多用户权限控制，见 docs/27）：owner / admin / viewer
+  const userId = ref<number | null>(null)
+  const role = ref('')
+  // 角色派生：前端仅做体验收口，写权限的唯一权威仍在后端（RequireWrite/RequireRole）
+  const isOwner = computed(() => role.value === 'owner')
+  const isAdmin = computed(() => role.value === 'admin')
+  // 可写账号（owner/admin）；角色未知时按不可写处理，宁可少显示也不误露出写入口
+  const isWritable = computed(() => role.value === 'owner' || role.value === 'admin')
+
   // 是否已完成（或已跳过）引导——以服务端 org.onboarded 为唯一权威来源，
   // 不再依赖 localStorage 标记，避免清缓存/换浏览器/换访问地址被误判为未建账。
   const onboarded = ref(false)
@@ -35,9 +44,13 @@ export const useAuthStore = defineStore('auth', () => {
       const me = await fetch('/api/me', { credentials: 'include' }).then(r => r.json())
       orgId.value = me?.data?.orgID ?? me?.data?.orgId ?? null
       onboarded.value = !!me?.data?.onboarded
+      userId.value = me?.data?.userID ?? me?.data?.userId ?? null
+      role.value = me?.data?.role || ''
     } catch {
       orgId.value = null
       onboarded.value = false
+      userId.value = null
+      role.value = ''
     }
   }
 
@@ -53,11 +66,15 @@ export const useAuthStore = defineStore('auth', () => {
       } else {
         orgId.value = null
         onboarded.value = false
+        userId.value = null
+        role.value = ''
       }
     } catch {
       isLoggedIn.value = false
       orgId.value = null
       onboarded.value = false
+      userId.value = null
+      role.value = ''
     }
   }
 
@@ -106,6 +123,8 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn.value = false
     orgId.value = null
     onboarded.value = false
+    userId.value = null
+    role.value = ''
   }
 
   async function logout() {
@@ -118,7 +137,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    isLoggedIn, loading, error, orgId, onboarded, registrationOpen,
+    isLoggedIn, loading, error, orgId, userId, role, isOwner, isAdmin, isWritable,
+    onboarded, registrationOpen,
     checkLogin, refreshOrg, isOnboarded, markOnboarded, loadRegistrationStatus,
     login, markLoggedIn, clearAuth, logout,
   }

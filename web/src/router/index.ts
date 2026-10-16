@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { showToast } from 'vant'
 import { useAuthStore, ORG_NAME_KEY } from '../features/auth/store'
 
 const router = createRouter({
@@ -32,7 +33,7 @@ const router = createRouter({
         { path: 'receivables/service',  name: 'ContactsService',  component: () => import('../features/contacts/pages/ReceivablesList.vue'), props: { kind: ['service'],                   theme: 'purple', pageTitle: '应收管理费' } },
         { path: 'receivables/bad-debt', name: 'ContactsBadDebt',  component: () => import('../features/contacts/pages/BadDebtList.vue') },
         { path: 'contracts',   name: 'ContactsContracts',component: () => import('../features/contacts/pages/ContractsPage.vue') },
-        { path: 'accrue',      name: 'ContactsAccrue',    component: () => import('../features/contacts/pages/AccrueWizard.vue') },
+        { path: 'accrue',      name: 'ContactsAccrue',    component: () => import('../features/contacts/pages/AccrueWizard.vue'), meta: { roles: ['admin', 'owner'] } },
       ],
     },
     {
@@ -76,6 +77,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // 用户管理：仅 所有者(owner) / 高级用户(admin) 可进；一般用户(viewer) 被守卫拦回看板
+      path: '/users',
+      name: 'Users',
+      component: () => import('../features/users/UsersPage.vue'),
+      meta: { requiresAuth: true, roles: ['admin', 'owner'] },
+    },
+    {
       path: '/onboarding',
       name: 'Onboarding',
       component: () => import('../features/onboarding/OnboardingPage.vue'),
@@ -91,6 +99,13 @@ router.beforeEach(async (to, _from, next) => {
   }
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
     next('/login')
+    return
+  }
+  // 角色守卫：带 meta.roles 的页面仅对应角色可进（前端拦回看板；后端另有 403 兜底）
+  const allowedRoles = to.meta.roles as string[] | undefined
+  if (allowedRoles && !allowedRoles.includes(auth.role)) {
+    showToast('当前账号无权限访问该页面')
+    next('/')
     return
   }
   // 引导入口：已登录用户首次进入主流程页且未完成引导时，转到引导页。

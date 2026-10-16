@@ -108,7 +108,7 @@ func (h *Handler) RegisterOrg(c *gin.Context) {
 	setSessionCookie(c, token, expiresAt)
 	platform.OK(c, gin.H{
 		"orgName":   req.OrgName,
-		"user":      gin.H{"username": req.Username},
+		"user":      gin.H{"username": req.Username, "role": RoleOwner},
 		"expiresAt": expiresAt,
 	})
 }
@@ -128,14 +128,17 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, expiresAt, err := h.svc.Login(req.Username, req.Password)
+	token, expiresAt, role, err := h.svc.Login(req.Username, req.Password)
 	if err != nil {
 		platform.Fail(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "账号或密码错误")
 		return
 	}
 
 	setSessionCookie(c, token, expiresAt)
-	platform.OK(c, gin.H{"user": gin.H{"username": req.Username}, "expiresAt": expiresAt})
+	platform.OK(c, gin.H{
+		"user":      gin.H{"username": req.Username, "role": role},
+		"expiresAt": expiresAt,
+	})
 }
 
 // Logout POST /api/auth/logout —— 删除服务端会话并清除 Cookie。
@@ -150,10 +153,17 @@ func (h *Handler) Logout(c *gin.Context) {
 }
 
 // ResetPassword POST /api/auth/reset-password —— 重置密码为 admin888（忘记密码）。
+// 多用户后仅当系统内只有一个 owner 账号时才允许（见 docs/27 §8.6）。
 func (h *Handler) ResetPassword(c *gin.Context) {
 	username, err := h.svc.ResetPassword()
-	if err != nil {
+	switch err {
+	case nil:
+	case ErrUserNotFound:
 		platform.Fail(c, http.StatusNotFound, "NO_USER", "系统中没有注册用户")
+		return
+	default:
+		platform.Fail(c, http.StatusForbidden, "RESET_NOT_ALLOWED",
+			"系统已有多个账号，请登录后由管理员重置密码")
 		return
 	}
 	platform.OK(c, gin.H{"ok": true, "message": "密码已重置为 admin888，请登录后修改", "username": username})

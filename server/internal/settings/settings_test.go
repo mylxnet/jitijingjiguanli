@@ -28,7 +28,9 @@ func newEnv(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	authed := r.Group("", orgCtx())
-	NewHandler(db).Register(authed)
+	h := NewHandler(db)
+	h.RegisterRead(authed)
+	h.RegisterWrite(authed)
 	return r
 }
 

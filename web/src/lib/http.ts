@@ -84,6 +84,10 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body }),
 
+  // 局部更新（账号角色/状态等，见 docs/27 用户管理接口 PATCH /api/users/:id）
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PATCH', body }),
+
   del: <T>(path: string) =>
     request<T>(path, { method: 'DELETE' }),
 }

@@ -63,20 +63,44 @@ watch(() => route.path, refreshIssues)
 
 const orgName = computed(() => localStorage.getItem('jt_org_name') || '组织')
 
-const items = [
+type NavItem = {
+  label: string
+  path: string
+  iconChar: string
+  action?: string
+  // 写入口（快速记账）：仅可写账号（owner/admin）可见
+  write?: boolean
+  // 管理入口（用户管理）：仅 owner/admin 可见
+  manage?: boolean
+}
+
+// 菜单按当前账号角色收口（docs/27 §6.3）：
+// - viewer（一般用户）只读，不显示「快速记账」等写入口；
+// - 「用户管理」仅 owner/admin 可见；
+// - 「设置」对所有已登录账号可见（其中改密/登出是所有人的自服务项）。
+const allItems: NavItem[] = [
   { label: '收支总览', path: '/', iconChar: '◆' },
   { label: '往来单位', path: '/contacts', iconChar: '◉' },
   { label: '投资管理', path: '/investment', iconChar: '📈' },
   { label: '流转管理', path: '/flow', iconChar: '🏠' },
-  { label: '快速记账', path: '', iconChar: '＋', action: 'record' },
+  { label: '快速记账', path: '', iconChar: '＋', action: 'record', write: true },
+  { label: '用户管理', path: '/users', iconChar: '👥', manage: true },
 ]
+
+const items = computed<NavItem[]>(() =>
+  allItems.filter(it => {
+    if (it.write && !auth.isWritable) return false
+    if (it.manage && !auth.isWritable) return false
+    return true
+  }),
+)
 
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/'
   return route.path.startsWith(path)
 }
 
-function onItemClick(item: typeof items[number]) {
+function onItemClick(item: NavItem) {
   if (item.action === 'record') {
     openRecord()
   } else if (item.path) {

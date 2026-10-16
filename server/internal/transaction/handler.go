@@ -137,7 +137,7 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 	}
 
 	// 记录创建日志
-	h.clRepo.LogCreate(orgID, "transaction", created.ID)
+	h.clRepo.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "transaction", created.ID)
 
 	platform.SuccessResponse(c, created)
 }
@@ -458,7 +458,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		}
 		field := "status"
 		old, new := txn.Status, *req.Status
-		_ = h.clRepo.LogChange(orgID, "transaction", id, action, &field, &old, &new)
+		_ = h.clRepo.WithOperator(auth.CurrentUsername(c)).LogChange(orgID, "transaction", id, action, &field, &old, &new)
 		if err := h.repo.SetTransferStatusByTxn(orgID, txn.ID, *req.Status); err != nil {
 			platform.ErrResponse(c, http.StatusInternalServerError, &platform.AppError{
 				Code: "INTERNAL_ERROR", Message: "同步结转状态失败",
@@ -467,20 +467,20 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 		}
 	}
 	if req.Date != nil && *req.Date != txn.TxnDate {
-		h.clRepo.LogUpdateField(orgID, "transaction", id, "txn_date", txn.TxnDate, *req.Date)
+		h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "transaction", id, "txn_date", txn.TxnDate, *req.Date)
 	}
 	if req.Direction != nil && *req.Direction != txn.Direction {
-		h.clRepo.LogUpdateField(orgID, "transaction", id, "direction", txn.Direction, *req.Direction)
+		h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "transaction", id, "direction", txn.Direction, *req.Direction)
 	}
 	if req.AmountCents != nil && *req.AmountCents != txn.AmountCents {
 		oldStr := strconv.FormatInt(txn.AmountCents, 10)
 		newStr := strconv.FormatInt(*req.AmountCents, 10)
-		h.clRepo.LogUpdateField(orgID, "transaction", id, "amount_cents", oldStr, newStr)
+		h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "transaction", id, "amount_cents", oldStr, newStr)
 	}
 	if req.CategoryID != nil && *req.CategoryID != txn.CategoryID {
 		oldStr := strconv.FormatInt(txn.CategoryID, 10)
 		newStr := strconv.FormatInt(*req.CategoryID, 10)
-		h.clRepo.LogUpdateField(orgID, "transaction", id, "category_id", oldStr, newStr)
+		h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "transaction", id, "category_id", oldStr, newStr)
 	}
 	if req.Note != nil {
 		oldNote := ""
@@ -488,7 +488,7 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 			oldNote = *txn.Note
 		}
 		if *req.Note != oldNote {
-			h.clRepo.LogUpdateField(orgID, "transaction", id, "note", oldNote, *req.Note)
+			h.clRepo.WithOperator(auth.CurrentUsername(c)).LogUpdateField(orgID, "transaction", id, "note", oldNote, *req.Note)
 		}
 	}
 

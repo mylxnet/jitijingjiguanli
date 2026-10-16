@@ -1,146 +1,119 @@
-<img width="1157" height="842" alt="image" src="https://github.com/user-attachments/assets/e3f776bd-16b7-4ca6-9428-5906ebfd6667" />
-本系统是村级集体经济组织的记账管理平台，管钱、管单位、管投资，每一笔账都留痕、可回滚。
+# 集体台账
 
-当前版本：v0.24.1
+面向村级集体经济组织的记账管理平台：管钱、管单位、管投资，流水只作废不修改，作废自动回滚全部联动。后端是单个 Go 二进制（`go:embed` 内嵌前端产物），数据库为 SQLite 单文件，桌面与手机访问同一套页面。
 
-## 1 第一次使用，三分钟建好账
+![集体台账首页看板](https://github.com/user-attachments/assets/e3f776bd-16b7-4ca6-9428-5906ebfd6667)
 
-打开系统后进入登录页。首次使用点注册，注册一个组织，系统会按集体经济常用科目预设好账套，不用自己建科目。「注册组织」入口只在系统里还没有任何账号时出现，注册成功后自动隐藏；忘了密码可点登录页「忘记密码？」，密码会重置为默认口令 `admin888`，登录后请立即在设置里改掉。
+当前版本：**v0.25.0**（版本号唯一来源 `web/src/version.ts`）。
 
-注册登录后，首次进入会出现建账向导，可二选一。
+## 功能
 
-导入 Excel 是推荐方式：下载模板，填好流转企业、投资公司、再投资单位后上传，系统会自动建单位，并同步建好对应科目。银行存款期初、预置科目期初和最终预览在这里手工填写。
+- **建账向导**：Excel 模板导入或手工七步录入，自动建往来单位并同步科目；首次注册按集体经济常用科目预置账套。
+- **快速记账 + 普通记账**：常用业务预置模板，已配好收支方向、入账科目与默认摘要；支出提交前校验科目余额，余额不足直接拦下。
+- **流水只作废、不改不删**：作废自动回滚银行存款、科目余额、应收、投资等联动。
+- **往来单位与合同**：单位资料维护、应收/已收/未收概览、合同附件上传与全屏预览（PDF 用 pdf.js 逐页渲染，Word/Excel 本地解析）。
+- **应收管理**：土地流转费、管理费、投资收益三类应收按单位按年份查看与核销，含计提向导与坏账清单。
+- **投资与流转台账**：投资公司与再投资单位的本金、已收收益、再投资跟踪；流转企业的土地面积与流转费收缴。
+- **年度 532 分配**：走分配流程，方案一旦产生流水即锁定，不可再改。
+- **看板与汇总**：银行存款、净资产、收益进度看板，多维汇总与下钻，数据可导出（`GET /api/export`，CSV）。
+- **数据安全**：每日 03:00 自动备份、备份保留份数可配、本地下载与恢复、系统重置；最新一份备份受保护不可删。
+- **账号与权限**：自助注册组织、会话 Cookie 鉴权；三角色权限（**所有者** / **高级用户** / **一般用户（只读）**），账号可停用与启用、密码可重置；写操作按角色收口（后端 `RequireAuth` + `RequireWrite` + `RequireRole` 三级中间件，前端菜单/按钮按角色隐藏）。
 
-手工逐条录入是另一种方式：按七步向导手动填银行存款期初、添加各类单位、填预置科目期初，预览后完成。
+## 前置要求
 
-完成后进入收支总览首页，就可以开始记账。
+- 运行 Releases 产物：Linux amd64，无额外依赖（SQLite 驱动为纯 Go，`CGO_ENABLED=0`）。
+- 源码构建：Go 1.27+、Node.js 22+。
+- `DATA_DIR` 必须落在宿主机本地文件系统，禁止 NFS/SMB 挂载。数据库迁移只在进程启动时执行一次，替换或删除库文件后必须重启容器/进程。
 
-一个提醒：单位类型只有三种。流转企业是土地流转费和管理费的收入来源，投资公司与再投资单位是集体资金对外投资去向。这个定位决定单位对应哪个科目，建单位时别选错。
+## 安装
 
-## 2 完善基础账务，把家底摸清
+### A. 单文件可执行（GitHub Releases）
 
-建好账套后，先别急着记流水，把历史欠款补上、单位资料补齐、提醒处理好，后面记账、收缴、对账才准、才顺。
-
-先说一句话当作铺垫：科目是账的分桶，流水是每一笔收支，单位是业务对象。这三个词后面会经常用到。
-
-一、登记历年欠款
-
-把历史上应收未收的欠款补录成应收，比如土地流转费、管理费、投资分红等。这样应收、已收、未收才反映真实家底，收缴时也有据可对、不会漏收。
-
-二、完善单位资料，上传合同
-
-给每个往来单位补基本信息、上传合同等附件。在往来单位里点某个单位整行展开，即可编辑资料、上传合同，点合同文件名可全屏预览。资料齐全，后续对账和收缴更有依据。
-
-三、及时处理左侧导航的提醒红点
-
-左侧「往来单位」出现红点时，说明有单位的数据不齐全，比如联系人、面积等必填信息缺失。点开红点看缺失清单，逐项补齐即可消除，避免后面计提应收、收缴时缺字段而卡住。
-
-做完这三步，账套基础就扎实了，可以进入第三步日常记账。
-
-## 3 日常记一笔
-
-快速记账最省事，用左侧的加号按钮。弹窗默认就是快速记账模式，日期默认今天。选一项业务，例如收到其他收入、拨出其他收入、土地流转费等，系统预置了常用模板，模板已配好收支方向、入账科目和默认摘要，一般只要填金额提交即可。部分业务还要选往来单位或投资公司，把必填项选好再提交。
-
-普通记账用于不用模板的场景。切到普通记账，手动选收入或支出、科目、金额、日期。提交前注意：支出会校验科目余额是否足够，不足会提示，说明账不平衡，先检查再提交。
-
-记错了怎么办？进流水页找到那一笔，点作废。作废会自动回滚这笔涉及的所有联动，包括银行存款、科目余额、应收、投资等。作废等同于这笔没发生，不影响其他账。
-
-## 4 页面速览
-
-收支总览（首页）是看板，展示银行存款、净资产和收益进度，从查看全部可以进流水或汇总。
-
-往来单位是单位清单与概览。点某个单位可展开合同、查看应收、上传或查看合同扫描件；概览统计卡看应收、已收、未收。
-
-投资管理是对外投资公司台账，跟踪投资本金、收益和再投资。
-
-流转管理是流转企业台账，看土地流转面积、流转费和管理费的应收与收缴。
-
-快速记账是一键记一笔常用业务。
-
-流水是全部收支明细，可按方向、关键字、金额、时间筛选，已作废的会有标记。
-
-汇总是各维度的收支统计。
-
-科目用来查看和管理账套科目与余额，一般不手动改。
-
-设置在设置里可以管理组织信息、操作日志、备份恢复，以及高级设置，包括银行存款期初、流水清单、科目、计提坏账、单位删除等。
-
-从往来单位还能进入这些应收细项：应收土地流转费、应收管理费、应收投资收益，按单位和年份查看应收与收缴核销；合同管理，每个单位下的合同附件，点整行展开或折叠，点文件名可全屏预览；计提向导，按面积等规则一键计提当年应收；坏账清单，管理已核销坏账的归档和撤销。
-
-## 5 常见业务该记哪
-
-收到流转企业交来的土地流转费，记收入，摘要注意明企业。
-
-拨付土地流转费给农户，支出科目选土地流转费转付农户。
-
-收投资分红，选分红类模板，或者记投资收益收入。
-
-集体资金投给投资公司，选投资类模板，记到对应公司科目，不要选普通收入。
-
-收到其他财政收入，用收到其他收入模板。
-
-执行年度 532 分配方案，走分配流程，方案一旦产生流水就锁定不能再改，先核对再确定。
-
-## 6 数据安全与恢复
-
-备份在设置里随时可以备份到本地，最新一条备份受保护，不能删除。
-
-系统重置是高危操作，要输入两次确认才会清空账和账号，只保留预置科目，并强制重新注册建账，谨慎使用。
-
-操作日志里所有增删改都会留痕，可以导出成 CSV。
-
-## 7 三条原则
-
-流水只能作废，不能修改或删除。作废会自动回滚联动，前提是操作在正确的流水上。
-
-支出前看余额。余额不足说明账不平，先对比流水找原因。
-
-单位名称和类型建好后不可编辑，单位不可随意删除，建单位时看清类型再定。
-
-## 8 记不住怎么办
-
-大多数日常业务用快速记账一个入口就够，模板帮你配好科目和摘要。
-
-
-## 目录说明
-
-| 目录 | 放什么 | 不放什么 |
-|------|--------|----------|
-| web/src/features/ | 按业务特性组织的前端代码 | 跨特性复用的通用组件 |
-| web/src/components/ | 无业务含义的通用 UI 组件 | 含业务逻辑的组件 |
-| server/internal/ | 后端 handler / service / repo | 配置与迁移 |
-| server/migrations/ | 版本化 SQL 迁移 | 手工 SQL |
-| deploy/ | Dockerfile / compose / env 样例 / CHANGELOG | 真实密钥 |
-| docs/ | 需求 / PRD / 设计 / 开发技术文档 / 操作手册 / 各版本方案与验收记录 | 临时脚本 |
-| web/dist、server/cmd/server/web/ | 前端构建产物与后端内嵌目录（构建生成，不入库） | 手写代码 |
-
-## 9 部署与升级
-
-默认端口 8080；数据目录必须放本地盘（禁 SMB/NFS）。凭据只在部署时按环境自行设置，不写进仓库。
-
-**A. 单文件可执行（GitHub Releases）**：下载 `jitizhang`（Linux amd64，已内嵌前端），赋可执行权限后运行：
+下载内嵌前端的 Linux amd64 产物 `jitizhang`（监听 8080）：
 
 ```bash
+chmod +x jitizhang
 DATA_DIR=/var/lib/jitai APP_BACKUP_DIR=/var/backups/jitai ./jitizhang
 ```
 
-**B. Docker 预构建镜像（阿里云 ACR）**：镜像 `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z`（同时维护 `latest`），容器内约定 `DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`。挂好这两个目录后：
+### B. Docker 预构建镜像（阿里云 ACR）
+
+镜像 `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z`（同时维护 `latest`），容器内约定 `DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`：
 
 ```bash
-docker login registry.cn-hangzhou.aliyuncs.com    # 凭据不入库
-docker compose -f deploy/docker-compose.hub.yml up -d   # image 已写好当前版本，升级只改标签
+docker login registry.cn-hangzhou.aliyuncs.com     # 凭据不入库
+cp deploy/.env.example deploy/.env                 # .env 已 gitignore，按环境修改
+docker compose -f deploy/docker-compose.hub.yml up -d
 ```
 
-**C. 本机自行构建**（三步，手工执行）：
+升级到某个版本只需改 `deploy/docker-compose.hub.yml` 的 image 标签，再 `pull` + `up -d`。请用 compose 启动：裸 `docker run` 漏掉挂载会丢数据目录。
+
+### C. 从源码构建
 
 ```bash
-cd web && npm ci && npx vite build                                   # 不要用 npm run build：它带 vue-tsc，会因 docs/22 登记的 8 处历史类型错误失败
+cd web && npm ci && npm run build                        # vue-tsc -b && vite build
 rm -rf ../server/cmd/server/web && mkdir -p ../server/cmd/server/web
-cp -r dist/. ../server/cmd/server/web/                               # 必须先清空，否则旧 chunk 堆积
+cp -r dist/. ../server/cmd/server/web/                   # 必须先清空，否则旧 chunk 堆积
 cd ../server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../jitizhang ./cmd/server
 ```
 
-镜像：`deploy/build-image.sh`，或按 `docs/04-dev-manual.md` §8.5 用 `deploy/Dockerfile.local` 构建。
-⚠️ `scripts/build.sh` 仍是早期 Windows exe 版本（走 `npm run build`、产物 `server/bin/jititaizhang.exe`），待后续统一。
+镜像构建：`deploy/build-image.sh`，或按 `docs/04-dev-manual.md` §8.5 手工执行 `docker build --provenance=false --sbom=false -f deploy/Dockerfile.local`；`deploy/Dockerfile.release` 用 Releases 已构建的二进制打薄镜像，适合在 NAS 上不编译直接部署。
 
-升级与换库：`docker pull` 新标签 → `docker compose up -d`。**外部替换/删除 `/data` 下的库文件后必须重启容器**——迁移只在进程启动时执行一次，不重启会表现为「注册 400、登录 401」这类看着像密码错误的现象。备份默认每日 03:00 自动执行、保留 30 份（`APP_AUTO_BACKUP=0` 关闭，`APP_KEEP_BACKUP` 调份数）。
+⚠️ `scripts/build.sh` 仍是早期 Windows exe 脚本（产物 `server/bin/jititaizhang.exe`），不在当前发布链路上。
+
+### 开发环境
+
+```bash
+cd server && DATA_DIR=~/jitai-debug/data APP_AUTO_BACKUP=0 APP_PORT=8080 go run ./cmd/server
+cd web && npm ci && npm run dev
+```
+
+改前端要让 8080 的单二进制看到，需按 C 的三步重建并同步内嵌目录，再重启后端。
+
+## 使用
+
+首次启动打开 `http://<host>:8080`。登录页点「注册组织」（仅当系统里还没有任何账号时出现）→ 填组织名、管理员账号、密码 → 自动登录并进入建账向导，二选一：下载模板填好单位后上传，或手工逐条录入。
+
+日常记账走左侧「+」快速记账，选业务、填金额提交即可；记错了进流水页找到那一笔点「作废」。
+
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+忘密码点登录页「忘记密码？」，系统里最早注册的账号会被重置为默认口令 `admin888`，登录后立即到「设置 → 修改密码」换掉。
+
+## 配置
+
+全部来自环境变量，默认值见 `server/internal/platform/config.go`。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `APP_PORT` | `8080` | HTTP 监听端口 |
+| `DATA_DIR` | `./data` | SQLite 数据目录，库文件名固定为 `jititaizhang.db` |
+| `APP_BACKUP_DIR` | `./backups` | 备份目录，建议与数据不同盘 |
+| `APP_KEEP_BACKUP` | `30` | 自动备份保留份数 |
+| `APP_AUTO_BACKUP` | `1` | `1` 启用每日 03:00 自动备份，`0` 关闭 |
+| `APP_SECURE_COOKIE` | 未设置 | 置 `1` 时会话 Cookie 加 `Secure`，仅在 HTTPS 前置之后使用 |
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| `docs/19-新用户快速入门.md` | 三分钟建账、日常记账、页面速览、常见业务该记哪 |
+| `docs/05-user-manual.md` | 记账员操作手册与 FAQ |
+| `docs/01-requirements.md` / `02-prd.md` / `03-design.md` | 需求、PRD、设计与各版本变更记录 |
+| `docs/04-dev-manual.md` | 开发手册：模块划分、构建、部署链路、遗留项 |
+| `docs/06-linkage-rules.md` | 流水作废的联动规则与验证口径 |
+| `docs/20-备份设计.md` | 备份与恢复设计 |
+| `docs/27-多用户与权限控制方案.md` | 多用户与权限控制：三角色模型、权限矩阵、路由分级与前端收口 |
+| `deploy/CHANGELOG.md` | 版本变更日志 |
+
+## 贡献
+
+从 `main` 开分支，改完提 PR 回合 `main`。提交前跑 `cd web && npm run build` 与 `cd server && go test ./...`。
+
+发布由维护者执行：更新 `web/src/version.ts`、`README.md` 的版本号、`deploy/CHANGELOG.md` 与 `deploy/docker-compose.hub.yml` 的镜像标签，推送 `main` 后打 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`，产出 GitHub Releases 二进制；ACR 镜像另行在 WSL 构建推送。Gitee 远端只收 `main`，不打标签。
+
+## 许可证
+
+Distributed under the MIT License. 仓库当前未附带 `LICENSE` 文件，如需改用其他许可证请替换本节并补上文件。

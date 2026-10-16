@@ -149,7 +149,7 @@ func (h *Handler) Import(c *gin.Context) {
 			}
 
 			seen[ptype][name] = true
-			h.cl.LogCreate(orgID, "party", created.ID)
+			h.cl.WithOperator(auth.CurrentUsername(c)).LogCreate(orgID, "party", created.ID)
 			initSummary(ptype).Created++
 			result.Created++
 		}

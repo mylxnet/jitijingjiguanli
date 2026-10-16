@@ -29,6 +29,14 @@ var (
 	ErrInvalidPassword    = errors.New("密码至少 6 位")
 	ErrOldPasswordWrong   = errors.New("原密码错误")
 	ErrRegistrationClosed = errors.New("系统已注册，禁止重复注册")
+	// 多用户 / 权限相关。
+	ErrResetNotAllowed = errors.New("系统存在多个所有者账号，请登录后由管理员重置密码")
+	ErrUserNotFound    = errors.New("账号不存在")
+	ErrInvalidRole     = errors.New("角色不合法")
+	ErrInvalidUsername = errors.New("请填写账号")
+	ErrForbiddenRole   = errors.New("无权操作该账号")
+	ErrSelfOperation   = errors.New("不能对自己执行该操作")
+	ErrLastOwner       = errors.New("必须保留至少一个所有者账号")
 )
 
 const (
@@ -94,7 +102,7 @@ func (s *Service) RegisterOrg(orgName, username, password string) (string, time.
 		if err != nil {
 			return err
 		}
-		userID, err = s.repo.createUserTx(tx, orgID, username, string(hash))
+		userID, err = s.repo.createUserTx(tx, orgID, username, string(hash), RoleOwner)
 		if err != nil {
 			return err
 		}
@@ -126,47 +134,49 @@ func (s *Service) IsRegistrationOpen() (bool, error) {
 	return n == 0, nil
 }
 
-// Login 校验账号口令，成功则签发会话。
-func (s *Service) Login(username, password string) (string, time.Time, error) {
+// Login 校验账号口令，成功则签发会话并返回账号角色。
+// 已停用账号与账号不存在/密码错误返回同一错误，避免账号枚举与状态探测。
+func (s *Service) Login(username, password string) (string, time.Time, string, error) {
 	u, err := s.repo.FindByUsername(strings.TrimSpace(username))
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
-	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-		return "", time.Time{}, ErrInvalidCredentials
+	if u == nil || u.Status == StatusDisabled ||
+		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return "", time.Time{}, "", ErrInvalidCredentials
 	}
 
 	token, err := newToken()
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
 	expiresAt := platform.Now().Add(SessionTTL)
 	if err := s.repo.CreateSession(token, u.ID, expiresAt); err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
-	return token, expiresAt, nil
+	return token, expiresAt, u.Role, nil
 }
 
-// Resolve 校验会话 token，返回用户 id 与其所属组织 id。无效或过期返回 ErrUnauthorized。
-func (s *Service) Resolve(token string) (int64, int64, error) {
+// Resolve 校验会话 token，返回会话身份（用户/组织/用户名/角色）。无效或过期返回 ErrUnauthorized。
+func (s *Service) Resolve(token string) (*Identity, error) {
 	if token == "" {
-		return 0, 0, ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 	sess, err := s.repo.FindSession(token)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 	if sess == nil {
-		return 0, 0, ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 	u, err := s.repo.FindUserByID(sess.UserID)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
-	if u == nil {
-		return 0, 0, ErrUnauthorized
+	if u == nil || u.Status == StatusDisabled {
+		return nil, ErrUnauthorized
 	}
-	return u.ID, u.OrgID, nil
+	return &Identity{UserID: u.ID, OrgID: u.OrgID, Username: u.Username, Role: u.Role}, nil
 }
 
 // Logout 删除会话（登出）。token 为空时视为无操作。
@@ -177,20 +187,36 @@ func (s *Service) Logout(token string) error {
 	return s.repo.DeleteSession(token)
 }
 
-// ResetPassword 将系统中任意用户的密码重置为 admin888（忘记密码）。
+// ResetPassword 将密码重置为 admin888（忘记密码兜底）。
+// 多用户后公开接口不再允许「重置任意用户」：仅当系统内恰好存在一个 owner 账号时，
+// 才重置该 owner；存在多个 owner（或没有任何账号）时返回 ErrResetNotAllowed。
 func (s *Service) ResetPassword() (string, error) {
-	u, err := s.repo.FindAnyUser()
+	n, err := s.repo.CountOwners()
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", ErrUserNotFound
+	}
+	if n > 1 {
+		return "", ErrResetNotAllowed
+	}
+	u, err := s.repo.FindOwner()
 	if err != nil {
 		return "", err
 	}
 	if u == nil {
-		return "", errors.New("系统中没有注册用户")
+		return "", ErrResetNotAllowed
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("admin888"), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
 	if err := s.repo.UpdatePassword(u.ID, string(hash)); err != nil {
+		return "", err
+	}
+	// 重置密码后强制下线，避免旧会话继续可用。
+	if err := s.repo.DeleteSessionsByUser(u.ID); err != nil {
 		return "", err
 	}
 	return u.Username, nil

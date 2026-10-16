@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理 · 原型演示</title>
+<style>
+  :root{
+    --jade:#2b5876; --jade-deep:#16384d; --jade-light:#eaf1f6; --jade-hover:#3a6e8f;
+    --paper:#faf8f4; --card:#ffffff; --line:#e8e3d8;
+    --ink:#1a1a18; --ink-soft:#3a3936; --ink-muted:#7a7770; --ink-faint:#a8a59e;
+    --danger:#a33a2d; --danger-deep:#8c2f24; --danger-bg:#f3e0da;
+    --warn:#b06a1f; --warn-bg:#f8e9d4;
+    --info:#5a9cb8; --accent:#9a7fb0;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px;
+    --shadow-sm:0 1px 2px rgba(26,26,24,.04);
+    --shadow-lg:0 8px 28px rgba(26,26,24,.08),0 28px 72px rgba(26,26,24,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  .app{display:flex;min-height:100vh}
+
+  /* ============ 侧边栏（复用主程序 SideNav 视觉） ============ */
+  .side{width:196px;background:var(--jade-deep);color:rgba(255,255,255,.9);padding:16px 0;
+    display:flex;flex-direction:column;position:sticky;top:0;align-self:flex-start;height:100vh}
+  .side-top{padding:0 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:8px}
+  .side-org{font-size:15px;font-weight:700;color:#fff}
+  .side-org-sub{font-size:10px;color:rgba(255,255,255,.5);letter-spacing:.1em;margin-top:2px}
+  .side-wrap{flex:1;padding:4px 10px;display:flex;flex-direction:column;gap:2px}
+  .side-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);
+    color:rgba(255,255,255,.7);font-size:13px;cursor:pointer;user-select:none}
+  .side-link:hover{background:rgba(255,255,255,.06);color:#fff}
+  .side-link.active{background:rgba(255,255,255,.15);color:#fff;font-weight:600}
+  .side-ic{width:22px;height:22px;display:grid;place-items:center;font-size:14px;flex-shrink:0;
+    background:rgba(255,255,255,.1);border-radius:6px}
+  .side-link.active .side-ic{background:var(--jade)}
+  .side-link.hidden-role{display:none}
+  .side-link.locked{opacity:.35;pointer-events:none}
+  .side-foot{margin-top:auto;padding:8px 10px 0;border-top:1px solid rgba(255,255,255,.08);
+    display:flex;flex-direction:column;gap:2px}
+  .side-version{text-align:center;font-size:11px;color:rgba(255,255,255,.35);padding:8px 0 4px}
+
+  /* ============ 主区 ============ */
+  .main{flex:1;min-width:0;padding:20px 24px 60px}
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .page-head h3{font-size:18px;font-weight:600}
+  .role-switch{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-muted)}
+  .role-switch .seg{display:flex;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:#fff}
+  .role-switch .seg button{border:0;background:transparent;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--ink-muted)}
+  .role-switch .seg button.on{background:var(--jade-light);color:var(--jade);font-weight:600}
+
+  /* 统计卡（沿用合同管理页统计卡风格） */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+  .stat{border-radius:var(--r-sm);padding:10px 12px;box-shadow:var(--shadow-sm)}
+  .stat .k{font-size:12px;color:var(--ink-muted)}
+  .stat .v{font-size:16px;font-weight:700;color:var(--ink);margin-top:2px}
+  .stat.c1{background:#e8f0fb}.stat.c2{background:#e6f5f4}
+  .stat.c3{background:#f1edfc}.stat.c4{background:#fff1e0}
+
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+  .hint{font-size:12px;color:var(--ink-muted)}
+  .hint b{color:var(--jade)}
+
+  /* 列表 */
+  .list{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+  .row{display:grid;grid-template-columns:1.6fr 120px 100px 260px;gap:12px;align-items:center;
+    padding:14px 16px;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row.head{background:var(--paper);font-size:12px;color:var(--ink-muted);padding:10px 16px}
+  .who{display:flex;align-items:center;gap:10px;min-width:0}
+  .avatar{width:34px;height:34px;border-radius:50%;background:var(--jade-light);color:var(--jade);
+    display:grid;place-items:center;font-size:14px;font-weight:600;flex-shrink:0}
+  .who b{font-size:14px;display:block}
+  .who small{font-size:11px;color:var(--ink-muted)}
+  .chip{display:inline-block;font-size:12px;border-radius:10px;padding:2px 10px;white-space:nowrap}
+  .role-owner{background:var(--jade);color:#fff}
+  .role-admin{background:#e6f5f4;color:#1f5c48}
+  .role-viewer{background:#f1edfc;color:#6b4fa8}
+  .st-on{background:var(--jade-light);color:var(--jade)}
+  .st-off{background:#f0ede7;color:var(--ink-muted)}
+  .acts{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+
+  .btn{border:1px solid transparent;border-radius:20px;cursor:pointer;font-size:13px;padding:7px 16px;background:#fff;transition:.15s}
+  .btn.primary{background:var(--jade);color:#fff;border-color:var(--jade)}
+  .btn.primary:hover{background:var(--jade-hover);border-color:var(--jade-hover)}
+  .btn.plain{background:var(--jade-light);color:var(--jade);border-color:var(--jade-light)}
+  .btn.plain:hover{background:var(--jade-bg,#f2f7fa)}
+  .btn.ghost{background:#fff;border-color:var(--line);color:var(--ink-muted)}
+  .btn.ghost:hover{border-color:var(--jade);color:var(--jade)}
+  .btn.mini{font-size:12px;padding:4px 12px}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn.wide{display:block;width:100%}
+
+  .empty{text-align:center;color:var(--ink-muted);font-size:13px;padding:40px}
+  .deny{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:48px 24px;text-align:center}
+  .deny .ic{width:52px;height:52px;border-radius:50%;background:var(--jade-light);color:var(--jade);
+    display:grid;place-items:center;font-size:24px;margin:0 auto 12px}
+  .deny b{font-size:15px}
+  .deny p{font-size:13px;color:var(--ink-muted);margin-top:6px}
+
+  /* 弹窗（桌面端居中） */
+  .mask{position:fixed;inset:0;background:rgba(26,26,24,.4);display:flex;align-items:center;justify-content:center;z-index:50}
+  .mask.hide{display:none}
+  .modal{width:min(560px,calc(100vw - 48px));background:#fff;border-radius:var(--r-xl);box-shadow:var(--shadow-lg);overflow:hidden}
+  .modal .mh{padding:18px 20px 10px;font-size:16px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .modal .close{border:0;background:transparent;font-size:18px;color:var(--ink-faint);cursor:pointer}
+  .modal .mb{padding:4px 20px 8px}
+  .field{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .field:last-child{border-bottom:0}
+  .field label{width:84px;font-size:13px;color:var(--ink-soft);flex-shrink:0}
+  .field input,.field select{flex:1;border:1px solid var(--line);border-radius:var(--r-sm);
+    padding:9px 12px;font-size:13px;color:var(--ink);background:#fff;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--jade)}
+  .field .note{font-size:11px;color:var(--ink-muted);margin-top:6px}
+  .err{color:var(--danger);font-size:12px;padding:8px 0 0}
+  .modal .mf{display:flex;gap:10px;justify-content:flex-end;padding:14px 20px 20px}
+  .warnbox{background:var(--danger-bg);border-radius:var(--r-md);padding:12px 14px;font-size:13px;color:var(--danger-deep);line-height:1.6}
+  .warnbox b{color:var(--danger-deep)}
+  .infobox{background:var(--jade-light);border-radius:var(--r-md);padding:12px 14px;font-size:13px;color:var(--jade-deep);line-height:1.6}
+
+  /* 吐司 */
+  .toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(26,26,24,.85);
+    color:#fff;font-size:13px;padding:10px 18px;border-radius:var(--r-sm);z-index:99;opacity:0;transition:.2s}
+  .toast.on{opacity:1}
+
+  @media(max-width:900px){
+    .side{display:none}
+    .app{display:block}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .row{grid-template-columns:1fr;gap:8px}
+    .row.head{display:none}
+    .acts{justify-content:flex-start}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ 侧边栏 ============ -->
+  <nav class="side">
+    <div class="side-top">
+      <div class="side-org">甲村股份经济合作社</div>
+      <div class="side-org-sub">集体经济管理系统</div>
+    </div>
+    <div class="side-wrap">
+      <a class="side-link"><span class="side-ic">◆</span><span>收支总览</span></a>
+      <a class="side-link"><span class="side-ic">◉</span><span>往来单位</span></a>
+      <a class="side-link"><span class="side-ic">📈</span><span>投资管理</span></a>
+      <a class="side-link"><span class="side-ic">🏠</span><span>流转管理</span></a>
+      <a class="side-link"><span class="side-ic">＋</span><span>快速记账</span></a>
+      <a class="side-link locked" id="nav-users"><span class="side-ic">👥</span><span>用户管理</span></a>
+    </div>
+    <div class="side-foot">
+      <a class="side-link locked"><span class="side-ic">⚙</span><span>设置</span></a>
+      <a class="side-link locked"><span class="side-ic">🚪</span><span>退出</span></a>
+      <div class="side-version">v0.24.1&nbsp;&nbsp;By Mr Lin</div>
+    </div>
+  </nav>
+
+  <!-- ============ 主区 ============ -->
+  <main class="main">
+    <div class="page-head">
+      <h3>用户管理</h3>
+      <div class="role-switch">
+        <span>演示身份</span>
+        <div class="seg">
+          <button data-role="owner" class="on">所有者</button>
+          <button data-role="admin">高级用户</button>
+          <button data-role="viewer">一般用户</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="body"></div>
+  </main>
+</div>
+
+<!-- 弹窗容器 -->
+<div class="mask hide" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================= 演示数据 ======================= */
+var USERS = [
+  { id:1, name:'admin',      role:'owner',  status:'active',   created:'2026-09-02' },
+  { id:2, name:'张会计',      role:'admin',  status:'active',   created:'2026-09-10' },
+  { id:3, name:'李出纳',      role:'viewer', status:'active',   created:'2026-09-18' },
+  { id:4, name:'王保管',      role:'viewer', status:'disabled', created:'2026-09-25' }
+];
+var ME = { id:1, name:'admin', role:'owner' };  // 当前登录身份（由身份切换决定）
+var ROLE_LABEL = { owner:'所有者', admin:'高级用户', viewer:'一般用户' };
+var ROLE_CLS   = { owner:'role-owner', admin:'role-admin', viewer:'role-viewer' };
+var nextId = 100;
+
+/* ======================= 工具 ======================= */
+function $(id){ return document.getElementById(id); }
+function toast(msg){ var t=$('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(function(){t.classList.remove('on')},1400); }
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]}); }
+function openModal(html){ $('modal').innerHTML=html; $('mask').classList.remove('hide'); }
+function closeModal(){ $('mask').classList.add('hide'); $('modal').innerHTML=''; }
+$('mask').addEventListener('click',function(e){ if(e.target===$('mask')) closeModal(); });
+
+// 身份切换：owner=owner；admin=张会计；viewer=李出纳
+function switchRole(role){
+  if(role==='owner') ME={id:1,name:'admin',role:'owner'};
+  else if(role==='admin') ME={id:2,name:'张会计',role:'admin'};
+  else ME={id:3,name:'李出纳',role:'viewer'};
+  document.querySelectorAll('.role-switch .seg button').forEach(function(b){
+    b.classList.toggle('on', b.dataset.role===role);
+  });
+  render();
+}
+document.querySelectorAll('.role-switch .seg button').forEach(function(b){
+  b.addEventListener('click',function(){ switchRole(b.dataset.role); });
+});
+
+/* ======================= 权限判定 ======================= */
+// 是否可进入用户管理页（admin/owner），viewer 不可
+function canEnter(){ return ME.role==='owner'||ME.role==='admin'; }
+// 可操作某一行账号
+function canOperate(u){
+  if(!canEnter()) return false;
+  if(u.id===ME.id) return false;                 // 不能操作自己
+  if(ME.role==='owner') return true;             // owner 可操作除自己外任何人
+  return u.role==='viewer';                      // admin 仅能操作一般用户
+}
+// 可创建的角色范围（后端同源约束）
+function creatableRoles(){
+  return ME.role==='owner' ? ['admin','viewer'] : ['viewer'];
+}
+
+/* ======================= 渲染 ======================= */
+function render(){
+  // viewer 完全隐藏入口；admin/owner 显示且高亮当前页
+  $('nav-users').className = canEnter() ? 'side-link active' : 'side-link hidden-role';
+  var body = $('body');
+  if(!canEnter()){
+    body.innerHTML =
+      '<div class="deny"><div class="ic">🔒</div><b>当前账号无权限进入用户管理</b>' +
+      '<p>一般用户为只读账号，仅可查看与导出数据。</p></div>';
+    return;
+  }
+  var total = USERS.length,
+      admins = USERS.filter(function(u){return u.role==='admin'}).length,
+      viewers = USERS.filter(function(u){return u.role==='viewer'}).length,
+      offs = USERS.filter(function(u){return u.status==='disabled'}).length;
+
+  var hint = ME.role==='owner'
+    ? '所有者可创建<b>高级用户</b>与<b>一般用户</b>，并管理除自己外的任何账号。'
+    : '高级用户只能创建与管理<b>一般用户</b>。';
+
+  var html = '<div class="stats">' +
+    card('c1','账号总数',total) + card('c2','高级用户',admins) +
+    card('c3','一般用户',viewers) + card('c4','已停用',offs) + '</div>';
+
+  html += '<div class="toolbar"><span class="hint">'+hint+'</span>' +
+    '<button class="btn primary" onclick="openCreate()">＋ 新建账号</button></div>';
+
+  html += '<div class="list"><div class="row head">' +
+    '<div>账号</div><div>角色</div><div>状态</div><div style="text-align:right">操作</div></div>';
+
+  USERS.forEach(function(u){ html += rowHtml(u); });
+  html += '</div>';
+  body.innerHTML = html;
+}
+function card(cls,k,v){ return '<div class="stat '+cls+'"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
+
+function rowHtml(u){
+  var self = u.id===ME.id;
+  var acts = '';
+  if(self){
+    acts = '<span class="hint">当前登录账号</span>';
+  }else{
+    var ok = canOperate(u);
+    var roleBtn = (ME.role==='owner')
+      ? '<button class="btn plain mini role-sel" '+ (ok?'':'disabled') +'>改角色</button>' : '';
+    var toggle = u.status==='disabled'
+      ? '<button class="btn plain mini" '+ (ok?'':'disabled') +' onclick="askToggle('+u.id+',\'enable\')">启用</button>'
+      : '<button class="btn ghost mini" '+ (ok?'':'disabled') +' onclick="askToggle('+u.id+',\'disable\')">停用</button>';
+    var reset  = '<button class="btn ghost mini" '+ (ok?'':'disabled') +' onclick="askReset('+u.id+')">重置密码</button>';
+    var reason = ok ? '' : ' title="无权操作该账号"';
+    acts = '<span'+reason+'>'+roleBtn+toggle+reset+'</span>';
+  }
+  return '<div class="row">' +
+    '<div class="who"><span class="avatar">'+esc(u.name.charAt(0))+'</span>' +
+      '<div><b>'+esc(u.name)+'</b><small>'+u.created+' 创建</small></div></div>' +
+    '<div><span class="chip '+ROLE_CLS[u.role]+'">'+ROLE_LABEL[u.role]+'</span></div>' +
+    '<div><span class="chip '+(u.status==='disabled'?'st-off':'st-on')+'">'+(u.status==='disabled'?'已停用':'启用')+'</span></div>' +
+    '<div class="acts">'+acts+'</div></div>';
+}
+
+/* ======================= 新建账号 ======================= */
+function openCreate(){
+  var roles = creatableRoles();
+  var opts = roles.map(function(r){ return '<option value="'+r+'">'+ROLE_LABEL[r]+'</option>'; }).join('');
+  openModal(
+    '<div class="mh"><span>新建账号</span><button class="close" onclick="closeModal()">✕</button></div>' +
+    '<div class="mb">' +
+      '<div class="field"><label>账号</label><div style="flex:1"><input id="nu-name" placeholder="登录账号，如 zhangkuaiji"></div></div>' +
+      '<div class="field"><label>初始密码</label><div style="flex:1"><input id="nu-pass" placeholder="至少 6 位"><div class="note">首次登录后建议由本人在「设置-修改密码」中修改</div></div></div>' +
+      '<div class="field"><label>角色</label><div style="flex:1"><select id="nu-role">'+opts+'</select>' +
+        '<div class="note" id="nu-rolenote">'+(ME.role==='owner'?'高级用户：可记账、可管理一般用户；一般用户：仅可查看与导出。':'高级用户账号只能创建一般用户。')+'</div></div></div>' +
+      '<div class="err" id="nu-err"></div>' +
+    '</div>' +
+    '<div class="mf"><button class="btn ghost" onclick="closeModal()">取消</button>' +
+    '<button class="btn primary" onclick="submitCreate()">确定创建</button></div>'
+  );
+}
+function submitCreate(){
+  var name = $('nu-name').value.trim();
+  var pass = $('nu-pass').value;
+  var role = $('nu-role').value;
+  var err = $('nu-err');
+  err.textContent = '';
+  if(!name){ err.textContent='请填写账号'; return; }
+  if(pass.length<6){ err.textContent='密码至少 6 位'; return; }
+  if(USERS.some(function(u){return u.name===name})){ err.textContent='该账号已存在，请更换'; return; }
+  USERS.push({ id:nextId++, name:name, role:role, status:'active', created:'2026-10-16' });
+  closeModal(); render(); toast('账号已创建');
+}
+
+/* ======================= 停用 / 启用 ======================= */
+function askToggle(id, action){
+  var u = find(id); if(!u) return;
+  if(action==='disable'){
+    openModal(
+      '<div class="mh"><span>确认停用账号</span><button class="close" onclick="closeModal()">✕</button></div>' +
+      '<div class="mb"><div class="warnbox">停用后，<b>'+esc(u.name)+'</b> 将无法登录，其会话立即失效。<br>账号不会被删除，之后可重新启用。</div></div>' +
+      '<div class="mf"><button class="btn ghost" onclick="closeModal()">取消</button>' +
+      '<button class="btn primary" onclick="doToggle('+id+',\'disable\')">确定停用</button></div>'
+    );
+  }else{
+    openModal(
+      '<div class="mh"><span>确认启用账号</span><button class="close" onclick="closeModal()">✕</button></div>' +
+      '<div class="mb"><div class="infobox">启用后，<b>'+esc(u.name)+'</b> 可重新登录使用。</div></div>' +
+      '<div class="mf"><button class="btn ghost" onclick="closeModal()">取消</button>' +
+      '<button class="btn primary" onclick="doToggle('+id+',\'enable\')">确定启用</button></div>'
+    );
+  }
+}
+function doToggle(id, action){
+  var u = find(id); if(!u) return;
+  u.status = action==='disable' ? 'disabled' : 'active';
+  closeModal(); render(); toast(action==='disable'?'已停用该账号':'已启用该账号');
+}
+
+/* ======================= 重置密码 ======================= */
+function askReset(id){
+  var u = find(id); if(!u) return;
+  openModal(
+    '<div class="mh"><span>确认重置密码</span><button class="close" onclick="closeModal()">✕</button></div>' +
+    '<div class="mb"><div class="warnbox">将把 <b>'+esc(u.name)+'</b> 的密码重置为初始密码 <b>admin888</b>，并强制其下线。<br>' +
+    '请提醒本人登录后立即修改密码。</div></div>' +
+    '<div class="mf"><button class="btn ghost" onclick="closeModal()">取消</button>' +
+    '<button class="btn primary" onclick="doReset('+id+')">确定重置</button></div>'
+  );
+}
+function doReset(id){ closeModal(); toast('密码已重置为 admin888'); }
+
+/* ======================= 改角色（owner 专属） ======================= */
+function askRole(id){
+  var u = find(id); if(!u) return;
+  var opts = ['admin','viewer'].map(function(r){
+    return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+ROLE_LABEL[r]+'</option>';
+  }).join('');
+  openModal(
+    '<div class="mh"><span>调整角色</span><button class="close" onclick="closeModal()">✕</button></div>' +
+    '<div class="mb">' +
+      '<div class="field"><label>账号</label><div style="flex:1"><b>'+esc(u.name)+'</b> <span class="chip '+ROLE_CLS[u.role]+'">'+ROLE_LABEL[u.role]+'</span></div></div>' +
+      '<div class="field"><label>调整为</label><div style="flex:1"><select id="cr-role">'+opts+'</select>' +
+        '<div class="note">高级用户：可记账并管理一般用户；一般用户：仅可查看与导出。</div></div></div>' +
+    '</div>' +
+    '<div class="mf"><button class="btn ghost" onclick="closeModal()">取消</button>' +
+    '<button class="btn primary" onclick="doRole('+id+')">保存</button></div>'
+  );
+}
+function doRole(id){
+  var u = find(id); if(!u) return;
+  u.role = $('cr-role').value;
+  closeModal(); render(); toast('角色已调整');
+}
+
+function find(id){ for(var i=0;i<USERS.length;i++) if(USERS[i].id===id) return USERS[i]; return null; }
+
+/* 「改角色」按钮绑定（渲染后挂事件） */
+var _render = render;
+render = function(){
+  _render();
+  document.querySelectorAll('.role-sel').forEach(function(btn,i){
+    // 通过行序定位账号 id（表头占首位，故 +1）
+    var row = btn.closest('.row');
+    var idx = Array.prototype.indexOf.call(document.querySelectorAll('.list .row'), row) - 1;
+    var u = USERS[idx];
+    if(u) btn.onclick = function(){ askRole(u.id); };
+  });
+};
+
+render();
+</script>
+</body>
+</html>

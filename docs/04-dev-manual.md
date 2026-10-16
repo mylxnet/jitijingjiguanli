@@ -51,6 +51,7 @@
 | v0.23.1 | 前端类型错误清零（8 处），修复汇总页下钻跳流水的 `ReferenceError`（点一条流水即报错、跳转失败）；`npm run build` 恢复可用 | ✅ |
 | v0.24.0 | **投资收益两类口径改造**（新增预置一级「再投资收益」、532 基数改按两类已收合计、再投资容器只承载本金、迁移 020 回填）、看板银行流水加摘要列、可支出构成负数与环形图渲染修复 | ✅ |
 | v0.24.1 | 内嵌静态资源口径修复（缺失 `/assets/*` → 404、`index.html` no-cache、哈希产物 immutable）解决换镜像后"点 tab 没反应"；手机端合同 PDF 改 pdf.js 逐页 canvas + blob 下载兜底 | ✅（真机复核待办） |
+| v0.25.0 | **多用户与权限控制**：三角色 RBAC（owner/admin/viewer）、路由五组分级（public/read/biz/admin/owner）配 `RequireWrite`/`RequireRole` 中间件、`/api/users` 五个账号接口与迁移 `021_user_roles.sql`、前端按角色收口（`meta.roles` 守卫 + 全局指令 `v-write` + 用户管理页 `/users`）、操作日志新增「操作人」列 | ✅ |
 | — | PWA 收尾 | ⬜ 待办 |
 
 ---
@@ -172,6 +173,20 @@
 | 变更留痕 | 实体的 create/update/void/unvoid 写入 change_log；前端「留痕」弹窗查看 |
 
 > ⚠️ 恢复是**整库**一致性快照（含全部组织），非单组织粒度。
+
+### 2.7 账号与权限（多用户 RBAC）
+
+三角色：`owner`（所有者 / 超管）、`admin`（高级用户）、`viewer`（一般用户，只读）；账号状态 `active` / `disabled`（**软停用，不删数据**）。后端是权限唯一权威，前端仅做体验收口。
+
+| 能力 | owner | admin | viewer |
+| --- | --- | --- | --- |
+| 查看全部业务数据、导出 | ✓ | ✓ | ✓ |
+| 记业务流水（记账、作废、单位/合同/应收等写操作） | ✓ | ✓ | ✗ |
+| 查看操作日志 | ✓ | ✓ | ✗ |
+| 备份：列表 / 立即备份 / 下载 / 删除 | ✓ | ✓ | ✗ |
+| 账号管理（新建 / 改角色 / 启停 / 重置密码） | 可管理除自己外任何人 | 只能建与管理一般用户 | ✗ |
+| 恢复备份、清空操作日志、系统重置 | ✓ | ✗ | ✗ |
+| 修改本人口令、登出 | ✓ | ✓ | ✓ |
 
 ### 2.8 v0.4 模型总则（以本节为准）
 
@@ -334,8 +349,15 @@ Go 后端（Gin）
 | GET | `/api/export?content=&format=&筛选` | 导出（transactions/summary/balance_sheet × csv/xlsx） |
 | GET/POST | `/api/backups` | 备份列表/手动备份 |
 | POST | `/api/backups/:id/restore` | 一键恢复（整库热恢复） |
+| GET | `/api/users` | 账号列表（权限组 `admin`） |
+| POST | `/api/users` | 新建账号（权限组 `admin`；`admin` 只能建 `viewer`） |
+| PATCH | `/api/users/:id` | 改角色 / 启停（权限组 `admin`；`owner` 可管理除自己外任何人，`admin` 只能管理 `viewer`） |
+| DELETE | `/api/users/:id` | 软停用账号（权限组 `admin`，不删数据） |
+| POST | `/api/users/:id/reset-password` | 重置为 `admin888` 并强制下线（权限组 `admin`） |
 
-主要错误码（节选）：`UNAUTHORIZED` `USERNAME_TAKEN` `OLD_PASSWORD_WRONG` `INVALID_PASSWORD` `CATEGORY_IN_USE` `CATEGORY_NAME_DUP` `CATEGORY_NOT_FOUND` `TRANSFER_AMOUNT_MISMATCH` `TRANSFER_INSUFFICIENT_BALANCE` `TRANSFER_SPENDING_LEG` `FUND_MOVE_INSUFFICIENT_BANK` `FUND_MOVE_INSUFFICIENT_ASSET` `RECEIPT_OVER_RECEIVABLE` `RECEIVABLE_CLOSED` `INCOME_CATEGORY_REQUIRED` `OFFSET_TXN_REQUIRED` `BACKUP_*` `RESTORE_FAILED` 等。
+**路由分组（v1.6 多用户权限）**：路由按权限分 **五组** —— `public`（无需登录：登录 / 注册 / 登出 / 忘记密码）、`read`（已登录即可，含 `viewer`，仅 GET：`/api/me`、`/api/auth/me`、`PUT /api/auth/password` 本人改密、`GET /api/export`）、`biz`（业务读写，`RequireWrite` 统一拦截 `viewer` 的非 GET/HEAD 请求）、`admin`（`owner`/`admin`，`RequireRole` 把守：`/api/operation-logs`、`/api/changelog`、`/api/backups` 系列、`/api/users` 系列）、`owner`（仅 `owner`：`POST /api/backups/:id/restore`、`DELETE /api/operation-logs`、`POST /api/system/reset`）。`viewer` 的写操作一律 403（`FORBIDDEN`）。
+
+主要错误码（节选）：`UNAUTHORIZED` `USERNAME_TAKEN` `OLD_PASSWORD_WRONG` `INVALID_PASSWORD` `CATEGORY_IN_USE` `CATEGORY_NAME_DUP` `CATEGORY_NOT_FOUND` `TRANSFER_AMOUNT_MISMATCH` `TRANSFER_INSUFFICIENT_BALANCE` `TRANSFER_SPENDING_LEG` `FUND_MOVE_INSUFFICIENT_BANK` `FUND_MOVE_INSUFFICIENT_ASSET` `RECEIPT_OVER_RECEIVABLE` `RECEIVABLE_CLOSED` `INCOME_CATEGORY_REQUIRED` `OFFSET_TXN_REQUIRED` `BACKUP_*` `RESTORE_FAILED` `FORBIDDEN` `LAST_OWNER` 等。
 
 ---
 
@@ -511,6 +533,7 @@ cd web && npx vue-tsc --noEmit               # 只跑类型检查；应为 0 报
 | 手机端合同 PDF 预览 | **已改（v0.24.1）**：pdf.js 逐页画 canvas + blob 下载兜底。**真机（安卓/微信）未实机复核**，非 PDF 类型的 blob 链路亦未实测 |
 | 变更历史查看覆盖范围 | 流水/转账（流水页编辑弹层）、资金划转（科目页留痕）已可用；应收核销/科目自身留痕存于库中，暂未全部做成界面 |
 | 本机测试数据 | 调试库副本在 WSL `~/jitai-debug/data`（不入库）；仓库根 `data/` 为开发库，正式使用建议删除重建 |
+| 前端角色收口属体验层 | 不替代后端拦截：`v-write` 只把写按钮设 `display:none`，深链（如 `?editParty=<id>`）靠页面内 `auth.isWritable` 兜底校验；真正的越权拦截以后端 `RequireWrite`/`RequireRole` 中间件为准 |
 
 ---
 
@@ -524,3 +547,4 @@ cd web && npx vue-tsc --noEmit               # 只跑类型检查；应为 0 报
 | 2026-09-20 | v1.3：随 v0.23.1 —— §1.3 增补补丁版行；§8.3 质量关卡改为以 `npm run build` 为准（8 处类型错误已清零）；§10 把「前端类型检查欠账」改为已修复，并新增「CI 仍走 vite build 可收紧」遗留项 |
 | 2026-09-21 | v1.4：随 v0.24.0 —— §1.3 增补版本行；§2.1 预置科目表重写为 9 一级 / 9 二级（18 项）并新增「应收类别 → 现金入账容器」与「收益三口径」两张表；§2.4 新增看板环形构成取数与渲染约定表；§2.8 更正两条过时条目；§7.7 补「收到投资收益/分红按单位类型选容器」；§10 登记「银行存款流水缺划转行与未过滤 voided」「负本金被取绝对值」「无欠单时收缴静默回落成收入」三条已知未修 |
 | 2026-09-21 | v1.5：随 v0.24.1 —— §10 登记内嵌静态资源口径（`/assets/*` 404 + `index.html` no-cache + 哈希产物 immutable，测试 `server/cmd/server/main_test.go`）与手机端合同 PDF 预览改造（pdf.js canvas + blob 下载兜底，真机未复核）；方案与取证见 `docs/26-静态资源缓存与手机端合同PDF预览方案.md` |
+| 2026-10-16 | v1.6：随 v0.25.0「多用户与权限控制」—— 新增三角色（owner/admin/viewer）与五组路由（public/read/biz/admin/owner）+ `RequireAuth`/`RequireWrite`/`RequireRole` 分级中间件；新增 `/api/users` 五个账号接口（含 `LAST_OWNER` 最后一个所有者保护）与迁移 `021_user_roles.sql`；`/api/me` 增返 `role`/`userID`；前端登录态记角色、路由 `meta.roles` 守卫、菜单与写按钮按角色隐藏（全局指令 `v-write`）、设置页按角色分级、操作日志新增「操作人」列；权限矩阵与完整设计见 `docs/27-多用户与权限控制方案.md` |

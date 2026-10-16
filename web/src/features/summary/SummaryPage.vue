@@ -67,7 +67,7 @@
       <!-- 无数据 -->
       <div v-if="categories.length === 0" class="empty-state">
         <p>本月还没有流水</p>
-        <van-button size="small" type="primary" @click="goHome">去记一笔</van-button>
+        <van-button v-write size="small" type="primary" @click="goHome">去记一笔</van-button>
       </div>
 
       <!-- 科目余额 -->

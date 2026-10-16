@@ -3,7 +3,7 @@
     <div class="page-header">
       <h3>科目管理</h3>
       <div class="header-actions">
-        <van-button type="primary" size="small" @click="openAddL1">+ 新增一级</van-button>
+        <van-button v-write type="primary" size="small" @click="openAddL1">+ 新增一级</van-button>
       </div>
     </div>
 
@@ -15,7 +15,7 @@
     <!-- 空数据 -->
     <div v-else-if="categories.length === 0" class="empty-state">
       <p>还没有科目</p>
-      <van-button type="primary" size="small" @click="openAddL1">新增一级科目</van-button>
+      <van-button v-write type="primary" size="small" @click="openAddL1">新增一级科目</van-button>
     </div>
 
     <!-- 科目树 -->
@@ -29,9 +29,9 @@
             <span class="l1-chip">分组</span>
           </div>
           <div class="l1-actions">
-            <van-button size="mini" plain @click="openAddL2(l1)">+二级</van-button>
-            <van-button v-if="!l1.preset" size="mini" plain @click="renameCat(l1)">重命名</van-button>
-            <van-button v-if="!l1.preset && !l1.children?.length" size="mini" plain type="danger" @click="deleteCat(l1)">删除</van-button>
+            <van-button v-write size="mini" plain @click="openAddL2(l1)">+二级</van-button>
+            <van-button v-write v-if="!l1.preset" size="mini" plain @click="renameCat(l1)">重命名</van-button>
+            <van-button v-write v-if="!l1.preset && !l1.children?.length" size="mini" plain type="danger" @click="deleteCat(l1)">删除</van-button>
           </div>
         </div>
 
@@ -47,15 +47,16 @@
               <span v-if="l2.kind !== 'asset' && l2.txnCount != null" class="l2-count">{{ l2.txnCount }}笔</span>
             </div>
             <div class="l2-actions">
-              <van-button size="mini" plain @click="editL2(l2)">编辑</van-button>
-              <van-button v-if="!l2.preset" size="mini" plain @click="renameCat(l2)">重命名</van-button>
+              <van-button v-write size="mini" plain @click="editL2(l2)">编辑</van-button>
+              <van-button v-write v-if="!l2.preset" size="mini" plain @click="renameCat(l2)">重命名</van-button>
               <van-button
+                v-write
                 size="mini"
                 plain
                 :type="l2.status === 'active' ? 'warning' : 'primary'"
                 @click="toggleStatus(l2)"
               >{{ l2.status === 'active' ? '停用' : '启用' }}</van-button>
-              <van-button v-if="!l2.preset" size="mini" plain type="danger" @click="deleteCat(l2)">删除</van-button>
+              <van-button v-write v-if="!l2.preset" size="mini" plain type="danger" @click="deleteCat(l2)">删除</van-button>
             </div>
           </div>
         </div>

@@ -7,7 +7,7 @@
       </div>
       <div class="pl-header-actions">
         <van-button size="small" @click="exportCSV">导出</van-button>
-        <van-button type="primary" size="small" icon="plus" @click="openAdd">新增单位</van-button>
+        <van-button v-write type="primary" size="small" icon="plus" @click="openAdd">新增单位</van-button>
       </div>
     </div>
 
@@ -81,7 +81,7 @@
             </td>
             <td class="pl-td pl-td-note">{{ p.note || '—' }}</td>
             <td class="pl-td pl-td-action">
-              <van-button size="mini" plain @click.stop="openEdit(p)">编辑</van-button>
+              <van-button v-write size="mini" plain @click.stop="openEdit(p)">编辑</van-button>
             </td>
           </tr>
         </tbody>
@@ -165,9 +165,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../../../lib/http'
 import { showToast, showDialog } from 'vant'
 import { useContactIssues } from '../useContactIssues'
+import { useAuthStore } from '../../auth/store'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const { refresh: refreshIssues } = useContactIssues()
 
 // 统一从 API 响应里提取数组（兼容 data / data.items / 直接数组）
@@ -483,6 +485,11 @@ function openEdit(p: Party) {
 }
 
 async function saveParty() {
+  // 写操作兜底：只读账号（viewer）不得提交（入口已隐藏，此处防深链/旁路）
+  if (!auth.isWritable) {
+    showToast('当前账号无操作权限')
+    return
+  }
   if (!partyForm.value.name) {
     showToast('请填写单位名称')
     return
@@ -538,6 +545,8 @@ async function saveParty() {
 
 // 从「数据缺失」清单跳进来（?editParty=<id>）时，自动打开该单位编辑弹窗，并定位到「年度数据」页
 function handleEditQuery() {
+  // 编辑弹窗是写入口：只读账号（viewer）不自动打开（入口按钮已隐藏，此处兜住深链旁路）
+  if (!auth.isWritable) return
   const id = Number(route.query.editParty || 0)
   if (id <= 0) return
   const p = parties.value.find(x => x.id === id)

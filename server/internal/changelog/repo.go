@@ -13,6 +13,9 @@ import (
 // Repo 封装 change_log 表的 SQL 查询。
 type Repo struct {
 	db *sql.DB
+	// operator 是请求内操作者快照（由 WithOperator 绑定，冗余存用户名而非外键，
+	// 账号删改后日志仍可追溯）；空表示无操作者（迁移前的老日志）。
+	operator string
 }
 
 // NewRepo 创建 Repo。
@@ -20,13 +23,28 @@ func NewRepo(db *sql.DB) *Repo {
 	return &Repo{db: db}
 }
 
+// WithOperator 返回绑定了操作者快照的轻量副本（共享 db 连接，仅替换 operator）。
+// 日志写入前用 auth.CurrentUsername(c) 绑定，使多用户下每条留痕都能追溯到操作人。
+func (r *Repo) WithOperator(operator string) *Repo {
+	if operator == "" {
+		return r
+	}
+	cp := *r
+	cp.operator = operator
+	return &cp
+}
+
 // LogChange 记录一次变更（归属组织 orgID，v0.3 多组织）。
 func (r *Repo) LogChange(orgID int64, entityType string, entityID int64, action string, field *string, oldValue, newValue *string) error {
 	now := platform.Now()
+	var op any
+	if r.operator != "" {
+		op = r.operator
+	}
 	_, err := r.db.Exec(
-		`INSERT INTO change_log(org_id, entity_type, entity_id, action, field, old_value, new_value, changed_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		orgID, entityType, entityID, action, field, oldValue, newValue, now,
+		`INSERT INTO change_log(org_id, entity_type, entity_id, action, field, old_value, new_value, changed_at, operator)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		orgID, entityType, entityID, action, field, oldValue, newValue, now, op,
 	)
 	if err != nil {
 		return fmt.Errorf("记录变更日志失败: %w", err)
@@ -37,7 +55,7 @@ func (r *Repo) LogChange(orgID int64, entityType string, entityID int64, action 
 // ListByEntity 查询某组织下某实体的变更日志，按时间倒序。
 func (r *Repo) ListByEntity(orgID int64, entityType string, entityID int64) ([]ChangeLog, error) {
 	rows, err := r.db.Query(
-		`SELECT id, entity_type, entity_id, action, field, old_value, new_value, changed_at
+		`SELECT id, entity_type, entity_id, action, field, old_value, new_value, changed_at, operator
 		 FROM change_log WHERE org_id = ? AND entity_type = ? AND entity_id = ?
 		 ORDER BY changed_at DESC`, orgID, entityType, entityID,
 	)
@@ -49,7 +67,7 @@ func (r *Repo) ListByEntity(orgID int64, entityType string, entityID int64) ([]C
 	var items []ChangeLog
 	for rows.Next() {
 		var cl ChangeLog
-		if err := rows.Scan(&cl.ID, &cl.EntityType, &cl.EntityID, &cl.Action, &cl.Field, &cl.OldValue, &cl.NewValue, &cl.ChangedAt); err != nil {
+		if err := rows.Scan(&cl.ID, &cl.EntityType, &cl.EntityID, &cl.Action, &cl.Field, &cl.OldValue, &cl.NewValue, &cl.ChangedAt, &cl.Operator); err != nil {
 			return nil, fmt.Errorf("扫描变更日志行失败: %w", err)
 		}
 		items = append(items, cl)
@@ -64,7 +82,7 @@ func (r *Repo) ListByEntity(orgID int64, entityType string, entityID int64) ([]C
 // 因此改在 Go 侧解析；change_log.id 自增有序 = 写入时间有序，遇早于 cuttoff 的行即可提前终止。
 func (r *Repo) ListRecentByOrg(orgID int64, cutoff time.Time) ([]ChangeLog, error) {
 	rows, err := r.db.Query(
-		`SELECT id, org_id, entity_type, entity_id, action, field, old_value, new_value, changed_at
+		`SELECT id, org_id, entity_type, entity_id, action, field, old_value, new_value, changed_at, operator
 		 FROM change_log WHERE org_id = ? ORDER BY id DESC`, orgID,
 	)
 	if err != nil {
@@ -75,7 +93,7 @@ func (r *Repo) ListRecentByOrg(orgID int64, cutoff time.Time) ([]ChangeLog, erro
 	var items []ChangeLog
 	for rows.Next() {
 		var cl ChangeLog
-		if err := rows.Scan(&cl.ID, &cl.OrgID, &cl.EntityType, &cl.EntityID, &cl.Action, &cl.Field, &cl.OldValue, &cl.NewValue, &cl.ChangedAt); err != nil {
+		if err := rows.Scan(&cl.ID, &cl.OrgID, &cl.EntityType, &cl.EntityID, &cl.Action, &cl.Field, &cl.OldValue, &cl.NewValue, &cl.ChangedAt, &cl.Operator); err != nil {
 			return nil, fmt.Errorf("扫描操作日志行失败: %w", err)
 		}
 		ts, ok := parseChangedAt(cl.ChangedAt)

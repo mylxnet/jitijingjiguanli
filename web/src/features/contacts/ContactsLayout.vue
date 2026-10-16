@@ -8,7 +8,8 @@
       <router-link to="/contacts/receivables/rent"     class="cl-tab">🌾 应收流转费</router-link>
       <router-link to="/contacts/receivables/service"  class="cl-tab">📋 应收管理费</router-link>
       <router-link to="/contacts/contracts"          class="cl-tab">📄 合同管理</router-link>
-      <router-link to="/contacts/accrue"             class="cl-tab">🧭 年度计提</router-link>
+      <!-- 年度计提是写入口（批量生成应收），只读账号（viewer）隐藏 -->
+      <router-link v-write to="/contacts/accrue"      class="cl-tab">🧭 年度计提</router-link>
     </nav>
     <div class="cl-content">
       <router-view />
@@ -17,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-// thin shell — just sub-tabs + outlet
+// thin shell — sub-tabs + outlet
 </script>
 
 <style scoped>

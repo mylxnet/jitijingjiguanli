@@ -22,10 +22,14 @@ func NewHandler(db *sql.DB) *Handler {
 	return &Handler{repo: NewRepo(db)}
 }
 
-// Register 挂载路由。
-func (h *Handler) Register(r gin.IRouter) {
+// RegisterRead 挂载查询类路由（admin 组：查看操作日志属审计，仅 admin/owner，见 docs/27 §5.2）。
+func (h *Handler) RegisterRead(r gin.IRouter) {
 	r.GET("/api/changelog", h.ListChangelog)
 	r.GET("/api/operation-logs", h.ListOperationLogs)
+}
+
+// RegisterClear 挂载清空日志路由（owner 组：清空属高危操作）。
+func (h *Handler) RegisterClear(r gin.IRouter) {
 	r.DELETE("/api/operation-logs", h.ClearOperationLogs)
 }
 

@@ -32,11 +32,11 @@ func TestChangePassword(t *testing.T) {
 	}
 
 	// 旧口令登录失败
-	if _, _, err := svc.Login("admin", "old-pass"); err != ErrInvalidCredentials {
+	if _, _, _, err := svc.Login("admin", "old-pass"); err != ErrInvalidCredentials {
 		t.Errorf("旧口令应无法登录，实际 %v", err)
 	}
 	// 新口令登录成功
-	if _, _, err := svc.Login("admin", "new-pass"); err != nil {
+	if _, _, _, err := svc.Login("admin", "new-pass"); err != nil {
 		t.Errorf("新口令应可登录: %v", err)
 	}
 }
