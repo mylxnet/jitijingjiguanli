@@ -478,10 +478,10 @@ cd web && npx vue-tsc --noEmit               # 只跑类型检查；应为 0 报
 
 | 链路 | 触发 | 产物 |
 |---|---|---|
-| GitHub Releases | **推送新的 `v*` 标签**（重复推同一标签不会重跑 CI） | 单文件可执行 `jitizhang`（Linux amd64，内嵌前端，监听 :8080），`generate_release_notes: true` |
+| GitHub Releases | **推送新的 `v*` 标签**（重复推同一标签不会重跑 CI） | 两个附件：`jitizhang`（Linux amd64，内嵌前端，监听 :8080）与 `jititaizhang.exe`（Windows amd64 桌面版）；`generate_release_notes: true` |
 | 阿里云 ACR 镜像 | 在 WSL 手工构建：`docker build --provenance=false --sbom=false -f deploy/Dockerfile.local` | `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z` + `latest`（同一 digest）；镜像仓库地址与口令在**仓库外**的本机规则文件，不入库、不进命令行回显 |
 | 直接打包 GitHub 产物 | `deploy/Dockerfile.release` | 用 Releases 已构建的二进制做薄镜像（无需在 NAS 上编译） |
-| Windows 桌面单文件 | WSL 内 `bash scripts/build-windows.sh` | `dist/windows/jititaizhang.exe`（amd64，内嵌前端 + SQLite，免运行时；图标与版本资源由 `server/cmd/server/winres/` 经 go-winres 注入，`*.syso` 不入库） |
+| Windows 桌面单文件 | 推 `v*` 标签由 CI 自动交叉编译上传；本机可用 `bash scripts/build-windows.sh` | `jititaizhang.exe`（amd64，内嵌前端 + SQLite，免运行时；图标与版本资源由 `server/cmd/server/winres/` 经 go-winres v0.3.3 注入，`--file-version/--product-version` 取自 `web/src/version.ts`；`*.syso` 不入库，CI 产物落在 `dist/windows/`） |
 
 Windows 桌面双击运行约定（`DATA_DIR` 未显式设置时自动进入）：数据锚定到 **exe 所在目录** 的 `data\`、备份 `backups\`；`APP_PORT` 未设置时从 8080 起自动找空闲端口（上限 8099）；绑定成功后才调起默认浏览器；关闭控制台窗口即停止服务。换版本只替换 exe，账本目录原地保留（迁移在启动时自动执行）。
 
@@ -553,3 +553,4 @@ Windows 桌面双击运行约定（`DATA_DIR` 未显式设置时自动进入）�
 | 2026-09-21 | v1.4：随 v0.24.0 —— §1.3 增补版本行；§2.1 预置科目表重写为 9 一级 / 9 二级（18 项）并新增「应收类别 → 现金入账容器」与「收益三口径」两张表；§2.4 新增看板环形构成取数与渲染约定表；§2.8 更正两条过时条目；§7.7 补「收到投资收益/分红按单位类型选容器」；§10 登记「银行存款流水缺划转行与未过滤 voided」「负本金被取绝对值」「无欠单时收缴静默回落成收入」三条已知未修 |
 | 2026-09-21 | v1.5：随 v0.24.1 —— §10 登记内嵌静态资源口径（`/assets/*` 404 + `index.html` no-cache + 哈希产物 immutable，测试 `server/cmd/server/main_test.go`）与手机端合同 PDF 预览改造（pdf.js canvas + blob 下载兜底，真机未复核）；方案与取证见 `docs/26-静态资源缓存与手机端合同PDF预览方案.md` |
 | 2026-10-16 | v1.6：随 v0.25.0「多用户与权限控制」—— 新增三角色（owner/admin/viewer）与五组路由（public/read/biz/admin/owner）+ `RequireAuth`/`RequireWrite`/`RequireRole` 分级中间件；新增 `/api/users` 五个账号接口（含 `LAST_OWNER` 最后一个所有者保护）与迁移 `021_user_roles.sql`；`/api/me` 增返 `role`/`userID`；前端登录态记角色、路由 `meta.roles` 守卫、菜单与写按钮按角色隐藏（全局指令 `v-write`）、设置页按角色分级、操作日志新增「操作人」列；权限矩阵与完整设计见 `docs/27-多用户与权限控制方案.md` |
+| 2026-10-27 | v1.7：随 Windows 桌面单文件 —— §8.1 环境变量补 `TZ` / `APP_OPEN_BROWSER`；§8.5 交付产物表新增 Windows 行并补双击运行约定；**Release 链路改为单次标签同时产出 Linux 与 Windows 两个附件**（go-winres 固定 v0.3.3，PE 版本号取自 `web/src/version.ts`） |

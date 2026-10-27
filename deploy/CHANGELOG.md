@@ -15,6 +15,7 @@
   - 双击即用：`DATA_DIR` 未设置时自动进入桌面模式——数据锚定 **exe 所在目录** 的 `data\`、备份 `backups\`；8080 被占自动顺延到 8081~8099；端口绑定成功后调起默认浏览器（`APP_OPEN_BROWSER=0` 可关）。
   - 控制台改用 gin release 模式，不再打印整张路由表。
   - 版本资源：`FileVersion` / `ProductVersion` = `0.25.0.0`，`CompanyName` = `by Mr lin`，图标为深青蓝账本样式（`server/cmd/server/winres/icon.png`，由 `go-winres` 生成 `*.syso`，`*.syso` 与 `dist/` 已 gitignore）。
+- **Release 链路自动产出 Windows 产物**：`.github/workflows/release.yml` 在推 `v*` 标签时同时构建 `jitizhang`（Linux amd64）与 `jititaizhang.exe`（Windows amd64）并一并上传；`go-winres` 固定 `v0.3.3`（放弃 `@latest`，保证可复现），PE 版本号由 `web/src/version.ts` 经 `--file-version` / `--product-version` 注入，从此不再依赖本地手工构建 + API 补传。
 
 ### 修复
 - **自动备份触发时刻偏到北京时间 11:00**：每日备份原按**进程本地时区**算 03:00（`nextBackupTime` 用 `now.Location()`），而运行镜像未设时区、容器内为 UTC，实际在 **03:00 UTC = 北京 11:00** 才触发，与设置页「每日 03:00 自动备份」文案不符，也违反「所有时间功能固定东八区」的约定。改为按**固定东八区**计算（[`nextBackupTime`](file:///e:/traework/jizhang/server/cmd/server/main.go#L398-L409) 复用新增的 `platform.TZ()`），独立于进程/容器时区。
@@ -22,6 +23,7 @@
 
 ### 验证
 - 新增回归测试 `TestNextBackupTimeFixedCST`（`server/cmd/server/main_test.go`）：向 `nextBackupTime` 传入 UTC 时间，断言结果始终落在东八区 03:00、偏移 `+08:00`。
+- **CI Windows 步骤本地复跑**：在 WSL 内按 `release.yml` 同一命令序列执行 `go-winres v0.3.3 make --file-version 0.25.0 --product-version 0.25.0` + `GOOS=windows GOARCH=amd64 go build`，产物 32,454,144 字节，PE 版本资源 `FileVersion`/`ProductVersion` = `0.25.0`、`CompanyName` = `by Mr lin`、`OriginalFilename` = `jititaizhang.exe`；标签步骤的版本号提取命令输出 `0.25.0`（与 `APP_VERSION` 一致）。
 
 ## [0.25.0] - 2026-10-16
 

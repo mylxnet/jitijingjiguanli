@@ -41,7 +41,7 @@ DATA_DIR=/var/lib/jitai APP_BACKUP_DIR=/var/backups/jitai ./jitizhang
 - 数据保存在 **exe 同目录** 的 `data\`，备份在 `backups\`；换版本只替换 exe，账本原地保留（新版本启动时自动迁移）。
 - 8080 被占用时自动顺延到 8081~8099；服务就绪后自动打开默认浏览器。
 - 关闭黑色控制台窗口即停止服务。需要静默或换端口：`set APP_OPEN_BROWSER=0`、`set APP_PORT=9090`。
-- 构建（需在 WSL / Linux 下）：`bash scripts/build-windows.sh` → `dist/windows/jititaizhang.exe`。
+- 构建：打 `vX.Y.Z` 标签时由 `.github/workflows/release.yml` 自动交叉编译并上传到 Releases；本机手动构建（WSL / Linux）：`bash scripts/build-windows.sh` → `dist/windows/jititaizhang.exe`。
 
 ### B. Docker 预构建镜像（阿里云 ACR）
 
@@ -122,7 +122,7 @@ curl http://127.0.0.1:8080/api/health
 
 从 `main` 开分支，改完提 PR 回合 `main`。提交前跑 `cd web && npm run build` 与 `cd server && go test ./...`。
 
-发布由维护者执行：更新 `web/src/version.ts`、`README.md` 的版本号、`deploy/CHANGELOG.md` 与 `deploy/docker-compose.hub.yml` 的镜像标签，推送 `main` 后打 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`，产出 GitHub Releases 二进制；ACR 镜像另行在 WSL 构建推送。Gitee 远端只收 `main`，不打标签。
+发布由维护者执行：更新 `web/src/version.ts`、`README.md` 的版本号、`deploy/CHANGELOG.md` 与 `deploy/docker-compose.hub.yml` 的镜像标签，推送 `main` 后打 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`，自动产出并上传 GitHub Releases 的两个二进制（Linux `jitizhang`、Windows `jititaizhang.exe`），PE 版本资源取自 `web/src/version.ts`；ACR 镜像另行在 WSL 构建推送。Gitee 远端只收 `main`，不打标签。
 
 ## 许可证
 

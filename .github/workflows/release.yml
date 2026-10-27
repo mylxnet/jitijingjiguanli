@@ -1,7 +1,8 @@
 name: build-release
 
 # 打 v* 标签推送时，构建单文件可执行程序并发布到 GitHub Releases。
-# 产物：Linux amd64（内嵌前端，监听 :8080），与本地 WSL 部署产物一致。
+# 产物：Linux amd64（jitizhang，监听 :8080）+ Windows amd64 桌面版（jititaizhang.exe，双击即用）。
+# 两者都内嵌前端产物与纯 Go SQLite 驱动，目标机无需额外运行时。
 on:
   push:
     tags:
@@ -17,6 +18,11 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        # 版本号唯一来源是 web/src/version.ts，供 Windows PE 版本资源使用。
+        run: echo "version=$(sed -n "s/.*APP_VERSION = '\(.*\)'.*/\1/p" web/src/version.ts)" >> "$GITHUB_OUTPUT"
 
       - name: 安装 Node
         uses: actions/setup-node@v4
@@ -48,8 +54,32 @@ jobs:
           GOARCH: amd64
         run: go build -o ../jitizhang ./cmd/server
 
+      - name: 生成 Windows 资源 (图标 + 版本信息)
+        working-directory: server
+        # go-winres 生成 rsrc_windows_amd64.syso，Go 构建 Windows 目标时自动链接；
+        # 版本号取自 web/src/version.ts，避免 PE 版本资源与 APP_VERSION 脱节。
+        run: |
+          go run github.com/tc-hib/go-winres@v0.3.3 make \
+            --in cmd/server/winres/winres.json \
+            --arch amd64 \
+            --out cmd/server/rsrc \
+            --file-version "${{ steps.ver.outputs.version }}" \
+            --product-version "${{ steps.ver.outputs.version }}"
+
+      - name: 交叉编译 Windows amd64 (桌面单文件)
+        working-directory: server
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          mkdir -p ../dist/windows
+          go build -trimpath -ldflags="-s -w" -o ../dist/windows/jititaizhang.exe ./cmd/server
+
       - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: jitizhang
+          files: |
+            jitizhang
+            dist/windows/jititaizhang.exe
           generate_release_notes: true

@@ -19,7 +19,8 @@ cp -r "$ROOT/web/dist/." "$ROOT/server/cmd/server/web/"
 
 echo "== [3/4] 生成 Windows 资源（应用图标 + 版本信息）=="
 cd "$ROOT/server"
-go run github.com/tc-hib/go-winres@latest make --in cmd/server/winres/winres.json --arch amd64 --out cmd/server/rsrc
+go run github.com/tc-hib/go-winres@v0.3.3 make --in cmd/server/winres/winres.json --arch amd64 --out cmd/server/rsrc \
+  --file-version "$VERSION" --product-version "$VERSION"
 
 echo "== [4/4] 交叉编译 Windows amd64 =="
 mkdir -p "$OUT"
