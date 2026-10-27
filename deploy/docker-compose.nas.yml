@@ -36,6 +36,8 @@ services:
       - APP_BACKUP_DIR=/backups
       - APP_KEEP_BACKUP=30
       - APP_AUTO_BACKUP=1
+      # 固定东八区：自动备份 03:00 触发与日志时间依赖它（容器默认 UTC）
+      - TZ=Asia/Shanghai
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 30s

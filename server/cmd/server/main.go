@@ -6,9 +6,11 @@ import (
 	"embed"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +50,26 @@ type app struct {
 
 func main() {
 	cfg := platform.Load()
+
+	// 桌面双击模式（Windows 且未设置 DATA_DIR）：数据与备份锚定到 exe 所在目录，
+	// 端口被占时自动顺延，服务绑定成功后再调起默认浏览器。
+	desktop := platform.IsDesktopMode()
+	if desktop {
+		dir := platform.ExeDir()
+		cfg.DataDir = filepath.Join(dir, "data")
+		cfg.BackupDir = filepath.Join(dir, "backups")
+		if os.Getenv("APP_PORT") == "" {
+			if p, err := strconv.Atoi(cfg.Port); err == nil {
+				cfg.Port = strconv.Itoa(platform.PickedPort(p, 8099))
+			}
+		}
+	}
+
 	a := &app{cfg: cfg}
+	// 桌面双击场景用精简日志，控制台不必打印整张路由表。
+	if desktop {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	db, err := openDB(cfg)
 	if err != nil {
@@ -73,8 +94,26 @@ func main() {
 		go runDailyBackup(repo, a)
 	}
 
+	// 先完成端口绑定再开浏览器：绑定失败直接报错退出，避免浏览器打开一个空白页。
+	ln, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		db.Close()
+		log.Fatalf("监听端口 %s 失败（可用 APP_PORT 指定其他端口）: %v", cfg.Port, err)
+	}
+
 	log.Printf("集体台账后端启动，监听 :%s（数据目录 %s，备份目录 %s）", cfg.Port, cfg.DataDir, cfg.BackupDir)
-	if err := a.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if desktop {
+		url := "http://127.0.0.1:" + cfg.Port + "/"
+		if os.Getenv("APP_OPEN_BROWSER") != "0" {
+			if err := platform.OpenBrowser(url); err != nil {
+				log.Printf("自动打开浏览器失败，请手动访问 %s：%v", url, err)
+			} else {
+				log.Printf("已在默认浏览器打开 %s", url)
+			}
+		}
+		log.Printf("关闭本窗口即停止服务；账本数据保存在 %s", cfg.DataDir)
+	}
+	if err := a.srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("服务异常退出: %v", err)
 	}
 }
@@ -395,10 +434,14 @@ func runDailyBackup(repo *backup.Repo, a *app) {
 	}
 }
 
-// nextBackupTime 返回下一个本地 03:00。
+// nextBackupTime 返回下一个东八区（Asia/Shanghai）03:00。
+// 显式按固定东八区计算，不依赖进程/容器本地时区——容器内常为 UTC，
+// 此前按本地时区算会把触发时刻整体后移到北京时间 11:00。
 func nextBackupTime(now time.Time) time.Time {
-	next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
-	if !next.After(now) {
+	loc := platform.TZ()
+	n := now.In(loc)
+	next := time.Date(n.Year(), n.Month(), n.Day(), 3, 0, 0, 0, loc)
+	if !next.After(n) {
 		next = next.AddDate(0, 0, 1)
 	}
 	return next

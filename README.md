@@ -21,7 +21,7 @@
 
 ## 前置要求
 
-- 运行 Releases 产物：Linux amd64，无额外依赖（SQLite 驱动为纯 Go，`CGO_ENABLED=0`）。
+- 运行 Releases 产物：Linux amd64 或 Windows amd64，无额外依赖（SQLite 驱动为纯 Go，`CGO_ENABLED=0`）。
 - 源码构建：Go 1.27+、Node.js 22+。
 - `DATA_DIR` 必须落在宿主机本地文件系统，禁止 NFS/SMB 挂载。数据库迁移只在进程启动时执行一次，替换或删除库文件后必须重启容器/进程。
 
@@ -35,6 +35,13 @@
 chmod +x jitizhang
 DATA_DIR=/var/lib/jitai APP_BACKUP_DIR=/var/backups/jitai ./jitizhang
 ```
+
+**Windows 桌面版 `jititaizhang.exe`**：内嵌前端 + SQLite，免安装任何运行时，双击即用。
+
+- 数据保存在 **exe 同目录** 的 `data\`，备份在 `backups\`；换版本只替换 exe，账本原地保留（新版本启动时自动迁移）。
+- 8080 被占用时自动顺延到 8081~8099；服务就绪后自动打开默认浏览器。
+- 关闭黑色控制台窗口即停止服务。需要静默或换端口：`set APP_OPEN_BROWSER=0`、`set APP_PORT=9090`。
+- 构建（需在 WSL / Linux 下）：`bash scripts/build-windows.sh` → `dist/windows/jititaizhang.exe`。
 
 ### B. Docker 预构建镜像（阿里云 ACR）
 
@@ -95,6 +102,7 @@ curl http://127.0.0.1:8080/api/health
 | `APP_BACKUP_DIR` | `./backups` | 备份目录，建议与数据不同盘 |
 | `APP_KEEP_BACKUP` | `30` | 自动备份保留份数 |
 | `APP_AUTO_BACKUP` | `1` | `1` 启用每日 03:00 自动备份，`0` 关闭 |
+| `TZ` | `Asia/Shanghai` | 时区，固定东八区；决定自动备份 03:00 的触发时刻与日志时间 |
 | `APP_SECURE_COOKIE` | 未设置 | 置 `1` 时会话 Cookie 加 `Secure`，仅在 HTTPS 前置之后使用 |
 
 ## 文档

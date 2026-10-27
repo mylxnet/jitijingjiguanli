@@ -109,6 +109,7 @@ start_container() {
     -e APP_BACKUP_DIR=/backups \
     -e APP_KEEP_BACKUP=30 \
     -e APP_AUTO_BACKUP=1 \
+    -e TZ=Asia/Shanghai \
     "$IMAGE"
   ok "容器已启动。"
 }

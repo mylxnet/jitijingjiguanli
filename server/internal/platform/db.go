@@ -56,3 +56,9 @@ var tzCN = time.FixedZone("Asia/Shanghai", 8*60*60)
 func Now() time.Time {
 	return time.Now().In(tzCN)
 }
+
+// TZ 返回固定东八区时区（Asia/Shanghai，UTC+8），供需要构造「东八区某时刻」的
+// 调用方使用（如每日自动备份的触发时刻），避免依赖进程/容器本地时区。
+func TZ() *time.Location {
+	return tzCN
+}

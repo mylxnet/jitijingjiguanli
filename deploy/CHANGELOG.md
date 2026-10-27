@@ -8,6 +8,21 @@
 > v0.20 合同到期管理与归档、v0.21 看板环形构成改造+全站配色归一与浅色化、v0.22 全站配色 token 化改造与对比度达标(WCAG AA)。
 > 自 v0.23 起恢复逐版记录。
 
+## [未发布] - 2026-10-27
+
+### 新增
+- **Windows 桌面单文件 `jititaizhang.exe`**：`scripts/build-windows.sh` 在 WSL 内完成「前端构建 → 嵌入 → go-winres 注入图标与版本信息 → `GOOS=windows` 交叉编译」，产物 31 MB，目标机免装任何运行时。
+  - 双击即用：`DATA_DIR` 未设置时自动进入桌面模式——数据锚定 **exe 所在目录** 的 `data\`、备份 `backups\`；8080 被占自动顺延到 8081~8099；端口绑定成功后调起默认浏览器（`APP_OPEN_BROWSER=0` 可关）。
+  - 控制台改用 gin release 模式，不再打印整张路由表。
+  - 版本资源：`FileVersion` / `ProductVersion` = `0.25.0.0`，`CompanyName` = `by Mr lin`，图标为深青蓝账本样式（`server/cmd/server/winres/icon.png`，由 `go-winres` 生成 `*.syso`，`*.syso` 与 `dist/` 已 gitignore）。
+
+### 修复
+- **自动备份触发时刻偏到北京时间 11:00**：每日备份原按**进程本地时区**算 03:00（`nextBackupTime` 用 `now.Location()`），而运行镜像未设时区、容器内为 UTC，实际在 **03:00 UTC = 北京 11:00** 才触发，与设置页「每日 03:00 自动备份」文案不符，也违反「所有时间功能固定东八区」的约定。改为按**固定东八区**计算（[`nextBackupTime`](file:///e:/traework/jizhang/server/cmd/server/main.go#L398-L409) 复用新增的 `platform.TZ()`），独立于进程/容器时区。
+- **运行镜像与编排补 `TZ=Asia/Shanghai`**：三个 Dockerfile（local / release / 多阶段）与三个 compose（hub / 默认 / NAS）、`deploy/fnos.sh` 统一设时区，容器日志等本地时间随之落到东八区（此前日志为 UTC，比北京时间少 8 小时）。
+
+### 验证
+- 新增回归测试 `TestNextBackupTimeFixedCST`（`server/cmd/server/main_test.go`）：向 `nextBackupTime` 传入 UTC 时间，断言结果始终落在东八区 03:00、偏移 `+08:00`。
+
 ## [0.25.0] - 2026-10-16
 
 > 版本号已建立：`web/src/version.ts` 的 `APP_VERSION` 与 `README.md` 顶部「当前版本」同步为 `0.25.0`。

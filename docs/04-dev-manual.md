@@ -435,6 +435,8 @@ Go 后端（Gin）
 | `APP_BACKUP_DIR` | ./backups | 备份目录（**建议与数据不同盘**） |
 | `APP_KEEP_BACKUP` | 30 | 备份保留份数 |
 | `APP_AUTO_BACKUP` | 1 | 每日 03:00 自动备份开关（0 关闭） |
+| `TZ` | Asia/Shanghai | 时区，固定东八区；决定自动备份 03:00 触发与日志时间 |
+| `APP_OPEN_BROWSER` | 1 | 仅 Windows 桌面双击模式：=0 时不自动打开浏览器 |
 | `APP_SECURE_COOKIE` | 空 | =1 时 Cookie 加 Secure（HTTPS 场景） |
 
 ### 8.2 本地开发启动（当前实机环境：WSL）
@@ -479,9 +481,12 @@ cd web && npx vue-tsc --noEmit               # 只跑类型检查；应为 0 报
 | GitHub Releases | **推送新的 `v*` 标签**（重复推同一标签不会重跑 CI） | 单文件可执行 `jitizhang`（Linux amd64，内嵌前端，监听 :8080），`generate_release_notes: true` |
 | 阿里云 ACR 镜像 | 在 WSL 手工构建：`docker build --provenance=false --sbom=false -f deploy/Dockerfile.local` | `registry.cn-hangzhou.aliyuncs.com/mylxnet/jitijingjiguanli:vX.Y.Z` + `latest`（同一 digest）；镜像仓库地址与口令在**仓库外**的本机规则文件，不入库、不进命令行回显 |
 | 直接打包 GitHub 产物 | `deploy/Dockerfile.release` | 用 Releases 已构建的二进制做薄镜像（无需在 NAS 上编译） |
+| Windows 桌面单文件 | WSL 内 `bash scripts/build-windows.sh` | `dist/windows/jititaizhang.exe`（amd64，内嵌前端 + SQLite，免运行时；图标与版本资源由 `server/cmd/server/winres/` 经 go-winres 注入，`*.syso` 不入库） |
+
+Windows 桌面双击运行约定（`DATA_DIR` 未显式设置时自动进入）：数据锚定到 **exe 所在目录** 的 `data\`、备份 `backups\`；`APP_PORT` 未设置时从 8080 起自动找空闲端口（上限 8099）；绑定成功后才调起默认浏览器；关闭控制台窗口即停止服务。换版本只替换 exe，账本目录原地保留（迁移在启动时自动执行）。
 
 编排文件：`deploy/docker-compose.yml`（本地构建）、`docker-compose.hub.yml`（拉公共仓库）、`docker-compose.nas.yml`、`deploy/.env.example`、`deploy/fnos.sh`、`scripts/docker-push.sh`。
-容器内约定：`DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`、`APP_KEEP_BACKUP=30`、`APP_AUTO_BACKUP=1`（当前镜像以 root 运行，如需非 root 要自行调整挂载目录属主）。
+容器内约定：`DATA_DIR=/data`、`APP_BACKUP_DIR=/backups`、`APP_KEEP_BACKUP=30`、`APP_AUTO_BACKUP=1`、`TZ=Asia/Shanghai`（固定东八区，决定自动备份 03:00 触发与日志时间；当前镜像以 root 运行，如需非 root 要自行调整挂载目录属主）。
 
 ---
 

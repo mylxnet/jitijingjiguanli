@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -70,5 +71,35 @@ func TestStaticAsset404AndCacheHeaders(t *testing.T) {
 	}
 	if got := resp.Header.Get("Cache-Control"); got != "no-cache" {
 		t.Errorf("回退的 index.html Cache-Control 应为 no-cache，实际 %q", got)
+	}
+}
+
+// TestNextBackupTimeFixedCST 每日自动备份必须按固定东八区 03:00 触发，与进程/容器本地时区无关。
+// 容器内默认为 UTC，曾导致实际触发时刻后移到北京时间 11:00（与设置页文案不符）。
+func TestNextBackupTimeFixedCST(t *testing.T) {
+	cst := time.FixedZone("Asia/Shanghai", 8*60*60)
+	cases := []struct {
+		name string
+		in   time.Time
+		want time.Time
+	}{
+		// UTC 2026-10-16 18:00 = 北京 10-17 02:00，尚未到当日 03:00 → 10-17 03:00(+08)
+		{"北京时间凌晨前", time.Date(2026, 10, 16, 18, 0, 0, 0, time.UTC),
+			time.Date(2026, 10, 17, 3, 0, 0, 0, cst)},
+		// UTC 2026-10-16 20:00 = 北京 10-17 04:00，已过当日 03:00 → 次日 10-18 03:00(+08)
+		{"北京时间凌晨后", time.Date(2026, 10, 16, 20, 0, 0, 0, time.UTC),
+			time.Date(2026, 10, 18, 3, 0, 0, 0, cst)},
+	}
+	for _, c := range cases {
+		got := nextBackupTime(c.in)
+		if !got.Equal(c.want) {
+			t.Errorf("%s: nextBackupTime = %s，期望 %s", c.name, got, c.want)
+		}
+		if _, off := got.Zone(); off != 8*60*60 {
+			t.Errorf("%s: 时区偏移应为 +08:00（28800 秒），实际 %d 秒", c.name, off)
+		}
+		if got.Hour() != 3 || got.Minute() != 0 || got.Second() != 0 {
+			t.Errorf("%s: 应为 03:00:00，实际 %02d:%02d:%02d", c.name, got.Hour(), got.Minute(), got.Second())
+		}
 	}
 }

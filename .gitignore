@@ -37,6 +37,9 @@ server/bin/
 # 本地手工构建的单文件产物（不入库）
 server/server-bin
 *.exe
+# Windows 单文件产物与交叉编译生成的资源
+dist/
+*.syso
 
 # 本机托管工具链（不入库）
 .tools/
