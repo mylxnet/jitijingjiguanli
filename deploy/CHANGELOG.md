@@ -24,6 +24,7 @@
 ### 验证
 - 新增回归测试 `TestNextBackupTimeFixedCST`（`server/cmd/server/main_test.go`）：向 `nextBackupTime` 传入 UTC 时间，断言结果始终落在东八区 03:00、偏移 `+08:00`。
 - **CI Windows 步骤本地复跑**：在 WSL 内按 `release.yml` 同一命令序列执行 `go-winres v0.3.3 make --file-version 0.25.0 --product-version 0.25.0` + `GOOS=windows GOARCH=amd64 go build`，产物 32,454,144 字节，PE 版本资源 `FileVersion`/`ProductVersion` = `0.25.0`、`CompanyName` = `by Mr lin`、`OriginalFilename` = `jititaizhang.exe`；标签步骤的版本号提取命令输出 `0.25.0`（与 `APP_VERSION` 一致）。
+- **ACR 镜像按最新代码重建并推送**：此前 `v0.25.0` / `latest` 是 2026-10-16 构建（早于 `254b8aa` 的时区修复与 `TZ` 环境变量）。2026-10-27 在 WSL 按 `314f6b4` 重建（`--provenance=false --sbom=false`）并重推同名标签，digest 由 `sha256:f33b87d0…` 变为 `sha256:f6fa15f5…`（两个标签同一 digest）；校验：镜像 `ENV` 含 `TZ=Asia/Shanghai`、Go 编译步骤非缓存重跑、二进制体积 31,977,632 字节（旧 31,973,536）。已部署环境 `docker pull` + `up -d` 即可更新，数据目录不变则账本原地保留。
 
 ## [0.25.0] - 2026-10-16
 
